@@ -38,16 +38,6 @@ def derive_key(password: str) -> bytes:
 def decrypt_json(encrypted_str: str, password: str) -> dict:
     """
     解密 AES-GCM base64 编码的 JSON 字符串
-
-    参数:
-        encrypted_str: 加密后的 base64 字符串
-        password: 加密时使用的密码
-
-    返回:
-        解密后的 JSON 数据（dict）
-
-    异常:
-        ValueError: 解密失败或内容非 JSON
     """
     try:
         key = derive_key(password)
@@ -68,21 +58,10 @@ def decrypt_json(encrypted_str: str, password: str) -> dict:
         raise ValueError(f"解密失败: {e}")
         
 def getconfig(password: str) -> dict:
-    # 当前脚本所在目录
     current_dir = Path(__file__).resolve().parent
-    """
-    从脚本上一级目录读取 config.enc 并解密
-       
-    # 上一级目录
-    parent_dir = current_dir.parent
-    # config.enc 路径
-    config_path = parent_dir / "config.enc"
-    在同一目录，注释掉
-    """
     config_path = current_dir / "config.enc"
 
     if not config_path.exists():
-
         raise FileNotFoundError(f"❌ 找不到 config.enc: {config_path}")
         
     encrypted_content = config_path.read_text(encoding="utf-8").strip()
@@ -94,10 +73,11 @@ def getconfig(password: str) -> dict:
     except ValueError as e:
         print("❌ 解密失败:", e)
         raise
+
+
 # ==================================================
 # GitHub Secret 回写
 # ==================================================
-
 class SecretUpdater:
     def __init__(self, name):
         self.name = name
@@ -148,8 +128,7 @@ class SecretUpdater:
 # ==================================================
 # Session 工厂
 # ==================================================
-
-def session_from_cookies(cookies, headers=None):
+def session_from_cookies(cookies, headers=None, proxy_url=None):
     print("🧩 [Session] 开始从 cookies 构建 session")
 
     session = requests.Session()
@@ -195,26 +174,33 @@ def session_from_cookies(cookies, headers=None):
         session.headers.update(headers)
         print("📎 [Session] 已合并自定义 headers")
 
+    # ---------- 仅新增：requests 代理 ----------
+    if proxy_url:
+        session.proxies.update({
+            "http": proxy_url,
+            "https": proxy_url,
+        })
+        session.trust_env = False
+        print(f"🌐 [Session] 使用代理: {proxy_url}")
+
     print("✅ [Session] Session 构建完成")
     return session
 
 
-
 # ==================================================
-# 对外统一签到入口（带参数完整性检查）
+# 对外统一签到入口
 # ==================================================
-
 def perform_token_checkin(
     cookies: dict,
     account_name: str,
     checkin_url: str = None,
     main_site: str = None,
     headers=None,
+    proxy_url=None,
 ):
     print("=" * 60)
     print(f"🚀 [{account_name}] perform_token_checkin 入口")
 
-    # ---------- 参数完整性检查 ----------
     missing = []
 
     if not cookies:
@@ -233,16 +219,17 @@ def perform_token_checkin(
         print("=" * 60)
         return False, f"参数不完整: {', '.join(missing)}"
 
-    # ---------- 参数打印 ----------
     print(f"👤 account_name = {account_name}")
     print(f"🔗 checkin_url  = {checkin_url}")
     print(f"🏠 main_site   = {main_site}")
     print(f"🍪 cookies 数量 = {len(cookies)}")
 
-    # ---------- 构建 Session ----------
-    session = session_from_cookies(cookies, headers=headers)
+    session = session_from_cookies(
+        cookies,
+        headers=headers,
+        proxy_url=proxy_url,
+    )
 
-    # ---------- 执行签到 ----------
     result = perform_checkin(
         session=session,
         account_name=account_name,
@@ -257,12 +244,10 @@ def perform_token_checkin(
 # ==================================================
 # 签到主流程
 # ==================================================
-
 def perform_checkin(session, account_name, checkin_url, main_site):
     print(f"\n🎯 [{account_name}] 开始签到流程")
 
     try:
-        # 1️⃣ 直接访问签到页
         print(f"➡️ [STEP1] GET {checkin_url}")
         resp = session.get(checkin_url, timeout=30)
         print(f"⬅️ [STEP1] HTTP {resp.status_code}")
@@ -275,7 +260,6 @@ def perform_checkin(session, account_name, checkin_url, main_site):
             if ok:
                 return True, msg
 
-        # 2️⃣ API fallback
         print("🔁 [STEP2] 尝试 API fallback")
         api_endpoints = [
             f"{checkin_url}/api/checkin",
@@ -320,7 +304,6 @@ def perform_checkin(session, account_name, checkin_url, main_site):
 # ==================================================
 # 页面分析与辅助函数
 # ==================================================
-
 def analyze_and_checkin(session, html, page_url, account_name):
     print(f"🔍 [{account_name}] analyze_and_checkin")
 
