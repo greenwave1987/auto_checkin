@@ -86,19 +86,18 @@ def main():
     if not password:
         raise RuntimeError("❌ 未设置 CONFIG_PASSWORD")
     config = getconfig(password)
-
+    # 读取账号信息
     LF_INFO = config.get("LF_INFO","")
     if not LF_INFO:
         raise RuntimeError("❌ 配置文件中不存在 LF_INFO")
     print(f'ℹ️ 已读取: {LF_INFO.get("description","")}')
-
-    accounts = LF_INFO.get("value","")
-    # 读取 Secrets 环境变量
-    raw_accounts = os.getenv("LEAFLOW_ACCOUNTS", "").strip()
-    raw_proxies = os.getenv("SOCKS5_INFO", "").strip()
-
-    accounts = [a.strip() for a in raw_accounts.split('\n') if a.strip()]
-    proxies = [p.strip() for p in raw_proxies.split(',') if p.strip()]
+    accounts = LF_INFO.get("value","").strip()
+    # 读取代理信息
+    PROXY_INFO = config.get("PROXY_INFO","")
+    if not PROXY_INFO:
+        raise RuntimeError("❌ 配置文件中不存在 PROXY_INFO")
+    print(f'ℹ️ 已读取: {PROXY_INFO.get("description","")}')
+    proxies = PROXY_INFO.get("value","").strip()
 
     if not accounts:
         print("❌ 错误: 未配置 LEAFLOW_ACCOUNTS")
