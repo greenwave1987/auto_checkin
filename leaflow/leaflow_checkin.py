@@ -86,7 +86,9 @@ def run_task_for_account(account, proxy, cookie=None):
         # ----------------------------
         if final_cookie:
             print("🔹 注入已有 cookie 测试有效性")
+            page.goto("https://leaflow.net", timeout=30000)
             ctx.add_cookies(final_cookie)  # 直接传 login_and_get_cookies 返回的列表
+            page.reload()
         
             if cookies_ok(page):
                 print(f"✨ cookie 有效，无需登录")
