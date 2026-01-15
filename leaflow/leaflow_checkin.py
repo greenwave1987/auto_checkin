@@ -3,8 +3,24 @@ import os
 import subprocess
 import time
 import requests
-from engine.Leaflow_login import open_browser, login_and_get_cookies
-from engine.main import perform_token_checkin
+
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, BASE_DIR)
+
+from engine.safe_print import enable_safe_print
+enable_safe_print()
+
+from engine.notify import send_notify
+from engine.playwright_login import (
+    open_browser,
+    cookies_ok,
+    login_and_get_cookies,
+)
+from engine.main import (
+    perform_token_checkin,
+    SecretUpdater,
+    getconfig
+)
 
 def run_task_for_account(account_str, proxy_str):
     """为单个账号启动专属隧道并执行登录签到"""
@@ -64,6 +80,18 @@ def run_task_for_account(account_str, proxy_str):
         print(f"✨ 账号 {email} 处理完毕，清理隧道。")
 
 def main():
+    useproxy = True
+    password = os.getenv("CONFIG_PASSWORD","").strip()
+    if not password:
+        raise RuntimeError("❌ 未设置 CONFIG_PASSWORD")
+    config = getconfig(password)
+
+    LF_INFO = config.get("LF_INFO","")
+    if not LF_INFO:
+        raise RuntimeError("❌ 配置文件中不存在 LF_INFO")
+    print(f'ℹ️ 已读取: {LF_INFO.get("description","")}')
+
+    accounts = LF_INFO.get("value","")
     # 读取 Secrets 环境变量
     raw_accounts = os.getenv("LEAFLOW_ACCOUNTS", "").strip()
     raw_proxies = os.getenv("SOCKS5_INFO", "").strip()
