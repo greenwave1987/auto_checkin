@@ -53,7 +53,13 @@ def run_task_for_account(account, proxy):
         pw, browser, ctx, page = pw_bundle
         cookies = login_and_get_cookies(page, username, account['password'])
 
-        # 4. 执行签到逻辑
+        # 4. 访问面板测试cookie
+        if cookies_ok(page):
+            print(f"✨ cookies 有效，开始签到！")
+        else:
+            print(f"✨ cookies 无效，退出！")
+            return
+        # 5. 执行签到逻辑
         if cookies:
             success, msg = perform_token_checkin(
                 cookies=cookies,
