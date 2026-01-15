@@ -99,14 +99,13 @@ def login_and_get_cookies(page, email, password):
             print(f"   ↳ checkbox 状态: {checkbox.get_attribute('aria-checked')}")
         except PlaywrightTimeoutError:
             print("⚠️ 未找到保持登录复选框，跳过")
-
-        # 截图 & 通知（不影响主流程）
-        shot1 = take_shot(page, "准备登录")
-        if shot1:
-            try:
-                send_notify.send_telegram_image("leaflow_login", "准备登录", shot1)
-            except Exception as e:
-                print(f"⚠️ 通知发送失败: {e}")
+            # 截图 & 通知（不影响主流程）
+            shot1 = take_shot(page, "准备登录")
+            if shot1:
+                try:
+                    send_notify("leaflow_login", "准备登录", shot1)
+                except Exception as e:
+                    print(f"⚠️ 通知发送失败: {e}")
 
         # 点击登录
         print("➡️ 点击登录按钮")
@@ -116,17 +115,16 @@ def login_and_get_cookies(page, email, password):
         page.wait_for_load_state("networkidle", timeout=60000)
         time.sleep(5)
 
-        shot2 = take_shot(page, "登录完成")
-        if shot2:
-            try:
-                send_notify.send_telegram_image("leaflow_login", "登录完成", shot2)
-            except Exception as e:
-                print(f"⚠️ 通知发送失败: {e}")
-
         # 登录结果判断
         print(f"🔎 当前 URL: {page.url}")
         if "login" in page.url.lower():
             raise RuntimeError("登录失败：仍在登录页")
+            shot2 = take_shot(page, "登录完成")
+            if shot2:
+                try:
+                    send_notify("leaflow_login", "登录完成", shot2)
+                except Exception as e:
+                    print(f"⚠️ 通知发送失败: {e}")
 
         print("🎉 登录成功")
         return page.context.cookies()
