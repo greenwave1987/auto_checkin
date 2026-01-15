@@ -25,7 +25,7 @@ class TelegramNotifier:
     # =========================
     
     def _load_all_bots(self) -> list[dict]:
-        tg_config = self.config.get_value("TG_BOT")  # 取 TG_BOT 配置
+        tg_config = self.config.get_value("BOT_INFO")  # 取 TG_BOT 配置
         tg_info = tg_config.get("value", [])        # 再取 value 列表
     
         if not isinstance(tg_info, list) or not tg_info:
