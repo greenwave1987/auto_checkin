@@ -58,13 +58,15 @@ def decrypt_json(encrypted_str: str, password: str) -> dict:
 def getconfig(password: str) -> dict:
     """
     从脚本上一级目录读取 config.enc 并解密
-    """
+    
     # 当前脚本所在目录
     current_dir = Path(__file__).resolve().parent
     # 上一级目录
     parent_dir = current_dir.parent
     # config.enc 路径
     config_path = parent_dir / "config.enc"
+    """
+    config_path = "config.enc"
 
     if not config_path.exists():
         raise FileNotFoundError(f"❌ 找不到 config.enc: {config_path}")
