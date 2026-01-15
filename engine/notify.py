@@ -25,15 +25,20 @@ class TelegramNotifier:
     # =========================
     
     def _load_all_bots(self) -> list[dict]:
-        tg_config = self.config.get_value("BOT_INFO")  # 取 TG_BOT 配置
-        tg_info = tg_config.get("value", [])        # 再取 value 列表
+        tg_config = self.config.get_value("BOT_INFO")  # 直接取配置
+        # tg_config 可能是 dict，也可能直接就是 value 列表
+        if isinstance(tg_config, dict):
+            tg_info = tg_config.get("value", [])
+        elif isinstance(tg_config, list):
+            tg_info = tg_config
+        else:
+            tg_info = []
     
-        if not isinstance(tg_info, list) or not tg_info:
-            raise RuntimeError("❌ TG_BOT 配置为空或格式错误")
+        if not tg_info or not isinstance(tg_info, list):
+            raise RuntimeError("❌ BOT_INFO 配置为空或格式错误")
     
         print(f"✅ 已加载 {len(tg_info)} 个 Telegram Bot")
         return tg_info
-
 
     def _apply_bot(self, index: int):
         bot = self.bots[index]
