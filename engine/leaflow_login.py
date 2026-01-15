@@ -34,9 +34,14 @@ def login_and_get_cookies(page, email, password):
     page.goto(LOGIN_URL, timeout=30000)
     page.wait_for_selector("#account")
     page.fill("#account", email)
-
+    time.sleep(2)
+    
     page.wait_for_selector("#password")
     page.fill("#password", password)
+    time.sleep(2)
+    
+    page.get_by_role("checkbox",name="保持登录状态").click()
+    time.sleep(1)
 
     page.locator('button[type="submit"]').click()
     page.wait_for_load_state("networkidle")
