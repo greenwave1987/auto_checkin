@@ -98,6 +98,7 @@ def main():
     for account, proxy in zip(accounts, proxies):
 
         run_task_for_account(account, proxy)
+        return
 
 if __name__ == "__main__":
     main()
