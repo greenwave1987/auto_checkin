@@ -233,7 +233,7 @@ def main():
             ok, newcookie = run_task_for_account(account, proxy,cookies.get(username,''))
     
             if ok:
-                print(f"✅ 账号 {account} 执行成功，保存新 cookie")
+                print(f"✅ 账号 {username} 执行成功，保存新 cookie")
                 newcookies[username]=newcookie
             else:
                 print(f"⚠️ 账号 {username} 执行失败，不保存 cookie")
