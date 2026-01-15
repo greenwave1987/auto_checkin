@@ -76,54 +76,87 @@ def getconfig(password: str) -> dict:
 
 
 # ==================================================
-# GitHub Secret 回写
+# GitHub Secret 回写与读取
 # ==================================================
 class SecretUpdater:
-    def __init__(self, name):
+    def __init__(self, name: str):
         self.name = name
-        print(f"🔐 初始化，secret 名称 = {name}")
+        print(f"🔐 初始化 SecretUpdater，secret = {self.name}")
 
+    # ==================================================
+    # 回写 GitHub Secret
+    # ==================================================
     def update(self, value):
+        """
+        value 可以是字符串，也可以是 dict/list
+        """
         print("📝 准备回写 GitHub Secret")
 
         if not REPO or not REPO_TOKEN:
-            print("⚠ 未配置 GITHUB_REPOSITORY / REPO_TOKEN，跳过")
-            return
+            print("⚠ 未配置 GITHUB_REPOSITORY / REPO_TOKEN，跳过回写")
+            return False
 
         headers = {
-            "Authorization": f"token {REPO_TOKEN}",
-            "Accept": "application/vnd.github.v3+json"
+            "Authorization": f"Bearer {REPO_TOKEN}",
+            "Accept": "application/vnd.github+json",
         }
 
-        print(f"🌐 获取公钥: {REPO}")
+        # 1️⃣ 获取公钥
+        print(f"🌐 获取仓库公钥: {REPO}")
         r = requests.get(
             f"https://api.github.com/repos/{REPO}/actions/secrets/public-key",
             headers=headers,
-            timeout=30
+            timeout=30,
         )
-
-        print(f"⬅️ 公钥接口返回 {r.status_code}")
         r.raise_for_status()
-
         key = r.json()
 
-        print("🔑 开始加密 Secret")
-        pk = public.PublicKey(key["key"].encode(), encoding.Base64Encoder())
-        encrypted = public.SealedBox(pk).encrypt(value.encode())
+        # 2️⃣ 如果是 dict/list 自动 JSON 化
+        if isinstance(value, (dict, list)):
+            value_to_store = json.dumps(value)
+        else:
+            value_to_store = str(value)
 
+        # 3️⃣ 加密
+        print("🔑 加密 Secret")
+        pk = public.PublicKey(key["key"].encode(), encoding.Base64Encoder())
+        encrypted = public.SealedBox(pk).encrypt(value_to_store.encode())
+
+        # 4️⃣ 提交
         print(f"📤 提交 Secret: {self.name}")
         r = requests.put(
             f"https://api.github.com/repos/{REPO}/actions/secrets/{self.name}",
             headers=headers,
             json={
                 "encrypted_value": base64.b64encode(encrypted).decode(),
-                "key_id": key["key_id"]
+                "key_id": key["key_id"],
             },
-            timeout=30
+            timeout=30,
         )
 
-        print(f"✅ 回写完成，HTTP {r.status_code}")
+        if r.status_code not in (201, 204):
+            raise RuntimeError(
+                f"❌ Secret 回写失败 HTTP {r.status_code}: {r.text}"
+            )
 
+        print("✅ Secret 回写成功")
+        return True
+
+    # ==================================================
+    # 从环境变量加载 Secret
+    # ==================================================
+    def load(self):
+        raw = os.getenv(self.name)
+        if not raw:
+            print("ℹ️ 未检测到 Secret，首次运行")
+            return None  # 没有数据返回 None
+
+        # 尝试 JSON 解析
+        try:
+            return json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            # 解析失败说明是普通字符串
+            return raw
 
 # ==================================================
 # Session 工厂
