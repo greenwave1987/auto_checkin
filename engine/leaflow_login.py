@@ -6,15 +6,17 @@ from playwright.sync_api import sync_playwright
 LOGIN_URL = "https://leaflow.net/login"
 DASHBOARD_URL = "https://leaflow.net/dashboard"
 
-
-def open_browser():
-    print("🌐 启动浏览器")
+def open_browser(proxy_url=None):
     pw = sync_playwright().start()
+    proxy_config = {"server": proxy_url} if proxy_url else None
+    
     browser = pw.chromium.launch(
         headless=True,
-        args=["--no-sandbox", "--disable-dev-shm-usage"]
+        args=["--no-sandbox", "--disable-dev-shm-usage"],
+        proxy=proxy_config
     )
-    ctx = browser.new_context()
+    # 在上下文也配置代理
+    ctx = browser.new_context(proxy=proxy_config)
     page = ctx.new_page()
     return pw, browser, ctx, page
 
