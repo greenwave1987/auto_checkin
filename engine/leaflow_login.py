@@ -75,7 +75,7 @@ def login_and_get_cookies(page, email, password):
         # ------------------------------
         # 输入账号
         # ------------------------------
-        print(f"✍️ 输入账号{email}")
+        print(f"✍️ 输入账号")
         page.wait_for_selector("#account", timeout=10000)
         page.fill("#account", email)
         time.sleep(2)
@@ -83,7 +83,7 @@ def login_and_get_cookies(page, email, password):
         # ------------------------------
         # 输入密码
         # ------------------------------
-        print(f"✍️ 输入密码{password}")
+        print(f"✍️ 输入密码")
         page.wait_for_selector("#password", timeout=10000)
         page.fill("#password", password)
         time.sleep(2)
