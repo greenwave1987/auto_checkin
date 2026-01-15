@@ -50,7 +50,7 @@ def run_task_for_account(account, proxy):
         # 3. Playwright 登录获取 Cookies
         pw_bundle = open_browser(proxy_url=local_proxy)
         pw, browser, ctx, page = pw_bundle
-        cookies = login_and_get_cookies(page, email, password)
+        cookies = login_and_get_cookies(page, account['username'], account['password'])
 
         # 4. 执行签到逻辑
         if cookies:
@@ -73,7 +73,7 @@ def run_task_for_account(account, proxy):
         if gost_proc:
             gost_proc.terminate()
             gost_proc.wait()
-        print(f"✨ 账号 {email} 处理完毕，清理隧道。")
+        print(f"✨ 账号 {account['username']} 处理完毕，清理隧道。")
 
 def main():
     useproxy = True
