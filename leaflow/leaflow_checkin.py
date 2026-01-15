@@ -82,12 +82,10 @@ def run_task_for_account(account_str, proxy_str):
 
 def main():
     useproxy = True
-    password = os.getenv("CONFIG_PASSWORD","").strip()
-    if not password:
-        raise RuntimeError("❌ 未设置 CONFIG_PASSWORD")
-    config = getconfig(password)
+
     # 读取账号信息
     accounts = getvalue("LF_INFO")
+    
     # 读取代理信息
     proxies = getvalue("proxy")
 
