@@ -23,6 +23,18 @@ from engine.main import (
     ConfigReader
 )
 
+# 初始化
+_notifier = None
+config = None
+
+def get_notifier():
+    global _notifier,config
+    if config is None:
+        config = ConfigReader()
+    if _notifier is None:
+        _notifier = TelegramNotifier(config)
+    return _notifier
+    
 def run_task_for_account(account, proxy, cookie=None):
     """
     为单个账号启动专属隧道并执行登录签到
@@ -112,11 +124,11 @@ def run_task_for_account(account, proxy, cookie=None):
         )
         print(f"📢 签到结果:{success} ,{msg}")
 
-        return success, {username: final_cookie}, f"{note} | {msg}"
+        return success, final_cookie, f"{note} | {msg}"
 
     except Exception as e:
         print(f"❌ 账号 {username} 执行异常: {e}")
-        return False, {username: None},f"❌ 执行异常: {e}"
+        return False,  None, f"❌ 执行异常: {e}"
 
     finally:
         # ----------------------------
@@ -198,23 +210,21 @@ def jrun_task_for_account(account, proxy,cookie=None):
         print(f"✨ 账号 {username} 处理完毕，清理隧道。")
 
 def main():
+    global config
+    if config is None:
+        config = ConfigReader()
     useproxy = True
     newcookies={}
     results = []
-    # 初始化
-    reader = ConfigReader()
-    notifier = TelegramNotifier(reader)
 
     # 读取账号信息
-    accounts = reader.get_value("LF_INFO")
+    accounts = config.get_value("LF_INFO")
     
     # 读取代理信息
-    proxies = reader.get_value("PROXY_INFO")
+    proxies = config.get_value("PROXY_INFO")
 
-    # 初始化 ConfigReader
-    config = ConfigReader()
     # 初始化 SecretUpdater，会自动根据当前仓库用户名获取 token
-    secret = SecretUpdater("LEAFLOW_COOKIES", config_reader=reader)
+    secret = SecretUpdater("LEAFLOW_COOKIES", config_reader=config)
 
     # 读取
     cookies = secret.load() or {}
@@ -253,7 +263,7 @@ def main():
     # 写入
     secret.update(newcookies)
     # 发送结果
-    notifier.send(
+    get_notifier().send(
         title="Leaflow 自动签到汇总",
         content="\n".join(results)
     )
