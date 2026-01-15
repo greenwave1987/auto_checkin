@@ -108,8 +108,8 @@ def login_and_get_cookies(page, email, password):
         page.locator('button[type="submit"]').click()
 
         print("⏳ 等待登录完成")
-        page.wait_for_load_state("networkidle", timeout=30000)
-        time.sleep(1)
+        page.wait_for_load_state("networkidle", timeout=60000)
+        time.sleep(20)
 
         # ------------------------------
         # 登录结果判断
