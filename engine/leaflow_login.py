@@ -1,11 +1,8 @@
 import time
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+
 from engine.main import ConfigReader
 from engine.notify import TelegramNotifier
-
-config = ConfigReader()
-notifier = TelegramNotifier(config)
-
 
 LOGIN_URL = "https://leaflow.net/login"
 DASHBOARD_URL = "https://leaflow.net/dashboard"
