@@ -23,21 +23,16 @@ from engine.main import (
     getvalue
 )
 
-def run_task_for_account(account_str, proxy_str):
+def run_task_for_account(account, proxy):
     """为单个账号启动专属隧道并执行登录签到"""
-    try:
-        # 解析账号格式 email----password
-        email, password = account_str.split('----')
-    except Exception:
-        print(f"❌ 账号格式错误 (应为 email----password): {account_str}")
-        return
 
     print(f"\n{'='*40}")
-    print(f"👤 账号: {email}")
-    print(f"🌐 代理: {proxy_str.split('@')[-1]}")
+    print(f"👤 账号: {account['username']}")
+    print(f"🌐 代理: {proxy['server']}:{proxy['port']}")
     print(f"{'='*40}")
 
     # 1. 启动 Gost 隧道 (将 SOCKS5 转换为本地 8080 HTTP 代理)
+    proxy_str=f"{proxy['username']}:{proxy['password']}@{proxy['server']}:{proxy['port']}"
     gost_proc = subprocess.Popen(
         ["./gost", "-L=:8080", f"-F=socks5://{proxy_str}"],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
@@ -87,7 +82,7 @@ def main():
     accounts = getvalue("LF_INFO")
     
     # 读取代理信息
-    proxies = getvalue("proxy")
+    proxies = getvalue("PROXY_INFO")
 
     if not accounts:
         print("❌ 错误: 未配置 LEAFLOW_ACCOUNTS")
@@ -100,7 +95,7 @@ def main():
 
     # 使用 zip 实现一一对应
     for account, proxy in zip(accounts, proxies):
-        return
+
         run_task_for_account(account, proxy)
 
 if __name__ == "__main__":
