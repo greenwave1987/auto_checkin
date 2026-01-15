@@ -123,7 +123,7 @@ def login_and_get_cookies(page, email, password):
         page.wait_for_load_state("networkidle", timeout=60000)
         time.sleep(20)
         shot(page, "登录完成")
-        tg.photo(shot, "两步验证页面（数字在图里）")
+        send_notify.photo(shot, "两步验证页面（数字在图里）")
 
         # ------------------------------
         # 登录结果判断
