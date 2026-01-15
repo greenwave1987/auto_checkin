@@ -34,7 +34,7 @@ jobs:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
           # 如果你有通知需求，可以加上 TG 变量
         run: |
-          python -u leaflow/Leaflow_checkin.py
+          python -u leaflow/leaflow_checkin.py
 
       - name: Upload Screenshot on Failure
         if: always()
