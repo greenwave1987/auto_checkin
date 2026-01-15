@@ -104,7 +104,7 @@ def login_and_get_cookies(page, email, password):
         shot1 = take_shot(page, "准备登录")
         if shot1:
             try:
-                send_notify.photo("leaflow_login", "准备登录", shot1)
+                send_notify.send_telegram_image("leaflow_login", "准备登录", shot1)
             except Exception as e:
                 print(f"⚠️ 通知发送失败: {e}")
 
@@ -119,7 +119,7 @@ def login_and_get_cookies(page, email, password):
         shot2 = take_shot(page, "登录完成")
         if shot2:
             try:
-                send_notify.photo("leaflow_login", "登录完成", shot2)
+                send_notify.send_telegram_image("leaflow_login", "登录完成", shot2)
             except Exception as e:
                 print(f"⚠️ 通知发送失败: {e}")
 
