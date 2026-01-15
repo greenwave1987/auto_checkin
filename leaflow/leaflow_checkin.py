@@ -25,14 +25,15 @@ from engine.main import (
 
 def run_task_for_account(account, proxy):
     """为单个账号启动专属隧道并执行登录签到"""
+    username=account['username']
+    proxy_str=f"{proxy['username']}:{proxy['password']}@{proxy['server']}:{proxy['port']}"
 
     print(f"\n{'='*40}")
-    print(f"👤 账号: {account['username']}")
+    print(f"👤 账号: {username}")
     print(f"🌐 代理: {proxy['server']}:{proxy['port']}")
     print(f"{'='*40}")
 
     # 1. 启动 Gost 隧道 (将 SOCKS5 转换为本地 8080 HTTP 代理)
-    proxy_str=f"{proxy['username']}:{proxy['password']}@{proxy['server']}:{proxy['port']}"
     gost_proc = subprocess.Popen(
         ["./gost", "-L=:8080", f"-F=socks5://{proxy_str}"],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
@@ -50,13 +51,13 @@ def run_task_for_account(account, proxy):
         # 3. Playwright 登录获取 Cookies
         pw_bundle = open_browser(proxy_url=local_proxy)
         pw, browser, ctx, page = pw_bundle
-        cookies = login_and_get_cookies(page, account['username'], account['password'])
+        cookies = login_and_get_cookies(page, username, account['password'])
 
         # 4. 执行签到逻辑
         if cookies:
             success, msg = perform_token_checkin(
                 cookies=cookies,
-                account_name=email,
+                account_name=username,
                 checkin_url="https://leaflow.net/user/checkin",
                 main_site="https://leaflow.net",
                 proxy_url=local_proxy
@@ -73,7 +74,7 @@ def run_task_for_account(account, proxy):
         if gost_proc:
             gost_proc.terminate()
             gost_proc.wait()
-        print(f"✨ 账号 {account['username']} 处理完毕，清理隧道。")
+        print(f"✨ 账号 {username} 处理完毕，清理隧道。")
 
 def main():
     useproxy = True
