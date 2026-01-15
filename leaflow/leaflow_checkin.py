@@ -215,8 +215,9 @@ def main():
     global config
     if config is None:
         config = ConfigReader()
-    config = ConfigReader()
-    print("🔍 配置文件 key 列表:", config.all_keys())  # 如果有这个方法
+
+    print("🔍 配置内容:", getattr(config, "config", {}))  # 打印整个配置字典
+
     return
     useproxy = True
     newcookies={}
