@@ -1,41 +1,46 @@
-# engine/leaflow_login.py
+# engine/playwright_login.py
+
 import time
 from playwright.sync_api import sync_playwright
 
-def open_browser(proxy_url=None):
+LOGIN_URL = "https://leaflow.net/login"
+DASHBOARD_URL = "https://leaflow.net/dashboard"
+
+
+def open_browser():
+    print("🌐 启动浏览器")
     pw = sync_playwright().start()
-    proxy_config = {"server": proxy_url} if proxy_url else None
-    
     browser = pw.chromium.launch(
         headless=True,
-        args=["--no-sandbox", "--disable-dev-shm-usage"],
-        proxy=proxy_config
+        args=["--no-sandbox", "--disable-dev-shm-usage"]
     )
-    # 在上下文也配置代理
-    ctx = browser.new_context(proxy=proxy_config)
+    ctx = browser.new_context()
     page = ctx.new_page()
     return pw, browser, ctx, page
 
+
+def cookies_ok(page):
+    print("🔍 校验 cookies")
+    page.goto(DASHBOARD_URL, timeout=30000)
+    time.sleep(2)
+    return "login" not in page.url.lower()
+
+
 def login_and_get_cookies(page, email, password):
-    print(f"🔑 正在登录: {email}...")
-    try:
-        page.goto("https://leaflow.net/login", timeout=40000)
-        page.fill("#account", email)
-        page.fill("#password", password)
-        page.click('button[type="submit"]')
-        
-        # 等待跳转到 dashboard 或 url 变化
-        page.wait_for_load_state("networkidle")
-        time.sleep(3)
-        
-        if "login" in page.url.lower():
-            print("❌ 登录失败，页面仍留在登录页")
-            return None
-            
-        print("✅ 登录成功，提取 Cookies")
-        return page.context.cookies()
-    except Exception as e:
-        print(f"❌ 登录过程出错: {e}")
-        # 截图留存以供 Actions Artifact 下载调试
-        page.screenshot(path=f"error_{email}.png")
-        return None
+    print(f"🔐 登录: {email}")
+
+    page.goto(LOGIN_URL, timeout=30000)
+    page.wait_for_selector("#account")
+    page.fill("#account", email)
+
+    page.wait_for_selector("#password")
+    page.fill("#password", password)
+
+    page.locator('button[type="submit"]').click()
+    page.wait_for_load_state("networkidle")
+
+    if "login" in page.url.lower():
+        raise RuntimeError("登录失败")
+
+    print("🎉 登录成功")
+    return page.context.cookies()
