@@ -15,64 +15,72 @@ REPO_TOKEN = os.getenv("REPO_TOKEN")
 # ==================================================
 # 解密函数并读取信息
 # ==================================================
-def getvalue(key: str) -> dict:
-    password = os.getenv("CONFIG_PASSWORD","").strip()
-    if not password:
-        raise RuntimeError("❌ 未设置 CONFIG_PASSWORD")
-    config = getconfig(password)
-    # 读取账号信息
-    INFO = config.get(key,"")
-    if not INFO:
-        raise RuntimeError(f"❌ 配置文件中不存在 {key}")
-    print(f'ℹ️ 已读取{key}: {INFO.get("description","")}')
-    value = INFO.get("value","")
-    return value
-
-def derive_key(password: str) -> bytes:
+class ConfigReader:
     """
-    从密码字符串派生 32 字节 AES key
+    加密配置文件读取器
+    功能：
+    - 使用 CONFIG_PASSWORD 解密 config.enc
+    - 提供 get_value(key) 获取配置项
     """
-    return sha256(password.encode()).digest()
-
-
-def decrypt_json(encrypted_str: str, password: str) -> dict:
-    """
-    解密 AES-GCM base64 编码的 JSON 字符串
-    """
-    try:
-        key = derive_key(password)
-        raw = base64.b64decode(encrypted_str)
-
-        if len(raw) < 13:  # nonce 12 字节 + 至少 1 字节密文
-            raise ValueError("加密数据格式错误")
-
-        nonce = raw[:12]
-        ciphertext = raw[12:]
-
-        aesgcm = AESGCM(key)
-        plaintext = aesgcm.decrypt(nonce, ciphertext, None)
-
-        return json.loads(plaintext.decode("utf-8"))
-
-    except Exception as e:
-        raise ValueError(f"解密失败: {e}")
+    def __init__(self, password: str = None, config_file: str = None):
+        # 1️⃣ 密码
+        self.password = password or os.getenv("CONFIG_PASSWORD", "").strip()
+        if not self.password:
+            raise RuntimeError("❌ 未设置 CONFIG_PASSWORD")
         
-def getconfig(password: str) -> dict:
-    current_dir = Path(__file__).resolve().parent
-    config_path = current_dir / "config.enc"
+        # 2️⃣ 配置文件路径
+        current_dir = Path(__file__).resolve().parent
+        self.config_file = Path(config_file) if config_file else current_dir / "config.enc"
+        if not self.config_file.exists():
+            raise FileNotFoundError(f"❌ 找不到配置文件: {self.config_file}")
 
-    if not config_path.exists():
-        raise FileNotFoundError(f"❌ 找不到 config.enc: {config_path}")
-        
-    encrypted_content = config_path.read_text(encoding="utf-8").strip()
+        # 3️⃣ 解密配置
+        encrypted_content = self.config_file.read_text(encoding="utf-8").strip()
+        try:
+            self.config = self._decrypt_json(encrypted_content)
+            print("✅ 配置解密成功")
+        except ValueError as e:
+            print(f"❌ 配置解密失败: {e}")
+            raise
 
-    try:
-        data = decrypt_json(encrypted_content, password)
-        print("✅ 解密成功")
-        return data
-    except ValueError as e:
-        print("❌ 解密失败:", e)
-        raise
+    # ===============================
+    # 私有方法：派生 AES key
+    # ===============================
+    def _derive_key(self) -> bytes:
+        return sha256(self.password.encode()).digest()
+
+    # ===============================
+    # 私有方法：解密 AES-GCM + base64 JSON
+    # ===============================
+    def _decrypt_json(self, encrypted_str: str) -> dict:
+        try:
+            key = self._derive_key()
+            raw = base64.b64decode(encrypted_str)
+
+            if len(raw) < 13:
+                raise ValueError("加密数据格式错误")
+
+            nonce = raw[:12]
+            ciphertext = raw[12:]
+
+            aesgcm = AESGCM(key)
+            plaintext = aesgcm.decrypt(nonce, ciphertext, None)
+
+            return json.loads(plaintext.decode("utf-8"))
+        except Exception as e:
+            raise ValueError(f"解密失败: {e}")
+
+    # ===============================
+    # 公有方法：获取配置项
+    # ===============================
+    def get_value(self, key: str):
+        info = self.config.get(key, "")
+        if not info:
+            raise RuntimeError(f"❌ 配置文件中不存在 {key}")
+
+        description = info.get("description", "")
+        print(f"ℹ️ 已读取 {key}: {description}")
+        return info.get("value", "")
 
 
 # ==================================================
