@@ -75,18 +75,18 @@ def login_and_get_cookies(page, email, password):
         # ------------------------------
         # 输入账号
         # ------------------------------
-        print("✍️ 输入账号")
+        print(f"✍️ 输入账号{email}")
         page.wait_for_selector("#account", timeout=10000)
         page.fill("#account", email)
-        time.sleep(1)
+        time.sleep(2)
 
         # ------------------------------
         # 输入密码
         # ------------------------------
-        print("✍️ 输入密码")
+        print(f"✍️ 输入密码{password}")
         page.wait_for_selector("#password", timeout=10000)
         page.fill("#password", password)
-        time.sleep(1)
+        time.sleep(2)
 
         # ------------------------------
         # 勾选“保持登录状态”
