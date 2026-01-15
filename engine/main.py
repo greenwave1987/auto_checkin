@@ -13,8 +13,20 @@ REPO = os.getenv("GITHUB_REPOSITORY")
 REPO_TOKEN = os.getenv("REPO_TOKEN")
 
 # ==================================================
-# 解密函数
+# 解密函数并读取信息
 # ==================================================
+def getconfig(key: str) -> dict:
+    password = os.getenv("CONFIG_PASSWORD","").strip()
+    if not password:
+        raise RuntimeError("❌ 未设置 CONFIG_PASSWORD")
+    config = getconfig(password)
+    # 读取账号信息
+    INFO = config.get("key","")
+    if not LF_INFO:
+        raise RuntimeError(f"❌ 配置文件中不存在 {key}")
+    print(f'ℹ️ 已读取: {INFO.get("description","")}')
+    value = INFO.get("value","").strip()
+    return value
 
 def derive_key(password: str) -> bytes:
     """
@@ -65,6 +77,7 @@ def getconfig(password: str) -> dict:
     parent_dir = current_dir.parent
     # config.enc 路径
     config_path = parent_dir / "config.enc"
+    在同一目录，注释掉
     """
     config_path = "config.enc"
 
