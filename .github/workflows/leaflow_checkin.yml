@@ -29,9 +29,7 @@ jobs:
 
       - name: Run Task
         env:
-          LEAFLOW_ACCOUNTS: ${{ secrets.LEAFLOW_ACCOUNTS }}
-          SOCKS5_INFO: ${{ secrets.SOCKS5_INFO }}
-          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+          CONFIG_PASSWORD: ${{ secrets.CONFIG_PASSWORD }}
           # 如果你有通知需求，可以加上 TG 变量
         run: |
           python -u leaflow/leaflow_checkin.py
