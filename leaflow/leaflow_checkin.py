@@ -215,7 +215,7 @@ def main():
     secret = SecretUpdater("LEAFLOW_COOKIES", config_reader=reader)
 
     # 读取
-    cookies = secret.load()
+    cookies = secret.load() or {}
 
     if not accounts:
         print("❌ 错误: 未配置 LEAFLOW_ACCOUNTS")
