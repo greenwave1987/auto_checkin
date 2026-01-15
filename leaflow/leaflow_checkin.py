@@ -230,7 +230,7 @@ def main():
 
         try:
             # run_task_for_account 返回 ok（bool）和 newcookie（dict 或 str）
-            ok, newcookie = run_task_for_account(account, proxy,cookies.get(account,''))
+            ok, newcookie = run_task_for_account(account, proxy,cookies.get(username,''))
     
             if ok:
                 print(f"✅ 账号 {account} 执行成功，保存新 cookie")
