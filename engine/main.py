@@ -4,10 +4,80 @@ import os
 import base64
 import requests
 from nacl import public, encoding
+import json
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from hashlib import sha256
+from pathlib import Path
 
 REPO = os.getenv("GITHUB_REPOSITORY")
 REPO_TOKEN = os.getenv("REPO_TOKEN")
 
+# ==================================================
+# 解密函数
+# ==================================================
+
+def derive_key(password: str) -> bytes:
+    """
+    从密码字符串派生 32 字节 AES key
+    """
+    return sha256(password.encode()).digest()
+
+
+def decrypt_json(encrypted_str: str, password: str) -> dict:
+    """
+    解密 AES-GCM base64 编码的 JSON 字符串
+
+    参数:
+        encrypted_str: 加密后的 base64 字符串
+        password: 加密时使用的密码
+
+    返回:
+        解密后的 JSON 数据（dict）
+
+    异常:
+        ValueError: 解密失败或内容非 JSON
+    """
+    try:
+        key = derive_key(password)
+        raw = base64.b64decode(encrypted_str)
+
+        if len(raw) < 13:  # nonce 12 字节 + 至少 1 字节密文
+            raise ValueError("加密数据格式错误")
+
+        nonce = raw[:12]
+        ciphertext = raw[12:]
+
+        aesgcm = AESGCM(key)
+        plaintext = aesgcm.decrypt(nonce, ciphertext, None)
+
+        return json.loads(plaintext.decode("utf-8"))
+
+    except Exception as e:
+        raise ValueError(f"解密失败: {e}")
+        
+def getconfig(password: str) -> dict:
+    """
+    从脚本上一级目录读取 config.enc 并解密
+    """
+    # 当前脚本所在目录
+    current_dir = Path(__file__).resolve().parent
+    # 上一级目录
+    parent_dir = current_dir.parent
+    # config.enc 路径
+    config_path = parent_dir / "config.enc"
+
+    if not config_path.exists():
+        raise FileNotFoundError(f"❌ 找不到 config.enc: {config_path}")
+
+    encrypted_content = config_path.read_text(encoding="utf-8").strip()
+
+    try:
+        data = decrypt_json(encrypted_content, password)
+        print("✅ 解密成功")
+        return data
+    except ValueError as e:
+        print("❌ 解密失败:", e)
+        raise
 # ==================================================
 # GitHub Secret 回写
 # ==================================================
