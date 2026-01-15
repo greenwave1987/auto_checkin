@@ -20,11 +20,116 @@ from engine.leaflow_login import (
 from engine.main import (
     perform_token_checkin,
     SecretUpdater,
-    getvalue
+    ConfigReader
 )
 
+def run_task_for_account(account, proxy, cookie=None):
+    """
+    为单个账号启动专属隧道并执行登录签到
+    - account: dict, 至少包含 'username' 和 'password'
+    - proxy: dict, 至少包含 'server','port','username','password'
+    - cookie: 可选已有 cookie
+    返回:
+        ok: bool, 是否签到成功
+        newcookie: dict, {username: cookie}，用于更新统一 cookie 字典
+    """
+    username = account['username']
+    proxy_str = f"{proxy['username']}:{proxy['password']}@{proxy['server']}:{proxy['port']}"
+    
+    print(f"\n{'='*40}")
+    print(f"👤 账号: {username}")
+    print(f"🌐 代理: {proxy['server']}:{proxy['port']}")
+    print(f"{'='*40}")
 
-def run_task_for_account(account, proxy):
+    gost_proc = None
+    pw_bundle = None
+    final_cookie = cookie or ""
+
+    try:
+        # ----------------------------
+        # 1️⃣ 启动 Gost 隧道
+        # ----------------------------
+        gost_proc = subprocess.Popen(
+            ["./gost", "-L=:8080", f"-F=socks5://{proxy_str}"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+        time.sleep(5)
+        local_proxy = "http://127.0.0.1:8080"
+
+        # ----------------------------
+        # 2️⃣ 测试隧道是否可用
+        # ----------------------------
+        res = requests.get("https://api.ipify.org", proxies={"http": local_proxy, "https": local_proxy}, timeout=15)
+        print(f"✅ 隧道就绪，出口 IP: {res.text.strip()}")
+
+        # ----------------------------
+        # 3️⃣ 打开浏览器
+        # ----------------------------
+        pw_bundle = open_browser(proxy_url=local_proxy)
+        pw, browser, ctx, page = pw_bundle
+
+        # ----------------------------
+        # 4️⃣ 如果已有 cookie，先注入测试
+        # ----------------------------
+        if final_cookie:
+            print("🔹 注入已有 cookie 测试有效性")
+            ctx.add_cookies([{
+                'name': k,
+                'value': v,
+                'domain': ".leaflow.net",
+                'path': "/",
+            } for k, v in final_cookie.items()])
+            
+            if cookies_ok(page):
+                print(f"✨ cookie 有效，无需登录")
+            else:
+                print(f"⚠ cookie 无效，需要登录获取")
+                final_cookie = login_and_get_cookies(page, username, account['password'])
+        else:
+            print("⚠ 没有 cookie，开始登录获取")
+            final_cookie = login_and_get_cookies(page, username, account['password'])
+
+        # ----------------------------
+        # 5️⃣ 执行签到逻辑
+        # ----------------------------
+        print("📝 开始签到")
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+            "DNT": "1",
+            "Connection": "keep-alive",
+            "Upgrade-Insecure-Requests": "1"
+        }
+
+        success, msg = perform_token_checkin(
+            cookies=final_cookie,
+            account_name=username,
+            checkin_url="https://checkin.leaflow.net",
+            main_site="https://leaflow.net",
+            headers=headers,
+            proxy_url=local_proxy
+        )
+        print(f"📢 签到结果: {msg}")
+
+        return success, {username: final_cookie}
+
+    except Exception as e:
+        print(f"❌ 账号 {username} 执行异常: {e}")
+        return False, {username: None}
+
+    finally:
+        # ----------------------------
+        # 6️⃣ 清理资源
+        # ----------------------------
+        if pw_bundle:
+            pw_bundle[1].close()  # browser.close()
+            pw_bundle[0].stop()   # pw.stop()
+        if gost_proc:
+            gost_proc.terminate()
+            gost_proc.wait()
+        print(f"✨ 账号 {username} 处理完毕，清理隧道。")
+def jrun_task_for_account(account, proxy,cookie=None):
     """为单个账号启动专属隧道并执行登录签到"""
     username=account['username']
     proxy_str=f"{proxy['username']}:{proxy['password']}@{proxy['server']}:{proxy['port']}"
@@ -94,12 +199,23 @@ def run_task_for_account(account, proxy):
 
 def main():
     useproxy = True
+    newcookies={}
+    # 初始化
+    reader = ConfigReader()
 
     # 读取账号信息
-    accounts = getvalue("LF_INFO")
+    accounts = reader.get_value("LF_INFO")
     
     # 读取代理信息
-    proxies = getvalue("PROXY_INFO")
+    proxies = reader.get_value("PROXY_INFO")
+
+    # 初始化 ConfigReader
+    config = ConfigReader()
+    # 初始化 SecretUpdater，会自动根据当前仓库用户名获取 token
+    secret = SecretUpdater("LEAFLOW_COOKIES", config_reader=reader)
+
+    # 读取
+    cookies = secret.load()
 
     if not accounts:
         print("❌ 错误: 未配置 LEAFLOW_ACCOUNTS")
@@ -112,9 +228,24 @@ def main():
 
     # 使用 zip 实现一一对应
     for account, proxy in zip(accounts, proxies):
+        username=account['username']
 
-        run_task_for_account(account, proxy)
-        return
+        print(f"🚀 开始处理账号: {username}, 使用代理: {proxy}")
+
+        try:
+            # run_task_for_account 返回 ok（bool）和 newcookie（dict 或 str）
+            ok, newcookie = run_task_for_account(account, proxy,cookies.get(account,''))
+    
+            if ok:
+                print(f"✅ 账号 {account} 执行成功，保存新 cookie")
+                newcookies[username]=newcookie
+            else:
+                print(f"⚠️ 账号 {username} 执行失败，不保存 cookie")
+    
+        except Exception as e:
+            print(f"❌ 账号 {username} 执行异常: {e}")
+    # 写入
+    secret.update(newcookies)
 
 if __name__ == "__main__":
     main()
