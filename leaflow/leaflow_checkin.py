@@ -230,7 +230,7 @@ def main():
     for account, proxy in zip(accounts, proxies):
         username=account['username']
 
-        print(f"🚀 开始处理账号: {username}, 使用代理: {proxy}")
+        print(f"🚀 开始处理账号: {username}, 使用代理: {proxy['server']}")
 
         try:
             # run_task_for_account 返回 ok（bool）和 newcookie（dict 或 str）
