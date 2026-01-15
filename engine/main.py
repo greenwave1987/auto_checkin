@@ -79,7 +79,7 @@ def getconfig(password: str) -> dict:
     config_path = parent_dir / "config.enc"
     在同一目录，注释掉
     """
-    config_path = "config.enc"
+    config_path = current_dir / "config.enc"
 
     if not config_path.exists():
         raise FileNotFoundError(f"❌ 找不到 config.enc: {config_path}")
