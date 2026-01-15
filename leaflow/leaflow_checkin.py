@@ -11,7 +11,7 @@ sys.path.insert(0, BASE_DIR)
 from engine.safe_print import enable_safe_print
 enable_safe_print()
 
-from engine.notify import send_notify
+from engine.notify import TelegramNotifier
 from engine.leaflow_login import (
     open_browser,
     cookies_ok,
@@ -33,6 +33,7 @@ def run_task_for_account(account, proxy, cookie=None):
         ok: bool, 是否签到成功
         newcookie: dict, {username: cookie}，用于更新统一 cookie 字典
     """
+    note = ""
     username = account['username']
     proxy_str = f"{proxy['username']}:{proxy['password']}@{proxy['server']}:{proxy['port']}"
     
@@ -77,11 +78,14 @@ def run_task_for_account(account, proxy, cookie=None):
         
             if cookies_ok(page):
                 print(f"✨ cookie 有效，无需登录")
+                note = f"✨ cookie 有效，无需登录"
             else:
                 print(f"⚠ cookie 无效，需要登录获取")
+                note = f"⚠ cookie 无效，需要登录获取"
                 final_cookie = login_and_get_cookies(page, username, account['password'])
         else:
             print("⚠ 没有 cookie，开始登录获取")
+            note = f"⚠ 没有 cookie，开始登录获取"
             final_cookie = login_and_get_cookies(page, username, account['password'])
 
 
@@ -106,13 +110,13 @@ def run_task_for_account(account, proxy, cookie=None):
             headers=headers,
             proxy_url=local_proxy
         )
-        print(f"📢 签到结果: {msg}")
+        print(f"📢 签到结果:{success} ,{msg}")
 
-        return success, {username: final_cookie}
+        return success, {username: final_cookie}, f"{note} | {msg}"
 
     except Exception as e:
         print(f"❌ 账号 {username} 执行异常: {e}")
-        return False, {username: None}
+        return False, {username: None},f"❌ 执行异常: {e}"
 
     finally:
         # ----------------------------
@@ -196,8 +200,10 @@ def jrun_task_for_account(account, proxy,cookie=None):
 def main():
     useproxy = True
     newcookies={}
+    results = []
     # 初始化
     reader = ConfigReader()
+    notifier = TelegramNotifier(reader)
 
     # 读取账号信息
     accounts = reader.get_value("LF_INFO")
@@ -227,22 +233,30 @@ def main():
         username=account['username']
 
         print(f"🚀 开始处理账号: {username}, 使用代理: {proxy['server']}")
-
+        results.append(f"🚀 账号：{username}, 使用代理: {proxy['server']}")
         try:
             # run_task_for_account 返回 ok（bool）和 newcookie（dict 或 str）
-            ok, newcookie = run_task_for_account(account, proxy,cookies.get(username,''))
+            ok, newcookie,msg = run_task_for_account(account, proxy,cookies.get(username,''))
     
             if ok:
                 print(f"✅ 账号 {username} 执行成功，保存新 cookie")
+                results.append(f"✅ 账号 {username} 执行成功:{msg}")
                 newcookies[username]=newcookie
             else:
                 print(f"⚠️ 账号 {username} 执行失败，不保存 cookie")
+                results.append(f"⚠️ 账号 {username} 执行失败:{msg}")
     
         except Exception as e:
             print(f"❌ 账号 {username} 执行异常: {e}")
+            results.append(f"❌ 账号 {username} 执行异常: {e}")
 
     # 写入
     secret.update(newcookies)
+    # 发送结果
+    notifier.send(
+        title="Leaflow 自动签到汇总",
+        content="\n".join(results)
+    )
 
 if __name__ == "__main__":
     main()
