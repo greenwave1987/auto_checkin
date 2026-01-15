@@ -73,13 +73,8 @@ def run_task_for_account(account, proxy, cookie=None):
         # ----------------------------
         if final_cookie:
             print("🔹 注入已有 cookie 测试有效性")
-            ctx.add_cookies([{
-                'name': k,
-                'value': v,
-                'domain': ".leaflow.net",
-                'path': "/",
-            } for k, v in final_cookie.items()])
-            
+            ctx.add_cookies(final_cookie)  # 直接传 login_and_get_cookies 返回的列表
+        
             if cookies_ok(page):
                 print(f"✨ cookie 有效，无需登录")
             else:
@@ -88,6 +83,7 @@ def run_task_for_account(account, proxy, cookie=None):
         else:
             print("⚠ 没有 cookie，开始登录获取")
             final_cookie = login_and_get_cookies(page, username, account['password'])
+
 
         # ----------------------------
         # 5️⃣ 执行签到逻辑
