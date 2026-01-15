@@ -24,7 +24,7 @@ def getvalue(key: str) -> dict:
     INFO = config.get(key,"")
     if not INFO:
         raise RuntimeError(f"❌ 配置文件中不存在 {key}")
-    print(f'ℹ️ 已读取: {INFO.get("description","")}')
+    print(f'ℹ️ 已读取{key}: {INFO.get("description","")}')
     value = INFO.get("value","")
     return value
 
