@@ -1,0 +1,44 @@
+name: leaflow 自动登录签到
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "5 0,12 * * *"
+
+jobs:
+  checkin:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Gost
+        run: |
+          curl -L https://github.com/ginuerzh/gost/releases/download/v2.11.5/gost-linux-amd64-2.11.5.gz | gunzip > gost
+          chmod +x gost
+
+      - name: Install Deps
+        run: |
+          pip install playwright requests pynacl requests[socks]
+          playwright install chromium --with-deps
+
+      - name: Run Task
+        env:
+          LEAFLOW_ACCOUNTS: ${{ secrets.LEAFLOW_ACCOUNTS }}
+          SOCKS5_INFO: ${{ secrets.SOCKS5_INFO }}
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+          # 如果你有通知需求，可以加上 TG 变量
+        run: |
+          python -u leaflow/Leaflow_checkin.py
+
+      - name: Upload Screenshot on Failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: "*.png"
