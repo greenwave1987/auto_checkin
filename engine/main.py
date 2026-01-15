@@ -25,7 +25,7 @@ def getvalue(key: str) -> dict:
     if not INFO:
         raise RuntimeError(f"❌ 配置文件中不存在 {key}")
     print(f'ℹ️ 已读取: {INFO.get("description","")}')
-    value = INFO.get("value","").strip()
+    value = INFO.get("value","")
     return value
 
 def derive_key(password: str) -> bytes:
