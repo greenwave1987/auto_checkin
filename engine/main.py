@@ -15,7 +15,7 @@ REPO_TOKEN = os.getenv("REPO_TOKEN")
 # ==================================================
 # 解密函数并读取信息
 # ==================================================
-def getconfig(key: str) -> dict:
+def getvalue(key: str) -> dict:
     password = os.getenv("CONFIG_PASSWORD","").strip()
     if not password:
         raise RuntimeError("❌ 未设置 CONFIG_PASSWORD")
