@@ -4,7 +4,7 @@ from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeo
 LOGIN_URL = "https://leaflow.net/login"
 DASHBOARD_URL = "https://leaflow.net/dashboard"
 
-
+step=0
 # ==================================================
 # 启动浏览器
 # ==================================================
@@ -56,8 +56,18 @@ def cookies_ok(page):
     except Exception as e:
         print(f"❌ Cookie 校验异常: {e}")
         return False
-
-
+# ==================================================
+# 截屏
+# ==================================================
+def shot(page, name):
+        step += 1
+        f = f"{step:02d}_{name}.png"
+        try:
+            page.screenshot(path=f)
+            self.shots.append(f)
+        except:
+            pass
+        return f
 # ==================================================
 # 登录并获取 cookies
 # ==================================================
@@ -101,6 +111,7 @@ def login_and_get_cookies(page, email, password):
         except PlaywrightTimeoutError:
             print("⚠️ 未找到「保持登录状态」复选框，继续登录")
 
+        shot(page, "准备登录")
         # ------------------------------
         # 点击登录
         # ------------------------------
@@ -110,6 +121,8 @@ def login_and_get_cookies(page, email, password):
         print("⏳ 等待登录完成")
         page.wait_for_load_state("networkidle", timeout=60000)
         time.sleep(20)
+        shot(page, "登录完成")
+        tg.photo(shot, "两步验证页面（数字在图里）")
 
         # ------------------------------
         # 登录结果判断
