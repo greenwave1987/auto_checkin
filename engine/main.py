@@ -79,11 +79,12 @@ def getconfig(password: str) -> dict:
     config_path = parent_dir / "config.enc"
     在同一目录，注释掉
     """
-    config_path = current_dir / "config.enc"
-
-    if not config_path.exists():
+    config_path = "config.enc"
+    if os.path.exists(config_path):
+        print("config.enc 文件存在")
+    else:
         raise FileNotFoundError(f"❌ 找不到 config.enc: {config_path}")
-
+        
     encrypted_content = config_path.read_text(encoding="utf-8").strip()
 
     try:
