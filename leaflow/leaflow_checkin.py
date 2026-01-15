@@ -244,6 +244,7 @@ def main():
     
         except Exception as e:
             print(f"❌ 账号 {username} 执行异常: {e}")
+        return
     # 写入
     secret.update(newcookies)
 
