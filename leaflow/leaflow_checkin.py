@@ -23,6 +23,7 @@ from engine.main import (
     getvalue
 )
 
+
 def run_task_for_account(account, proxy):
     """为单个账号启动专属隧道并执行登录签到"""
     username=account['username']
@@ -60,12 +61,21 @@ def run_task_for_account(account, proxy):
             print(f"✨ cookies 无效，退出！")
             return
         # 5. 执行签到逻辑
+        headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+            "DNT": "1",
+            "Connection": "keep-alive",
+            "Upgrade-Insecure-Requests": "1"
+        }
         if cookies:
             success, msg = perform_token_checkin(
                 cookies=cookies,
                 account_name=username,
                 checkin_url="https://leaflow.net/user/checkin",
                 main_site="https://leaflow.net",
+                headers=headers,
                 proxy_url=local_proxy
             )
             print(f"📢 签到结果: {msg}")
