@@ -8,13 +8,21 @@ import json
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from hashlib import sha256
 from pathlib import Path
-
-REPO = os.getenv("GITHUB_REPOSITORY")
-REPO_TOKEN = os.getenv("REPO_TOKEN")
-
+"""
 # ==================================================
 # 解密函数并读取信息
+# 初始化
+reader = ConfigReader()
+
+# 获取单个配置项
+api_key = reader.get_value("LEAFLOW_API_KEY")
+print(api_key)
+
+# 也可以自定义文件和密码
+reader2 = ConfigReader(password="mysecret", config_file="/path/to/config.enc")
+value = reader2.get_value("ACCOUNT_INFO")
 # ==================================================
+"""
 class ConfigReader:
     """
     加密配置文件读取器
@@ -83,57 +91,97 @@ class ConfigReader:
         return info.get("value", "")
 
 
-# ==================================================
+""" 
+==================================================
 # GitHub Secret 回写与读取
-# ==================================================
+用法：
+# 初始化 ConfigReader
+config = ConfigReader()
+# 初始化 SecretUpdater，会自动根据当前仓库用户名获取 token
+secret = SecretUpdater("LEAFLOW_COOKIES", config_reader=config)
+# 写入
+secret.update([{"email": "a@b.com", "token": "123"}])
+# 读取
+cookies = secret.load()
+print(cookies)
+ ==================================================
+"""
 class SecretUpdater:
-    def __init__(self, name: str):
+    """
+    GitHub Secret 更新器
+    - 自动根据 ConfigReader + 当前仓库用户名获取 token
+    """
+    def __init__(self, name: str, config_reader=None):
         self.name = name
-        print(f"🔐 初始化 SecretUpdater，secret = {self.name}")
+        self.repo = os.getenv("GITHUB_REPOSITORY")  # owner/repo
+        if not self.repo:
+            raise RuntimeError("❌ 未设置 GITHUB_REPOSITORY")
 
-    # ==================================================
-    # 回写 GitHub Secret
-    # ==================================================
+        self.token = None  # 最终使用的 token
+
+        # ---------------------------
+        # 从 ConfigReader 获取 token
+        # ---------------------------
+        if config_reader:
+            gh_info = config_reader.get_value("GH_INFO")
+            # 当前仓库用户名
+            repo_user = self.repo.split("/")[0]
+
+            # gh_info 是列表 [{"username": "...", "repotoken": "..."}]
+            for entry in gh_info:
+                uname = entry.get("username")
+                token = entry.get("repotoken") or entry.get("token")
+                if uname == repo_user:
+                    self.token = token
+                    break
+
+            if not self.token:
+                raise RuntimeError(f"❌ GH_INFO 中未找到与仓库用户 {repo_user} 匹配的 token")
+        else:
+            # fallback 环境变量
+            self.token = os.getenv("REPO_TOKEN")
+
+        if not self.token:
+            raise RuntimeError("❌ 未找到有效 GitHub token")
+
+        print(f"🔐 初始化 SecretUpdater: {self.name}, 仓库 {self.repo}")
+
+    # ================================
+    # 回写 Secret
+    # ================================
     def update(self, value):
-        """
-        value 可以是字符串，也可以是 dict/list
-        """
         print("📝 准备回写 GitHub Secret")
 
-        if not REPO or not REPO_TOKEN:
-            print("⚠ 未配置 GITHUB_REPOSITORY / REPO_TOKEN，跳过回写")
-            return False
-
         headers = {
-            "Authorization": f"Bearer {REPO_TOKEN}",
+            "Authorization": f"Bearer {self.token}",
             "Accept": "application/vnd.github+json",
         }
 
-        # 1️⃣ 获取公钥
-        print(f"🌐 获取仓库公钥: {REPO}")
+        # 获取公钥
+        print(f"🌐 获取仓库公钥: {self.repo}")
         r = requests.get(
-            f"https://api.github.com/repos/{REPO}/actions/secrets/public-key",
+            f"https://api.github.com/repos/{self.repo}/actions/secrets/public-key",
             headers=headers,
             timeout=30,
         )
         r.raise_for_status()
         key = r.json()
 
-        # 2️⃣ 如果是 dict/list 自动 JSON 化
+        # 支持字符串或 dict/list
         if isinstance(value, (dict, list)):
             value_to_store = json.dumps(value)
         else:
             value_to_store = str(value)
 
-        # 3️⃣ 加密
+        # 加密
         print("🔑 加密 Secret")
         pk = public.PublicKey(key["key"].encode(), encoding.Base64Encoder())
         encrypted = public.SealedBox(pk).encrypt(value_to_store.encode())
 
-        # 4️⃣ 提交
+        # 提交
         print(f"📤 提交 Secret: {self.name}")
         r = requests.put(
-            f"https://api.github.com/repos/{REPO}/actions/secrets/{self.name}",
+            f"https://api.github.com/repos/{self.repo}/actions/secrets/{self.name}",
             headers=headers,
             json={
                 "encrypted_value": base64.b64encode(encrypted).decode(),
@@ -143,29 +191,24 @@ class SecretUpdater:
         )
 
         if r.status_code not in (201, 204):
-            raise RuntimeError(
-                f"❌ Secret 回写失败 HTTP {r.status_code}: {r.text}"
-            )
+            raise RuntimeError(f"❌ Secret 回写失败 HTTP {r.status_code}: {r.text}")
 
         print("✅ Secret 回写成功")
         return True
 
-    # ==================================================
+    # ================================
     # 从环境变量加载 Secret
-    # ==================================================
+    # ================================
     def load(self):
         raw = os.getenv(self.name)
         if not raw:
             print("ℹ️ 未检测到 Secret，首次运行")
-            return None  # 没有数据返回 None
+            return None
 
-        # 尝试 JSON 解析
         try:
             return json.loads(raw)
         except (json.JSONDecodeError, TypeError):
-            # 解析失败说明是普通字符串
             return raw
-
 # ==================================================
 # Session 工厂
 # ==================================================
