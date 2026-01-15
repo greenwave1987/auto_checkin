@@ -1,6 +1,11 @@
 import time
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
-from engine.notify import send_notify
+from engine.main import ConfigReader
+from engine.notify import TelegramNotifier
+
+config = ConfigReader()
+notifier = TelegramNotifier(config)
+
 
 LOGIN_URL = "https://leaflow.net/login"
 DASHBOARD_URL = "https://leaflow.net/dashboard"
@@ -103,7 +108,7 @@ def login_and_get_cookies(page, email, password):
             shot1 = take_shot(page, "准备登录")
             if shot1:
                 try:
-                    send_notify("leaflow_login", "准备登录", shot1)
+                    notifier.send("leaflow_login", "准备登录", shot1)
                 except Exception as e:
                     print(f"⚠️ 通知发送失败: {e}")
 
@@ -118,13 +123,15 @@ def login_and_get_cookies(page, email, password):
         # 登录结果判断
         print(f"🔎 当前 URL: {page.url}")
         if "login" in page.url.lower():
-            raise RuntimeError("登录失败：仍在登录页")
+            
             shot2 = take_shot(page, "登录完成")
             if shot2:
                 try:
-                    send_notify("leaflow_login", "登录完成", shot2)
+                    notifier.send("leaflow_login", "登录失败", shot2)
                 except Exception as e:
                     print(f"⚠️ 通知发送失败: {e}")
+                    
+            raise RuntimeError("登录失败：仍在登录页")
 
         print("🎉 登录成功")
         return page.context.cookies()
