@@ -215,10 +215,6 @@ def main():
     global config
     if config is None:
         config = ConfigReader()
-
-    print("🔍 配置内容:", getattr(config, "config", {}))  # 打印整个配置字典
-
-    return
     useproxy = True
     newcookies={}
     results = []
