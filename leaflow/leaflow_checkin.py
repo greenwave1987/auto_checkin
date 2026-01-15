@@ -73,7 +73,7 @@ def run_task_for_account(account, proxy):
             success, msg = perform_token_checkin(
                 cookies=cookies,
                 account_name=username,
-                checkin_url="https://leaflow.net/user/checkin",
+                checkin_url="https://checkin.leaflow.net",
                 main_site="https://leaflow.net",
                 headers=headers,
                 proxy_url=local_proxy
