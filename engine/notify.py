@@ -10,7 +10,7 @@
 
 import os
 import requests
-from safe_print import desensitize_text
+from engine.safe_print import desensitize_text
 
 # =========================
 # 环境变量读取
