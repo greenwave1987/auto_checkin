@@ -20,7 +20,7 @@ from engine.leaflow_login import (
 from engine.main import (
     perform_token_checkin,
     SecretUpdater,
-    getconfig
+    getvalue
 )
 
 def run_task_for_account(account_str, proxy_str):
@@ -87,26 +87,22 @@ def main():
         raise RuntimeError("❌ 未设置 CONFIG_PASSWORD")
     config = getconfig(password)
     # 读取账号信息
-    LF_INFO = config.get("LF_INFO","")
-    if not LF_INFO:
-        raise RuntimeError("❌ 配置文件中不存在 LF_INFO")
-    print(f'ℹ️ 已读取: {LF_INFO.get("description","")}')
-    accounts = LF_INFO.get("value","").strip()
+    accounts = getvalue("LF_INFO")
     # 读取代理信息
-    PROXY_INFO = config.get("PROXY_INFO","")
-    if not PROXY_INFO:
-        raise RuntimeError("❌ 配置文件中不存在 PROXY_INFO")
-    print(f'ℹ️ 已读取: {PROXY_INFO.get("description","")}')
-    proxies = PROXY_INFO.get("value","").strip()
+    proxies = getvalue("proxy")
 
     if not accounts:
         print("❌ 错误: 未配置 LEAFLOW_ACCOUNTS")
         return
+    if not proxies:
+        print("📢 警告: 未配置 proxy ，将直连")
+        useproxy = False
 
     print(f"📊 检测到 {len(accounts)} 个账号和 {len(proxies)} 个代理")
 
     # 使用 zip 实现一一对应
     for account, proxy in zip(accounts, proxies):
+        return
         run_task_for_account(account, proxy)
 
 if __name__ == "__main__":
