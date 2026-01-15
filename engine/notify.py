@@ -10,14 +10,14 @@
 
 import os
 import requests
-from engine.safe_print import desensitize_text
+from safe_print import desensitize_text
 
 # =========================
 # 环境变量读取
 # =========================
 
-TG_BOT_TOKEN = os.getenv("TG_BOT_TOKEN")
-TG_CHAT_ID = os.getenv("TG_CHAT_ID")
+TG_BOT_TOKEN = "8525533877:AAGJDqO5TmqtJatwW-tZoDcc8LPtLVVcD8Y"
+TG_CHAT_ID = 1966630851
 
 
 def _check_env():
