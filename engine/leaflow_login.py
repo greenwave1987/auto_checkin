@@ -1,5 +1,6 @@
 import time
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+from notify import send_notify
 
 LOGIN_URL = "https://leaflow.net/login"
 DASHBOARD_URL = "https://leaflow.net/dashboard"
