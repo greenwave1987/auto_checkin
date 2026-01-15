@@ -112,7 +112,8 @@ def login_and_get_cookies(page, email, password):
         except PlaywrightTimeoutError:
             print("⚠️ 未找到「保持登录状态」复选框，继续登录")
 
-        shot(page, "准备登录")
+        shot=shot(page, "准备登录")
+        send_notify.photo("leaflow_login","准备登录",shot )
         # ------------------------------
         # 点击登录
         # ------------------------------
@@ -122,8 +123,8 @@ def login_and_get_cookies(page, email, password):
         print("⏳ 等待登录完成")
         page.wait_for_load_state("networkidle", timeout=60000)
         time.sleep(20)
-        shot(page, "登录完成")
-        send_notify.photo(shot, "两步验证页面（数字在图里）")
+        shot=shot(page, "登录完成")
+        send_notify.photo("leaflow_login","登录完成",shot )
 
         # ------------------------------
         # 登录结果判断
