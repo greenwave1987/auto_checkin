@@ -1,4 +1,4 @@
-name: leaflow 自动登录签到
+name: leaflow 登录签到
 
 on:
   workflow_dispatch:
