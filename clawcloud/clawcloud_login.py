@@ -8,141 +8,141 @@ import subprocess
 import pyotp
 import requests
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+
+# 导入自定义模块
 from engine.main import ConfigReader, SecretUpdater
 from engine.notify import TelegramNotifier
 
 # ================== 基础配置 ==================
 GITHUB_LOGIN_URL = "https://github.com/login"
-GITHUB_TEST_URL = "https://github.com/settings/profile"
-SESSION_SECRET_NAME = "GH_SESSION"
+CLAWCLOUD_LOGIN_URL = "https://console.run.claw.cloud/signin" # 假设的 ClawCloud 登录地址
+CLAWCLOUD_TEST_URL = "https://console.run.claw.cloud/" # 用于校验登录状态的地址
 
 # ================== 初始化 ==================
 config = ConfigReader()
-gh_info = config.get_value("GH_INFO")  # 账号列表
-proxy_info = config.get_value("PROXY_INFO")  # 代理列表
 notifier = TelegramNotifier(config)
-secret_updater = SecretUpdater(SESSION_SECRET_NAME, config_reader=config)
 
-# 读取已有 Session
-env_sess = os.getenv("GH_SESSION", "").strip()
-sess_dict = json.loads(env_sess) if env_sess else {}
+# 1. 从 Secrets 获取
+gh_session_env = os.getenv("GH_SESSION", "{}").strip()
+claw_cookies_env = os.getenv("CLAWCLOUD_COOKIES", "{}").strip()
 
-def save_screenshot(page, name):
-    path = f"{name}.png"
-    page.screenshot(path=path)
-    return path
+# 2. 从 ConfigReader 获取
+gh_info = config.get_value("GH_INFO")
+proxy_info = config.get_value("PROXY_INFO")
 
-# ================== 主流程 ==================
+# 3. 初始化更新器
+gh_session_updater = SecretUpdater("GH_SESSION", config_reader=config)
+claw_cookies_updater = SecretUpdater("CLAWCLOUD_COOKIES", config_reader=config)
+
+# 解析字典
+try:
+    all_gh_sessions = json.loads(gh_session_env)
+    all_claw_cookies = json.loads(claw_cookies_env)
+except:
+    all_gh_sessions, all_claw_cookies = {}, {}
+
+# ================== 核心逻辑 ==================
+
 def main():
-    print(f"🚀 开始处理 {len(gh_info)} 个 GitHub 账号", flush=True)
+    if not gh_info:
+        print("❌ 未获取到账号信息")
+        return
 
-    # 使用 zip 确保账号和代理一一对应
     for idx, (account, proxy) in enumerate(zip(gh_info, proxy_info)):
         username = account["username"]
         password = account["password"]
         totp_secret = account.get("2fasecret", "")
         
-        # 构造 Gost 代理字符串
         proxy_str = f"{proxy['username']}:{proxy['password']}@{proxy['server']}:{proxy['port']}"
         local_proxy = "http://127.0.0.1:8080"
         
-        print(f"\n{'='*40}")
-        print(f"👤 账号 [{idx}]: {username}")
-        print(f"🌐 隧道: {proxy['server']}:{proxy['port']}")
+        print(f"\n{'='*60}\n👤 账号: {username} | 代理: {proxy['server']}")
         
         gost_proc = None
         try:
-            # 1️⃣ 启动 Gost 隧道 (隔离第一步：物理链路隔离)
-            gost_proc = subprocess.Popen(
-                ["./gost", "-L=:8080", f"-F=socks5://{proxy_str}"],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-            )
-            time.sleep(5) 
+            # 1. 启动隧道
+            gost_proc = subprocess.Popen(["./gost", "-L=:8080", f"-F=socks5://{proxy_str}"], 
+                                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            time.sleep(5)
 
-            # 2️⃣ 测试隧道 IP
-            res = requests.get("https://api.ipify.org", proxies={"http": local_proxy, "https": local_proxy}, timeout=15)
-            print(f"✅ 隧道就绪，出口 IP: {res.text.strip()}")
-
-            # 3️⃣ 启动 Playwright (隔离第二步：环境指纹隔离)
             with sync_playwright() as p:
-                browser = p.chromium.launch(
-                    headless=True, 
-                    args=["--no-sandbox", "--disable-blink-features=AutomationControlled"]
-                )
-                # 创建完全独立的上下文，并注入本地隧道代理
-                context = browser.new_context(
-                    proxy={"server": local_proxy},
-                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-                )
+                browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
+                context = browser.new_context(proxy={"server": local_proxy})
                 page = context.new_page()
-                page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
 
-                # --- 尝试注入已有 Session ---
-                user_session = sess_dict.get(username, "")
-                login_needed = True
+                is_logged_in = False
 
-                if user_session:
-                    print("🍪 注入已有 Session 测试...")
-                    context.add_cookies([
-                        {"name": "user_session", "value": user_session, "domain": "github.com", "path": "/"},
-                        {"name": "logged_in", "value": "yes", "domain": "github.com", "path": "/"}
-                    ])
-                    page.goto(GITHUB_TEST_URL, timeout=30000)
-                    if "login" not in page.url:
-                        print("✅ Session 依然有效，跳过登录")
-                        login_needed = False
+                # --- 🔑 优先级 1：ClawCloud Cookies 直接登录 ---
+                user_claw_cookies = all_claw_cookies.get(username)
+                if user_claw_cookies:
+                    print("尝试：使用 ClawCloud Cookies 直接注入...")
+                    context.add_cookies(user_claw_cookies)
+                    page.goto(CLAWCLOUD_TEST_URL)
+                    if "login" not in page.url.lower():
+                        print("✅ ClawCloud Cookies 有效")
+                        is_logged_in = True
 
-                # --- 执行登录流程 ---
-                if login_needed:
-                    print("🔐 执行账号密码登录...")
-                    page.goto(GITHUB_LOGIN_URL, timeout=30000)
+                # --- 🔑 优先级 2：GH_SESSION GitHub 授权登录 ---
+                if not is_logged_in:
+                    user_gh_session = all_gh_sessions.get(username)
+                    if user_gh_session:
+                        print("尝试：注入 GH_SESSION 免密登录 GitHub...")
+                        context.add_cookies([
+                            {"name": "user_session", "value": user_gh_session, "domain": "github.com", "path": "/"},
+                            {"name": "logged_in", "value": "yes", "domain": "github.com", "path": "/"}
+                        ])
+                        page.goto(GITHUB_LOGIN_URL)
+                        # 如果注入后访问登录页跳转到了首页或设置页，说明有效
+                        if "login" not in page.url.lower():
+                            print("✅ GH_SESSION 有效，正在跳转 ClawCloud...")
+                            page.goto(CLAWCLOUD_LOGIN_URL)
+                            # 此处通常点击 "Login with GitHub" 按钮
+                            is_logged_in = True 
+
+                # --- 🔑 优先级 3：GH_INFO 账号密码 + 2FA 登录 ---
+                if not is_logged_in:
+                    print("尝试：使用账号密码 + 2FA 登录...")
+                    page.goto(GITHUB_LOGIN_URL)
                     page.fill('input[name="login"]', username)
                     page.fill('input[name="password"]', password)
                     page.keyboard.press("Enter")
+                    time.sleep(3)
+
+                    otp_selector = 'input#app_totp, input#otp'
+                    if page.query_selector(otp_selector):
+                        print("🔢 输入 2FA 验证码...")
+                        code = pyotp.TOTP(totp_secret.replace(" ", "")).now()
+                        page.fill(otp_selector, code)
+                        page.keyboard.press("Enter")
+                        time.sleep(5)
                     
-                    time.sleep(5)
+                    page.goto(CLAWCLOUD_LOGIN_URL) # 登录后跳转至业务平台
+                    is_logged_in = True
 
-                    # 处理 2FA
-                    otp_selector = 'input#app_totp, input#otp, input[name="otp"]'
-                    if "two-factor" in page.url or page.query_selector(otp_selector):
-                        print("🔑 处理两步验证...")
-                        if totp_secret:
-                            code = pyotp.TOTP(totp_secret.replace(" ", "")).now()
-                            page.wait_for_selector(otp_selector).fill(code)
-                            page.keyboard.press("Enter")
-                            time.sleep(5)
-                        else:
-                            raise Exception("缺失 2FA 密钥")
+                # --- 💾 阶段：更新状态 ---
+                if is_logged_in:
+                    # 提取 GitHub Session
+                    gh_cookie = next((c["value"] for c in context.cookies() if c["name"] == "user_session"), None)
+                    if gh_cookie:
+                        all_gh_sessions[username] = gh_cookie
+                    
+                    # 提取 ClawCloud 所有的 Cookies (列表形式存储)
+                    all_claw_cookies[username] = context.cookies()
+                    print(f"🟢 {username} 状态更新完成")
 
-                    # 最终校验
-                    page.goto(GITHUB_TEST_URL, timeout=30000)
-                    if "login" in page.url:
-                        raise Exception("登录校验失败，未能进入个人设置页")
-
-                # 4️⃣ 提取并保存新 Session
-                new_session = next((c["value"] for c in context.cookies() if c["name"] == "user_session"), None)
-                if new_session:
-                    sess_dict[username] = new_session
-                    print(f"🟢 {username} 处理成功")
-                
                 browser.close()
 
         except Exception as e:
             print(f"❌ 账号 {username} 异常: {e}")
-            # 异常时可以截图通知
-            # shot = save_screenshot(page, f"err_{username}")
-            # notifier.send("GitHub 异常", f"账号 {username}: {str(e)}", shot)
-        
         finally:
-            # 5️⃣ 彻底清理环境 (隔离第三步：资源释放)
             if gost_proc:
                 gost_proc.terminate()
-                gost_proc.wait()
-            print(f"🧹 隧道已关闭，账号 {username} 处理完毕。")
 
-    # 全部账号处理完后，一次性更新 Secret
-    secret_updater.update(json.dumps(sess_dict))
-    print("\n✨ 所有账号 Session 已同步至 GitHub Secrets。")
+    # --- 📤 阶段：回写 Secrets ---
+    print("\n📤 正在回写 Secrets...")
+    gh_session_updater.update(json.dumps(all_gh_sessions))
+    claw_cookies_updater.update(json.dumps(all_claw_cookies))
+    print("🏁 任务结束")
 
 if __name__ == "__main__":
     main()
