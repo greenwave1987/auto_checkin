@@ -1,0 +1,58 @@
+name: ClawCloud 登录维护
+
+on:
+  workflow_dispatch:  # 手动触发
+  schedule:
+    - cron: "15 1,13 * * *" # 每天北京时间 9:15 和 21:15 运行
+
+jobs:
+  checkin:
+    runs-on: ubuntu-latest
+    # 必须开启权限，以便脚本中的 SecretUpdater 能够回写新的 Cookie 和 Session
+    permissions:
+      contents: read
+      actions: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: 'pip'
+
+      - name: Install Gost
+        run: |
+          curl -L https://github.com/ginuerzh/gost/releases/download/v2.11.5/gost-linux-amd64-2.11.5.gz | gunzip > gost
+          chmod +x gost
+
+      - name: Install Deps
+        run: |
+          pip install playwright requests pyotp pynacl requests[socks] cryptography
+          playwright install chromium --with-deps
+
+      - name: Run ClawCloud Task
+        env:
+          # 1. 核心解密密钥
+          CONFIG_PASSWORD: ${{ secrets.CONFIG_PASSWORD }}
+          
+          # 2. 从 Secrets 获取的动态变量 (脚本会读取并全量回写)
+          GH_SESSION: ${{ secrets.GH_SESSION }}
+          CLAWCLOUD_COOKIES: ${{ secrets.CLAWCLOUD_COOKIES }}
+          
+          # 3. GitHub 权限令牌 (SecretUpdater 必要)
+          GITHUB_REPOSITORY: ${{ github.repository }}
+
+        run: |
+          # 确保脚本路径正确，例如放在 scripts 目录下
+          python -u clawcloud/clawcloud_login.py
+
+      - name: Upload Screenshot on Failure
+        if: failure()  # 仅在失败时上传截图，节省空间
+        uses: actions/upload-artifact@v4
+        with:
+          name: clawcloud-debug-screenshots
+          path: "*.png"
+          retention-days: 3
