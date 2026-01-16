@@ -4,14 +4,12 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
-  actions: read
-  secrets: write   # ⭐ 必须
+  contents: write   # ⭐ 够用
 
 jobs:
   tg-login:
     runs-on: ubuntu-latest
-    timeout-minutes: 3   # ⏱ 最多 3 分钟
+    timeout-minutes: 3
 
     steps:
       - uses: actions/checkout@v4
