@@ -1,5 +1,4 @@
 import os
-import sys
 import time
 import base64
 import asyncio
@@ -14,6 +13,9 @@ IDX = 0
 QR_FILE = "qr.png"
 SECRET_NAME = "TG_USER_SESSION"
 WAIT_SECONDS = 120
+MAX_RETRY = 3
+
+retry_count = 0
 
 config = ConfigReader()
 secret = SecretUpdater(SECRET_NAME, config_reader=config)
@@ -52,20 +54,47 @@ async def shutdown():
     os._exit(0)
 
 # =========================
-# 发送操作菜单
+# 发送登录菜单（按钮同一行）
 # =========================
-async def send_login_menu():
+async def send_login_menu(hint: str | None = None):
+    text = "请选择操作："
+    if hint:
+        text = f"{hint}\n\n{text}"
+
     await bot.send_message(
         ADMIN_ID,
-        "请选择操作：",
+        text,
         buttons=[
-            [Button.inline("🔲 扫码登录", data=b"login_qr")],
-            [Button.inline("❌ 取消", data=b"login_cancel")]
+            [
+                Button.inline("🔲 扫码登录", data=b"login_qr"),
+                Button.inline("❌ 取消", data=b"login_cancel"),
+            ]
         ]
     )
 
 # =========================
-# 按钮处理
+# 失败处理：重发菜单 or 退出
+# =========================
+async def resend_menu_or_exit(reason: str):
+    global retry_count
+    retry_count += 1
+
+    log(f"登录失败：{reason}（{retry_count}/{MAX_RETRY}）")
+
+    if retry_count >= MAX_RETRY:
+        await bot.send_message(
+            ADMIN_ID,
+            f"❌ 登录失败已达 {MAX_RETRY} 次，流程结束。\n原因：{reason}"
+        )
+        await shutdown()
+        return
+
+    await send_login_menu(
+        hint=f"⚠️ 登录失败（{retry_count}/{MAX_RETRY}）：{reason}"
+    )
+
+# =========================
+# 按钮点击处理
 # =========================
 @bot.on(events.CallbackQuery)
 async def on_choice(event):
@@ -124,17 +153,13 @@ async def start_qr_login():
 
         except Exception as e:
             if "auth_token_expired" in str(e):
-                log("二维码过期，重新生成")
-                await bot.send_message(ADMIN_ID, "♻️ 二维码已过期，正在刷新")
-                continue
+                await resend_menu_or_exit("二维码已过期")
+                return
             else:
-                log(f"登录失败: {e}")
-                await bot.send_message(ADMIN_ID, f"❌ 登录失败: {e}")
-                await shutdown()
+                await resend_menu_or_exit(str(e))
                 return
 
-    await bot.send_message(ADMIN_ID, "⏱ 2 分钟未扫码，登录已取消")
-    await shutdown()
+    await resend_menu_or_exit("扫码超时")
 
 # =========================
 # 主入口
