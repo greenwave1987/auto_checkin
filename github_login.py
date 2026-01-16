@@ -6,7 +6,7 @@ import json
 import time
 import pyotp
 from playwright.sync_api import sync_playwright
-from engine.main import ConfigReader，SecretUpdater
+from engine.main import ConfigReader,SecretUpdater
 from engine.notify import send_notify
 
 # ================= 基础配置 =================
