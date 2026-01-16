@@ -19,11 +19,10 @@ WAIT_SECONDS = 30
 
 # ================== 初始化 ==================
 config = ConfigReader()
-gh_info = config.get_value("GH_INFO")  # 列表
+gh_info = config.get_value("GH_INFO")  
 notifier = TelegramNotifier(config)
 secret = SecretUpdater(SESSION_SECRET_NAME, config_reader=config)
 
-# ================== 读取 GH_SESSION 字典 ==================
 sess_dict = {}
 env_sess = os.getenv("GH_SESSION", "").strip()
 if env_sess:
@@ -33,13 +32,11 @@ if env_sess:
     except Exception as e:
         print(f"⚠️ GH_SESSION 解析异常: {e}", flush=True)
 
-# ================== 工具函数 ==================
 def sep():
     print("=" * 60, flush=True)
 
 def mask_user(username: str) -> str:
-    if len(username) <= 2:
-        return username
+    if len(username) <= 2: return username
     return username[:2] + "***" + username[-1]
 
 def save_screenshot(page, name):
@@ -58,120 +55,98 @@ def main():
     sep()
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
-        context = browser.new_context()
-        page = context.new_page()
+        # 启动浏览器时增加反爬参数
+        browser = p.chromium.launch(
+            headless=True, 
+            args=["--no-sandbox", "--disable-blink-features=AutomationControlled"]
+        )
 
         for idx, account in enumerate(gh_info):
             username = account["username"]
             password = account["password"]
             totp_secret = account.get("2fasecret", "")
 
-            print(f"👤 账号 {idx}: {mask_user(username)}", flush=True)
+            print(f"👤 准备处理账号 {idx}: {mask_user(username)}", flush=True)
+
+            # --- ✨ 环境清理与隔离核心步骤 ---
+            # 为每个账号创建完全独立的 Context，模拟不同的浏览器指纹特征
+            context = browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+                viewport={'width': 1280, 'height': 720}
+            )
+            page = context.new_page()
+            
+            # 注入隔离脚本，防止检测 WebDriver
+            page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+            # -------------------------------
 
             # ================== 优先使用已有 session ==================
             user_session = sess_dict.get(username, "")
             cookies_ok = False
 
             if user_session:
-                print("🍪 检测到已有 session，尝试注入 cookies", flush=True)
+                print(f"🍪 注入账号 {mask_user(username)} 的独立 Cookies", flush=True)
                 context.add_cookies([
                     {"name": "user_session", "value": user_session, "domain": "github.com", "path": "/"},
                     {"name": "logged_in", "value": "yes", "domain": "github.com", "path": "/"}
                 ])
                 try:
                     page.goto(GITHUB_TEST_URL, timeout=30000)
-                    page.wait_for_load_state("domcontentloaded", timeout=30000)
                     if "login" not in page.url:
-                        print("✅ session 有效，跳过登录", flush=True)
+                        print("✅ Session 有效", flush=True)
                         cookies_ok = True
-                    else:
-                        print("⚠️ session 无效，需要重新登录", flush=True)
-                except PlaywrightTimeoutError:
-                    print("⚠️ session 校验超时，需要重新登录", flush=True)
+                except:
+                    pass
 
-            # ================== 登录流程 (修改部分开始) ==================
+            # ================== 登录流程 ==================
             if not cookies_ok:
-                print("🔐 GitHub 登录", flush=True)
+                print("🔐 执行全新登录", flush=True)
                 try:
                     page.goto(GITHUB_LOGIN_URL, timeout=30000)
-                    page.wait_for_selector('input[name="login"]')
                     page.fill('input[name="login"]', username)
                     page.fill('input[name="password"]', password)
-                    # 使用 Enter 键提交，比直接点击按钮更稳定
                     page.keyboard.press("Enter")
                     
-                    # 等待可能的 2FA 跳转或页面响应
-                    time.sleep(5)
-                    page.wait_for_load_state("networkidle", timeout=30000)
-                except PlaywrightTimeoutError:
-                    print(f"❌ {username} 登录操作响应超时", flush=True)
-                    shot = save_screenshot(page, f"{username}_login_failed")
-                    notifier.send("GitHub 登录失败", f"{username} 登录超时", shot)
-                    continue
-
-                # ================== 二次验证 (修改部分) ==================
-                # 兼容多种可能的 2FA 选择器：input#app_totp, input#otp, input[name='otp']
-                otp_selector = 'input#app_totp, input#otp, input[name="otp"]'
-                if "two-factor" in page.url or page.query_selector(otp_selector):
-                    print("🔑 检测到两步验证", flush=True)
-                    try:
-                        # 等待验证码输入框出现并聚焦
+                    time.sleep(5) # 留出页面响应时间
+                    
+                    # --- 2FA 处理 ---
+                    otp_selector = 'input#app_totp, input#otp, input[name="otp"]'
+                    if "two-factor" in page.url or page.query_selector(otp_selector):
+                        print("🔑 处理两步验证", flush=True)
                         otp_input = page.wait_for_selector(otp_selector, timeout=15000)
                         if totp_secret:
-                            # 移除密钥中的空格并生成最新 code
-                            clean_secret = totp_secret.replace(" ", "")
-                            code = pyotp.TOTP(clean_secret).now()
-                            print(f"🔢 自动填入 2FA 验证码", flush=True)
-                            
-                            otp_input.focus()
+                            code = pyotp.TOTP(totp_secret.replace(" ", "")).now()
                             otp_input.fill(code)
-                            # 填入后通常会自动提交，保险起见补一个回车
                             page.keyboard.press("Enter")
-                            
-                            time.sleep(3)
-                            page.wait_for_load_state("networkidle", timeout=30000)
-                        else:
-                            print("❌ 未配置 2FA 密钥", flush=True)
-                            shot = save_screenshot(page, f"{username}_2fa_missing")
-                            notifier.send("GitHub 登录失败", f"{username} 缺少 2FA 密钥", shot)
-                            continue
-                    except PlaywrightTimeoutError:
-                        print(f"❌ {username} 2FA 输入框未能在规定时间内加载", flush=True)
-                        shot = save_screenshot(page, f"{username}_2fa_timeout")
-                        notifier.send("GitHub 登录失败", f"{username} 2FA 输入框未出现", shot)
+                            time.sleep(5)
+                    
+                    # 校验
+                    page.goto(GITHUB_TEST_URL, timeout=30000)
+                    if "login" in page.url:
+                        print(f"❌ {username} 登录失败", flush=True)
+                        save_screenshot(page, f"{username}_failed")
+                        context.close() # 失败也要关闭当前 Context
                         continue
-                # ================== 登录流程 (修改部分结束) ==================
-
-                # 校验是否登录成功
-                page.goto(GITHUB_TEST_URL, timeout=30000)
-                page.wait_for_load_state("domcontentloaded", timeout=30000)
-                if "login" in page.url:
-                    print(f"❌ {username} 登录状态校验失败", flush=True)
-                    shot = save_screenshot(page, f"{username}_login_verify_failed")
-                    notifier.send("GitHub 登录失败", f"{username} 最终登录校验失败", shot)
+                except Exception as e:
+                    print(f"❌ 运行异常: {e}", flush=True)
+                    context.close()
                     continue
 
-            # ================== 获取新的 session ==================
-            new_session = None
-            for c in context.cookies():
-                if c["name"] == "user_session" and "github.com" in c["domain"]:
-                    new_session = c["value"]
-                    break
-
+            # ================== 提取并更新 Session ==================
+            new_session = next((c["value"] for c in context.cookies() if c["name"] == "user_session"), None)
             if new_session:
                 sess_dict[username] = new_session
-                print(f"🟢 {username} 登录成功，session 已更新", flush=True)
-            else:
-                print(f"❌ {username} 未获取到新的 session", flush=True)
-                shot = save_screenshot(page, f"{username}_session_failed")
-                notifier.send("GitHub session 获取失败", f"{username} 未获取到 session", shot)
+                print(f"🟢 {username} 处理成功", flush=True)
+            
+            # --- ✨ 彻底清理：关闭上下文 ---
+            # 这会销毁该账号所有的缓存、临时文件和内存中的 Cookie
+            context.close() 
+            print(f"🧹 环境已清理，准备下一个账号...", flush=True)
+            sep()
 
-        # ================== 全部账号处理完成 ==================
+        # 全部结束
         update_secret()
         browser.close()
-        print("🟢 所有账号处理完成", flush=True)
 
-# ================== 入口 ==================
 if __name__ == "__main__":
     main()
