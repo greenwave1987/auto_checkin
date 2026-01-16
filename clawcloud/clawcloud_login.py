@@ -7,7 +7,7 @@ import json
 import time
 import subprocess
 import pyotp
-import re  # 导入正则
+import re
 from urllib.parse import urlparse
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
@@ -43,36 +43,17 @@ except:
 
 # ================== 工具函数 ==================
 
-def detect_region(url):
-    """从 URL 中检测区域信息"""
-    try:
-        parsed = urlparse(url)
-        host = parsed.netloc
-        if "ap-northeast-1" in host: return "日本 (Tokyo)"
-        if "ap-southeast-1" in host: return "新加坡"
-        return "主控制台"
-    except:
-        return "未知区域"
-
-def get_balance(page):
-    """抓取页面上的余额信息"""
-    try:
-        # 使用 css class 和文本特征定位
-        selector = 'p.chakra-text:has-text("$")'
-        page.wait_for_selector(selector, timeout=10000)
-        text = page.locator(selector).first.inner_text()
-        return text.strip()
-    except:
-        return "N/A"
-
 def perform_gh_login(page, username, password, totp_secret):
-    """统一的 GitHub 登录逻辑"""
-    print(f"🔘 [点击] 正在通过 GitHub 按钮登录...")
-    page.click('button:has-text("GitHub"), [data-provider="github"]')
+    """统一执行 GitHub 授权登录"""
+    print(f"🔘 [点击] 尝试通过 GitHub 授权...")
+    try:
+        page.click('button:has-text("GitHub"), [data-provider="github"]', timeout=10000)
+    except:
+        print("⚠️ 未找到 GitHub 按钮，可能已处于登录中间态")
+    
     time.sleep(5)
-
     if "github.com/login" in page.url:
-        print(f"⌨️ [表单] 输入 GitHub 凭据...")
+        print(f"⌨️ [表单] 输入 GitHub 账号密码...")
         page.fill('input[name="login"]', username)
         page.fill('input[name="password"]', password)
         page.keyboard.press("Enter")
@@ -83,11 +64,22 @@ def perform_gh_login(page, username, password, totp_secret):
             code = pyotp.TOTP(totp_secret.replace(" ", "")).now()
             page.locator('input#app_totp, input#otp, input[name="otp"]').first.fill(code)
             page.keyboard.press("Enter")
+            # 等待回到 claw 域名
             page.wait_for_url("**/claw.cloud/**", timeout=60000)
-    return
+
+def wait_for_console_stable(page):
+    """等待页面离开登录态并稳定"""
+    print("⏳ [等待] 确认已离开登录页面...")
+    try:
+        # 确保网址不包含 signin
+        page.wait_for_function("() => !window.location.href.includes('signin')", timeout=30000)
+        page.wait_for_load_state("networkidle")
+        return True
+    except:
+        return False
 
 def save_state(context, username, current_url):
-    """保存状态"""
+    """回写最新的 Session 和 Cookie"""
     gh_cookies = context.cookies("https://github.com")
     gh_val = next((c["value"] for c in gh_cookies if c["name"] == "user_session"), None)
     if gh_val: all_gh_sessions[username] = gh_val
@@ -120,61 +112,77 @@ def main():
                 context = browser.new_context(proxy={"server": local_proxy}, viewport={'width': 1280, 'height': 800})
                 page = context.new_page()
 
-                # --- 🚩 第一阶段：主站登录 ---
-                print(f"🚩 [阶段 1] 登录主站...")
+                # --- 🚩 第一阶段：主站入口登录 ---
+                print(f"🚩 [阶段 1] 访问登录入口...")
                 page.goto(CLAW_LOGIN_ENTRY)
                 
+                # 注入 Session 缓存
                 user_gh_session = all_gh_sessions.get(username)
                 if user_gh_session:
                     context.add_cookies([{"name": "user_session", "value": user_gh_session, "domain": ".github.com", "path": "/"}])
                 
                 perform_gh_login(page, username, password, totp_secret)
-                page.wait_for_load_state("networkidle")
-
-                if "signin" not in page.url:
-                    balance = get_balance(page)
-                    print(f"✅ [成功] 登录主站，余额: {balance}")
-                    
-                    save_state(context, username, page.url)
-                    page.screenshot(path=screenshot_p1)
-                    notifier.send(
-                        title=f"{username}-主站登录成功", 
-                        content=f"💰 <b>账户余额:</b> <code>{balance}</code>\n📍 区域: {detect_region(page.url)}\n🔗 URL: {page.url}", 
-                        image_path=screenshot_p1
-                    )
+                
+                if wait_for_console_stable(page):
+                    print("🔍 [控制台] 正在寻找 App Launchpad 入口...")
+                    try:
+                        # 定位 <p>App Launchpad</p> 并点击
+                        launchpad = page.get_by_text("App Launchpad")
+                        launchpad.wait_for(state="visible", timeout=20000)
+                        launchpad.click()
+                        print("🔘 [点击] 成功进入 App Launchpad")
+                        page.wait_for_load_state("networkidle")
+                        time.sleep(5)
+                        
+                        save_state(context, username, page.url)
+                        page.screenshot(path=screenshot_p1)
+                        notifier.send(title=f"{username}-主控制台进入成功", content=f"🔗 当前 URL: {page.url}", image_path=screenshot_p1)
+                    except Exception as e:
+                        print(f"⚠️ [警告] 未能点击 Launchpad: {e}")
                 else:
-                    print("❌ [错误] 阶段 1 失败")
+                    print("❌ [错误] 阶段 1 登录状态校验失败")
                     continue
 
-                # --- 🚩 第二阶段：日本站跳转 ---
-                print(f"🚩 [阶段 2] 跳转日本区域...")
+                # --- 🚩 第二阶段：跳转日本子站并获取余额 ---
+                print(f"🚩 [阶段 2] 跳转目标子站: {TARGET_REGION_URL}")
                 page.goto(TARGET_REGION_URL)
-                page.wait_for_load_state("networkidle")
                 time.sleep(5)
 
+                # 检查是否掉线需要重新 GitHub 授权
                 if "signin" in page.url or "login" in page.url:
-                    print("⚠️ [警告] 发生掉线，重新登录补丁...")
+                    print("⚠️ [重连] 检测到掉线，执行二次登录补丁...")
                     perform_gh_login(page, username, password, totp_secret)
-                    page.wait_for_url(f"**{urlparse(TARGET_REGION_URL).netloc}/**", timeout=30000)
+                
+                # 等待直到网址不再是登录页
+                if wait_for_console_stable(page):
+                    print("⌛ [数据] 等待页面缓存加载余额...")
+                    time.sleep(10) # 充分等待后台接口返回数据
+                    
+                    # 精准定位余额
+                    balance_text = "N/A"
+                    try:
+                        # 查找包含 $ 符号的文本，通常在特定的 css 类或结构下
+                        # 按照你的描述查找类似 $4.84 的内容
+                        balance_element = page.locator('p:has-text("$")').filter(has_not_text="Credit").first
+                        balance_element.wait_for(state="visible", timeout=15000)
+                        balance_text = balance_element.inner_text()
+                        print(f"💰 [成功] 余额获取完成: {balance_text}")
+                    except Exception as e:
+                        print(f"⚠️ [失败] 无法定位余额元素: {e}")
 
-                # 最终页面确认
-                page.wait_for_load_state("networkidle")
-                time.sleep(5)
-                
-                final_balance = get_balance(page)
-                page.screenshot(path=screenshot_p2)
-                save_state(context, username, page.url)
-                
-                notifier.send(
-                    title=f"{username}-日本站跳转结果", 
-                    content=f"💰 <b>账户余额:</b> <code>{final_balance}</code>\n📍 区域: {detect_region(page.url)}\n🔗 URL: {page.url}", 
-                    image_path=screenshot_p2
-                )
+                    page.screenshot(path=screenshot_p2)
+                    save_state(context, username, page.url)
+                    
+                    notifier.send(
+                        title=f"{username}-子站余额检测", 
+                        content=f"💵 <b>最终余额:</b> <code>{balance_text}</code>\n📍 区域: 日本(Tokyo)\n🔗 URL: {page.url}", 
+                        image_path=screenshot_p2
+                    )
 
                 browser.close()
 
         except Exception as e:
-            print(f"💥 [异常] {username}: {e}")
+            print(f"💥 [崩溃] {username}: {e}")
             notifier.send(title=f"{username} 异常", content=str(e)[:100])
         finally:
             if gost_proc: gost_proc.terminate()
