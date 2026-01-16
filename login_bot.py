@@ -4,10 +4,10 @@ import base64
 import qrcode
 from telethon import TelegramClient, events
 
-API_ID = int(os.environ["API_ID"])
-API_HASH = os.environ["API_HASH"]
-BOT_TOKEN = os.environ["BOT_TOKEN"]
-ADMIN_ID = int(os.environ["ADMIN_ID"])
+API_ID = 11027029
+API_HASH = "4f06a4742fb65ab1d8051c6fc0f33b09"
+BOT_TOKEN = 8525533877:AAGJDqO5TmqtJatwW-tZoDcc8LPtLVVcD8Y
+ADMIN_ID = 1966630851
 
 bot = TelegramClient("bot", API_ID, API_HASH)
 user = TelegramClient("user", API_ID, API_HASH)
