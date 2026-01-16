@@ -1,4 +1,4 @@
-name: TG Login (扫码)
+name: Telegram登录 (扫码)
 
 on:
   workflow_dispatch:
