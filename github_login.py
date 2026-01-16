@@ -6,8 +6,9 @@ import json
 import time
 import pyotp
 from playwright.sync_api import sync_playwright
-from engine.main import ConfigReader,SecretUpdater
-from engine.notify import send_notify
+from engine.config_reader import ConfigReader
+from engine.main import SecretUpdater
+from engine.notify import TelegramNotifier
 
 # ================= 基础配置 =================
 SESSION_SECRET = "GT_SESSION"
@@ -18,6 +19,9 @@ GH_INFO = config.get_value("GH_INFO")  # 列表
 
 # 初始化 session SecretUpdater
 secret = SecretUpdater(SESSION_SECRET, config_reader=config)
+
+# 初始化 Telegram 通知器
+notifier = TelegramNotifier(config)
 
 # 读取已有 session dict
 raw = os.getenv(SESSION_SECRET)
@@ -36,6 +40,7 @@ def extract_session(context):
     return None
 
 def validate_session(context, page, session_value):
+    context.clear_cookies()
     context.add_cookies([{
         "name": "user_session",
         "value": session_value,
@@ -104,15 +109,16 @@ def main():
 
             except Exception as e:
                 shot = screenshot(page, f"login_failed_{idx}")
-                send_notify(
-                    f"❌ GitHub 登录失败",
-                    f"{masked}\n原因: {e}",
-                    shot
+                notifier.send(
+                    title="❌ GitHub 登录失败",
+                    content=f"{masked}\n原因: {e}",
+                    image_path=shot
                 )
                 print(f"❌ 账号失败但继续下一个: {e}", flush=True)
 
         context.close()
         browser.close()
+        print("🟢 所有账号处理完成", flush=True)
 
 if __name__ == "__main__":
     main()
