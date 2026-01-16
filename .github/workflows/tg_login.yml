@@ -1,27 +1,29 @@
-name: TG Login Bot
+name: TG Login (One Shot)
 
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+  actions: read
+  secrets: write   # ⭐ 必须
+
 jobs:
   tg-login:
     runs-on: ubuntu-latest
+    timeout-minutes: 3   # ⏱ 最多 3 分钟
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install Python dependencies
+      - name: Install deps
         run: |
           pip install --upgrade pip
-          pip install \
-            telethon>=1.34 \
-            qrcode[pil] \
-            pillow
+          pip install telethon qrcode[pil] pillow pynacl requests
 
       - name: Run login bot
         env:
@@ -29,5 +31,7 @@ jobs:
           API_HASH: ${{ secrets.API_HASH }}
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           ADMIN_ID: ${{ secrets.ADMIN_ID }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPO: ${{ github.repository }}
         run: |
           python login_bot.py
