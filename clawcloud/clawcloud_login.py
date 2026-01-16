@@ -1,6 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 import os
 import sys
 import time
@@ -12,30 +9,19 @@ from urllib.parse import urlparse
 from playwright.sync_api import sync_playwright
 from requests.exceptions import RequestException
 
-# 导入你项目原有的读取类和 Secret 更新器
-# 假设目录结构保持不变
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, BASE_DIR)
-try:
-    from engine.main import ConfigReader, SecretUpdater
-except ImportError:
-    # 如果在本地测试没有这些类，可以根据需要 Mock 或确保路径正确
-    pass
-
 # ==================== 配置 ====================
 LOGIN_ENTRY_URL = "https://console.run.claw.cloud"
 SIGNIN_URL = f"{LOGIN_ENTRY_URL}/signin"
 DEVICE_VERIFY_WAIT = 30  
-TWO_FACTOR_WAIT = 120    
+TWO_FACTOR_WAIT = int(os.environ.get("TWO_FACTOR_WAIT", "120"))
+STATUS_OK = "OK"
+STATUS_FAIL = "FAIL"
 
 class Telegram:
-    """Telegram 通知与交互模块 - 使用 Config 第一组配置"""
-    def __init__(self, bot_config):
-        self.token = bot_config.get("token")
-        self.chat_id = bot_config.get("id")
+    def __init__(self):
+        self.token = os.environ.get('TG_BOT_TOKEN')
+        self.chat_id = os.environ.get('TG_CHAT_ID')
         self.ok = bool(self.token and self.chat_id)
-        if self.ok:
-            print(f"✅ TG Bot 已就绪 (ID: {self.chat_id})")
     
     def send(self, msg):
         if not self.ok: return
@@ -43,7 +29,7 @@ class Telegram:
             requests.post(f"https://api.telegram.org/bot{self.token}/sendMessage",
                           data={"chat_id": self.chat_id, "text": msg, "parse_mode": "HTML"}, timeout=30)
         except: pass
-    
+
     def photo(self, path, caption=""):
         if not self.ok or not os.path.exists(path): return
         try:
@@ -53,10 +39,19 @@ class Telegram:
                               files={"photo": f}, timeout=60)
         except: pass
 
+    def flush_updates(self):
+        if not self.ok: return 0
+        try:
+            r = requests.get(f"https://api.telegram.org/bot{self.token}/getUpdates", params={"timeout": 0}, timeout=10)
+            data = r.json()
+            if data.get("ok") and data.get("result"):
+                return data["result"][-1]["update_id"] + 1
+        except: pass
+        return 0
+
     def wait_code(self, timeout=120):
-        """等待用户在 TG 发送 /code 123456"""
         if not self.ok: return None
-        offset = 0
+        offset = self.flush_updates()
         deadline = time.time() + timeout
         pattern = re.compile(r"^/code\s+(\d{6,8})$")
         while time.time() < deadline:
@@ -64,8 +59,8 @@ class Telegram:
                 r = requests.get(f"https://api.telegram.org/bot{self.token}/getUpdates",
                                  params={"timeout": 20, "offset": offset}, timeout=30)
                 data = r.json()
-                if data.get("ok") and data.get("result"):
-                    for upd in data["result"]:
+                if data.get("ok"):
+                    for upd in data.get("result", []):
                         offset = upd["update_id"] + 1
                         msg = upd.get("message", {})
                         if str(msg.get("chat", {}).get("id")) == str(self.chat_id):
@@ -76,44 +71,50 @@ class Telegram:
             time.sleep(2)
         return None
 
+class SecretUpdater:
+    def __init__(self):
+        self.token = os.environ.get('REPO_TOKEN')
+        self.repo = os.environ.get('GITHUB_REPOSITORY')
+        self.ok = bool(self.token and self.repo)
+
+    def update(self, name, value):
+        if not self.ok: return False
+        try:
+            from nacl import encoding, public
+            headers = {"Authorization": f"token {self.token}", "Accept": "application/vnd.github.v3+json"}
+            r = requests.get(f"https://api.github.com/repos/{self.repo}/actions/secrets/public-key", headers=headers, timeout=30)
+            key_data = r.json()
+            pk = public.PublicKey(key_data['key'].encode(), encoding.Base64Encoder())
+            encrypted = public.SealedBox(pk).encrypt(value.encode())
+            requests.put(f"https://api.github.com/repos/{self.repo}/actions/secrets/{name}",
+                         headers=headers, json={"encrypted_value": base64.b64encode(encrypted).decode(), "key_id": key_data['key_id']}, timeout=30)
+            return True
+        except: return False
+
 class AutoLogin:
     def __init__(self):
-        # 1. 初始化配置读取
-        self.config = ConfigReader()
-        
-        # 2. 读取 TG 第一组配置 (你的核心需求)
-        bot_info_list = self.config.get_value("BOT_INFO")
-        if bot_info_list and len(bot_info_list) > 0:
-            self.tg = Telegram(bot_info_list[0])
-        else:
-            print("❌ Config 中未找到有效 BOT_INFO")
-            sys.exit(1)
-
-        # 3. 读取 Github 和 代理信息
-        # 假设取第一组账号
-        gh_info_list = self.config.get_value("GH_INFO")
-        self.gh_info = gh_info_list[0] if gh_info_list else {}
-        self.proxy_list = self.config.get_value("PROXY_INFO") or []
-        
-        # 4. 初始化 Secret 更新器 (用于回写 Session)
-        self.session_updater = SecretUpdater("GH_SESSION", config_reader=self.config)
-        # 尝试从环境变量获取现有 Session
-        self.gh_session = os.getenv("GH_SESSION", "").strip()
-        
+        self.server_list = os.environ.get('PROXY', '')
+        self.username = os.environ.get('GH_USERNAME')
+        self.password = os.environ.get('GH_PASSWORD')
+        self.gh_session = os.environ.get('GH_SESSION', '').strip()
+        self.totp_secret = os.environ.get("GH_2FA_SECRET")
+        self.tg = Telegram()
+        self.secret = SecretUpdater()
         self.shots = []
         self.logs = []
-        self.detected_region = None
         self.n = 0
+        self.detected_region = None
+        self.region_base_url = None
 
     def log(self, msg, level="INFO"):
-        icons = {"INFO": "ℹ️", "SUCCESS": "✅", "ERROR": "❌", "WARN": "⚠️", "STEP": "🔹"}
-        line = f"{icons.get(level, '•')} {msg}"
+        icon = {"INFO": "ℹ️", "SUCCESS": "✅", "ERROR": "❌", "WARN": "⚠️", "STEP": "🔹"}.get(level, "•")
+        line = f"{icon} {msg}"
         print(line)
         self.logs.append(line)
 
     def shot(self, page, name):
         self.n += 1
-        f = f"shot_{self.n}_{name}.png"
+        f = f"{self.n:02d}_{name}.png"
         try:
             page.screenshot(path=f)
             self.shots.append(f)
@@ -121,144 +122,132 @@ class AutoLogin:
         return f
 
     def pick_available_proxy(self):
-        """轮询代理列表并返回第一个可用的代理 URL"""
-        if not self.proxy_list:
-            self.log("未配置代理信息，尝试直连")
-            return None
-        
-        for p in self.proxy_list:
-            # 兼容多种格式，构建标准 proxy url
-            server = p.get('server')
-            port = p.get('port')
-            user = p.get('username')
-            pwd = p.get('password')
-            proxy_url = f"http://{user}:{pwd}@{server}:{port}"
-            
-            self.log(f"测试代理: {server}:{port}...")
+        if not self.server_list:
+            return None, "未配置代理，准备直连"
+        proxies = [p.strip() for p in self.server_list.split(",") if p.strip()]
+        for idx, s in enumerate(proxies, 1):
+            proxy_url = s if s.startswith(("http", "socks5")) else f"http://{s}"
+            self.log(f"测试代理 {idx}/{len(proxies)}: {proxy_url}")
             try:
-                resp = requests.get("https://myip.ipip.net", 
-                                    proxies={"http": proxy_url, "https": proxy_url}, 
-                                    timeout=10)
+                resp = requests.get("https://myip.ipip.net", proxies={"http": proxy_url, "https": proxy_url}, timeout=10)
                 if resp.status_code == 200:
-                    self.log(f"代理可用: {resp.text.strip()}", "SUCCESS")
-                    return proxy_url
-            except Exception:
-                continue
-        self.log("所有代理均不可用，将尝试直连", "WARN")
+                    return proxy_url, f"代理可用: {resp.text.strip()}"
+            except: pass
+        return None, "所有代理均不可用，切换直连"
+
+    def detect_region(self, url):
+        try:
+            parsed = urlparse(url)
+            host = parsed.netloc
+            if host.endswith('.console.claw.cloud'):
+                region = host.replace('.console.claw.cloud', '')
+                if region and region != 'console':
+                    self.detected_region, self.region_base_url = region, f"https://{host}"
+                    self.log(f"检测到区域: {region}", "SUCCESS")
+                    return region
+        except: pass
         return None
 
+    def wait_device(self, page):
+        self.log(f"等待设备验证 {DEVICE_VERIFY_WAIT}s...", "WARN")
+        self.tg.send("⚠️ <b>需要设备验证</b>")
+        for i in range(DEVICE_VERIFY_WAIT):
+            time.sleep(1)
+            if i % 5 == 0:
+                if 'verified-device' not in page.url and 'device-verification' not in page.url:
+                    self.log("设备验证通过！", "SUCCESS")
+                    return True
+                try: page.reload(); page.wait_for_load_state('networkidle', timeout=10000)
+                except: pass
+        return 'verified-device' not in page.url
+
     def handle_2fa(self, page):
-        """处理 2FA: 优先计算 TOTP，失败则求助 TG"""
-        totp_secret = self.gh_info.get("2fasecret") or os.getenv("GH_2FA_SECRET")
-        code = None
-        
-        if totp_secret:
-            try:
-                code = pyotp.TOTP(totp_secret.replace(" ", "")).now()
-                self.log(f"自动计算 TOTP 成功", "SUCCESS")
-            except: pass
-            
-        if not code:
-            self.log("需要手动 2FA，已发送通知至 Telegram", "WARN")
-            self.tg.photo(self.shot(page, "2fa_wait"), "请在 120 秒内回复 /code xxxxxx")
+        self.log("处理 2FA...", "WARN")
+        if self.totp_secret:
+            code = pyotp.TOTP(self.totp_secret).now()
+            self.log(f"生成 TOTP: {code}")
+        else:
+            self.tg.send("🔐 <b>等待 TG 发送 /code</b>")
             code = self.tg.wait_code(TWO_FACTOR_WAIT)
-            
-        if code:
-            selectors = ['input[name="app_otp"]', 'input#app_totp', 'input[name="otp"]']
-            for s in selectors:
-                el = page.locator(s).first
+        
+        if not code: return False
+        
+        for sel in ['input[autocomplete="one-time-code"]', 'input#app_totp', 'input[name="otp"]']:
+            try:
+                el = page.locator(sel).first
                 if el.is_visible(timeout=3000):
                     el.fill(code)
                     page.keyboard.press("Enter")
                     time.sleep(5)
-                    return True
+                    return "two-factor" not in page.url
+            except: pass
         return False
 
     def run(self):
-        start_ts = time.time()
         with sync_playwright() as p:
-            proxy_url = self.pick_available_proxy()
+            proxy_cfg, proxy_msg = self.pick_available_proxy()
+            self.log(proxy_msg, "SUCCESS" if proxy_cfg else "WARN")
             
-            browser = p.chromium.launch(
-                headless=True, 
-                args=['--no-sandbox', '--disable-dev-shm-usage'],
-                proxy={"server": proxy_url} if proxy_url else None
-            )
+            browser = p.chromium.launch(headless=True, args=['--no-sandbox'], proxy={"server": proxy_cfg} if proxy_cfg else None)
+            context = browser.new_context(viewport={'width': 1920, 'height': 1080})
             
-            context = browser.new_context(
-                viewport={'width': 1280, 'height': 800},
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-            )
-            
-            # 注入旧 Session 以绕过登录
             if self.gh_session:
                 context.add_cookies([{'name': 'user_session', 'value': self.gh_session, 'domain': 'github.com', 'path': '/'}])
-
+            
             page = context.new_page()
-            page.set_default_timeout(60000) # 设置全局超时
-
             try:
-                self.log(f"步骤1: 访问 Claw 登录页")
-                # 使用 domcontentloaded 提高在慢速代理下的成功率
-                page.goto(SIGNIN_URL, wait_until="domcontentloaded")
-                time.sleep(3)
-
-                # 判断登录状态
+                # 步骤1: 访问 ClawCloud
+                page.goto(SIGNIN_URL, timeout=60000)
+                page.wait_for_load_state('networkidle')
+                
+                # 步骤2: 点击 GitHub
                 if "signin" in page.url:
-                    self.log("点击 GitHub 登录按钮", "STEP")
-                    page.click('button:has-text("GitHub"), [data-provider="github"]', timeout=15000)
-                    time.sleep(5)
-
-                # 处理 GitHub 登录表单
+                    page.locator('button:has-text("GitHub"), [data-provider="github"]').first.click()
+                    page.wait_for_load_state('networkidle')
+                
+                # 步骤3: GitHub 登录逻辑
                 if "github.com/login" in page.url:
-                    self.log("填充 GitHub 表单", "STEP")
-                    page.fill('input[name="login"]', self.gh_info.get("username", ""))
-                    page.fill('input[name="password"]', self.gh_info.get("password", ""))
-                    page.click('input[type="submit"]')
-                    time.sleep(5)
-
-                # 处理设备验证 (批准数字)
-                if "device-verification" in page.url or "verified-device" in page.url:
-                    self.log(f"检测到设备验证，等待 {DEVICE_VERIFY_WAIT} 秒...", "WARN")
-                    self.tg.photo(self.shot(page, "device_verify"), f"请在手机端批准登录")
-                    time.sleep(DEVICE_VERIFY_WAIT)
-
-                # 处理 2FA
+                    page.locator('input[name="login"]').fill(self.username)
+                    page.locator('input[name="password"]').fill(self.password)
+                    page.locator('input[type="submit"]').click()
+                    page.wait_for_load_state('networkidle')
+                
                 if "two-factor" in page.url:
                     self.handle_2fa(page)
+                
+                if "verified-device" in page.url:
+                    self.wait_device(page)
 
-                # 处理 OAuth 授权
-                if "oauth/authorize" in page.url:
-                    self.log("点击 OAuth 授权", "STEP")
-                    page.click('button[name="authorize"]')
-                    time.sleep(5)
-
-                # 等待最终跳转回 Claw 并检测区域
-                page.wait_for_url(re.compile(r".*claw\.cloud.*"), timeout=60000)
-                parsed = urlparse(page.url)
-                if '.console.claw.cloud' in parsed.netloc:
-                    self.detected_region = parsed.netloc.split('.')[0]
-                    self.log(f"成功进入 Claw 区域控制台: {self.detected_region}", "SUCCESS")
-
-                # 提取并回写新的 Session Cookie
-                new_cookies = context.cookies()
-                new_session = next((c['value'] for c in new_cookies if c['name'] == 'user_session'), None)
-                if new_session:
-                    self.session_updater.update(new_session)
-                    self.log("GitHub Session 已回写更新", "SUCCESS")
-
-                # 任务完成通知
-                duration = time.time() - start_ts
-                self.tg.send(f"✅ <b>ClawCloud 登录成功</b>\n<b>用户:</b> {self.gh_info.get('username')}\n<b>区域:</b> {self.detected_region}\n<b>耗时:</b> {duration:.1f}s")
-
+                # 步骤4: 等待跳转并检测区域
+                success = False
+                for _ in range(30):
+                    if "claw.cloud" in page.url and "signin" not in page.url:
+                        success = True
+                        break
+                    if "authorize" in page.url:
+                        page.locator('button[name="authorize"]').click()
+                    time.sleep(2)
+                
+                if success:
+                    self.detect_region(page.url)
+                    # 步骤5: 保活
+                    base = self.region_base_url or LOGIN_ENTRY_URL
+                    page.goto(f"{base}/apps")
+                    page.wait_for_load_state('networkidle')
+                    self.log("登录成功且已保活", "SUCCESS")
+                    
+                    # 步骤6: 更新 Cookie
+                    for c in context.cookies():
+                        if c['name'] == 'user_session' and 'github' in c['domain']:
+                            self.secret.update('GH_SESSION', c['value'])
+                            break
+                    self.tg.send(f"✅ ClawCloud 登录成功\n区域: {self.detected_region}")
+                else:
+                    self.log("登录失败", "ERROR")
+                    self.tg.send("❌ ClawCloud 登录失败")
+                    
             except Exception as e:
-                self.log(f"运行失败: {str(e)}", "ERROR")
-                # 出错时强制截图并发送
-                try:
-                    error_shot = self.shot(page, "error_final")
-                    self.tg.photo(error_shot, f"❌ 任务失败: {str(e)[:150]}")
-                except:
-                    self.tg.send(f"❌ 任务失败 (截图失败): {str(e)[:150]}")
+                self.log(f"异常: {str(e)}", "ERROR")
             finally:
                 browser.close()
 
