@@ -21,4 +21,7 @@ jobs:
           playwright install chromium
 
       - name: Run GitHub login
+        env:
+          CONFIG_PASSWORD: ${{ secrets.CONFIG_PASSWORD }}
+          GH_SESSION: ${{ secrets.GH_SESSION }}
         run: python github_login.py
