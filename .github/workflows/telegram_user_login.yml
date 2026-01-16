@@ -1,4 +1,4 @@
-name: TG Login (One Shot)
+name: TG Login (扫码)
 
 on:
   workflow_dispatch:
@@ -32,4 +32,4 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPO: ${{ github.repository }}
         run: |
-          python login_bot.py
+          python telegram_user_login.py
