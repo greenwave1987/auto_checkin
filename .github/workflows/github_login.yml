@@ -17,7 +17,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install playwright pyotp cryptography
+          pip install playwright pyotp cryptography requests
           playwright install chromium
 
       - name: Run GitHub login
