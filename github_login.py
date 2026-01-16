@@ -106,4 +106,56 @@ def main():
                     continue
 
                 # ================== 二次验证（严格按单账号脚本） ==================
-                if
+                if "two-factor" in page.url or page.query_selector('input#app_totp'):
+                    print("🔑 检测到两步验证", flush=True)
+                    try:
+                        otp_input = page.wait_for_selector('input#app_totp', timeout=15000)
+                        if totp_secret:
+                            code = pyotp.TOTP(totp_secret).now()
+                            print(f"🔢 输入 2FA 验证码: {code}", flush=True)
+                            otp_input.fill(code)
+                            page.keyboard.press("Enter")
+                            page.wait_for_load_state("networkidle", timeout=30000)
+                        else:
+                            print("❌ 未配置 2FA 密钥", flush=True)
+                            shot = save_screenshot(page, f"{username}_2fa_missing")
+                            send_notify("❌ GitHub 登录失败", f"{masked} 缺少 2FA 密钥", shot)
+                            continue
+                    except Exception:
+                        print(f"❌ 2FA 输入框未出现", flush=True)
+                        shot = save_screenshot(page, f"{username}_2fa_timeout")
+                        send_notify("❌ GitHub 登录失败", f"{masked} 2FA 输入框未出现", shot)
+                        continue
+
+                # 校验登录是否成功
+                page.goto(GITHUB_TEST_URL, timeout=30000)
+                page.wait_for_load_state("domcontentloaded", timeout=30000)
+                if "login" in page.url:
+                    print(f"❌ {masked} 登录失败", flush=True)
+                    shot = save_screenshot(page, f"{username}_login_failed")
+                    send_notify("❌ GitHub 登录失败", f"{masked} 登录失败", shot)
+                    continue
+
+            # ================== 获取新的 session ==================
+            new_session = None
+            for c in context.cookies():
+                if c["name"] == "user_session" and "github.com" in c["domain"]:
+                    new_session = c["value"]
+                    break
+
+            if new_session:
+                sess_dict[username] = new_session
+                print(f"🟢 {masked} 登录成功，session 已更新", flush=True)
+            else:
+                print(f"❌ {masked} 未获取到新的 session", flush=True)
+                shot = save_screenshot(page, f"{username}_session_failed")
+                send_notify("❌ GitHub session 获取失败", f"{masked} 未获取到 session", shot)
+
+        # ================== 更新 GH_SESSION ==================
+        update_secret()
+        browser.close()
+        print("🟢 所有账号处理完成", flush=True)
+
+# ================== 入口 ==================
+if __name__ == "__main__":
+    main()
