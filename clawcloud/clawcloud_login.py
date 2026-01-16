@@ -12,10 +12,15 @@ from urllib.parse import urlparse
 from playwright.sync_api import sync_playwright
 from requests.exceptions import RequestException
 
-# 导入你项目原有的读取类
+# 导入你项目原有的读取类和 Secret 更新器
+# 假设目录结构保持不变
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE_DIR)
-from engine.main import ConfigReader, SecretUpdater
+try:
+    from engine.main import ConfigReader, SecretUpdater
+except ImportError:
+    # 如果在本地测试没有这些类，可以根据需要 Mock 或确保路径正确
+    pass
 
 # ==================== 配置 ====================
 LOGIN_ENTRY_URL = "https://console.run.claw.cloud"
@@ -76,69 +81,92 @@ class AutoLogin:
         # 1. 初始化配置读取
         self.config = ConfigReader()
         
-        # 2. 读取 TG 第一组配置
+        # 2. 读取 TG 第一组配置 (你的核心需求)
         bot_info_list = self.config.get_value("BOT_INFO")
         if bot_info_list and len(bot_info_list) > 0:
             self.tg = Telegram(bot_info_list[0])
         else:
-            print("❌ Config 中未找到 BOT_INFO")
+            print("❌ Config 中未找到有效 BOT_INFO")
             sys.exit(1)
 
-        # 3. 读取用户和代理（按你原有脚本逻辑）
-        self.gh_info = self.config.get_value("GH_INFO")[0] # 取第一个账号
-        self.proxy_info = self.config.get_value("PROXY_INFO")
+        # 3. 读取 Github 和 代理信息
+        # 假设取第一组账号
+        gh_info_list = self.config.get_value("GH_INFO")
+        self.gh_info = gh_info_list[0] if gh_info_list else {}
+        self.proxy_list = self.config.get_value("PROXY_INFO") or []
         
-        # 4. Secret 更新器
+        # 4. 初始化 Secret 更新器 (用于回写 Session)
         self.session_updater = SecretUpdater("GH_SESSION", config_reader=self.config)
+        # 尝试从环境变量获取现有 Session
         self.gh_session = os.getenv("GH_SESSION", "").strip()
         
         self.shots = []
         self.logs = []
         self.detected_region = None
-        self.region_base_url = None
+        self.n = 0
 
     def log(self, msg, level="INFO"):
-        icon = {"INFO": "ℹ️", "SUCCESS": "✅", "ERROR": "❌", "WARN": "⚠️"}.get(level, "•")
-        print(f"{icon} {msg}")
-        self.logs.append(f"{icon} {msg}")
+        icons = {"INFO": "ℹ️", "SUCCESS": "✅", "ERROR": "❌", "WARN": "⚠️", "STEP": "🔹"}
+        line = f"{icons.get(level, '•')} {msg}"
+        print(line)
+        self.logs.append(line)
 
     def shot(self, page, name):
-        f = f"shot_{len(self.shots)}.png"
-        page.screenshot(path=f); self.shots.append(f)
+        self.n += 1
+        f = f"shot_{self.n}_{name}.png"
+        try:
+            page.screenshot(path=f)
+            self.shots.append(f)
+        except: pass
         return f
 
     def pick_available_proxy(self):
-        """轮询代理列表并返回第一个可用的"""
-        if not self.proxy_info: return None
-        for p in self.proxy_info:
-            proxy_url = f"http://{p['username']}:{p['password']}@{p['server']}:{p['port']}"
+        """轮询代理列表并返回第一个可用的代理 URL"""
+        if not self.proxy_list:
+            self.log("未配置代理信息，尝试直连")
+            return None
+        
+        for p in self.proxy_list:
+            # 兼容多种格式，构建标准 proxy url
+            server = p.get('server')
+            port = p.get('port')
+            user = p.get('username')
+            pwd = p.get('password')
+            proxy_url = f"http://{user}:{pwd}@{server}:{port}"
+            
+            self.log(f"测试代理: {server}:{port}...")
             try:
-                r = requests.get("https://myip.ipip.net", proxies={"http": proxy_url, "https": proxy_url}, timeout=8)
-                if r.status_code == 200:
-                    self.log(f"代理可用: {r.text.strip()}", "SUCCESS")
+                resp = requests.get("https://myip.ipip.net", 
+                                    proxies={"http": proxy_url, "https": proxy_url}, 
+                                    timeout=10)
+                if resp.status_code == 200:
+                    self.log(f"代理可用: {resp.text.strip()}", "SUCCESS")
                     return proxy_url
-            except: continue
+            except Exception:
+                continue
+        self.log("所有代理均不可用，将尝试直连", "WARN")
         return None
 
     def handle_2fa(self, page):
-        """2FA 逻辑：计算 -> TG 索要"""
-        shot = self.shot(page, "2fa_wait")
+        """处理 2FA: 优先计算 TOTP，失败则求助 TG"""
+        totp_secret = self.gh_info.get("2fasecret") or os.getenv("GH_2FA_SECRET")
         code = None
         
-        # 尝试自动计算
-        totp_secret = self.gh_info.get("2fasecret")
         if totp_secret:
-            code = pyotp.TOTP(totp_secret.replace(" ", "")).now()
-            self.log(f"自动生成 TOTP: {code}")
-        
-        # 自动失败则求助 TG
+            try:
+                code = pyotp.TOTP(totp_secret.replace(" ", "")).now()
+                self.log(f"自动计算 TOTP 成功", "SUCCESS")
+            except: pass
+            
         if not code:
-            self.tg.photo(shot, "需要 2FA 验证，请在 TG 回复 /code xxxxxx")
+            self.log("需要手动 2FA，已发送通知至 Telegram", "WARN")
+            self.tg.photo(self.shot(page, "2fa_wait"), "请在 120 秒内回复 /code xxxxxx")
             code = self.tg.wait_code(TWO_FACTOR_WAIT)
-
+            
         if code:
-            for sel in ['input[name="app_otp"]', 'input#app_totp', 'input[name="otp"]']:
-                el = page.locator(sel).first
+            selectors = ['input[name="app_otp"]', 'input#app_totp', 'input[name="otp"]']
+            for s in selectors:
+                el = page.locator(s).first
                 if el.is_visible(timeout=3000):
                     el.fill(code)
                     page.keyboard.press("Enter")
@@ -147,92 +175,92 @@ class AutoLogin:
         return False
 
     def run(self):
+        start_ts = time.time()
         with sync_playwright() as p:
             proxy_url = self.pick_available_proxy()
-            # 增加浏览器启动参数，提高稳定性
+            
             browser = p.chromium.launch(
                 headless=True, 
-                args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'], 
+                args=['--no-sandbox', '--disable-dev-shm-usage'],
                 proxy={"server": proxy_url} if proxy_url else None
             )
+            
             context = browser.new_context(
                 viewport={'width': 1280, 'height': 800},
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             )
             
+            # 注入旧 Session 以绕过登录
             if self.gh_session:
                 context.add_cookies([{'name': 'user_session', 'value': self.gh_session, 'domain': 'github.com', 'path': '/'}])
 
             page = context.new_page()
-            # 设置默认全局超时为 45 秒
-            page.set_default_timeout(45000)
+            page.set_default_timeout(60000) # 设置全局超时
 
             try:
-                self.log(f"正在访问 Claw (代理: {proxy_url if proxy_url else '直连'})")
-                
-                # 优化1: 使用 domcontentloaded 减少等待时间
-                try:
-                    page.goto(SIGNIN_URL, wait_until="domcontentloaded", timeout=60000)
-                except Exception as e:
-                    self.log("初次加载超时，尝试等待 5 秒确认页面状态...", "WARN")
+                self.log(f"步骤1: 访问 Claw 登录页")
+                # 使用 domcontentloaded 提高在慢速代理下的成功率
+                page.goto(SIGNIN_URL, wait_until="domcontentloaded")
+                time.sleep(3)
+
+                # 判断登录状态
+                if "signin" in page.url:
+                    self.log("点击 GitHub 登录按钮", "STEP")
+                    page.click('button:has-text("GitHub"), [data-provider="github"]', timeout=15000)
                     time.sleep(5)
 
-                # 优化2: 灵活检测登录按钮
-                login_btn = page.locator('button:has-text("GitHub"), [data-provider="github"]').first
-                if login_btn.is_visible(timeout=10000):
-                    login_btn.click()
-                    self.log("点击 GitHub 登录按钮")
-                else:
-                    # 如果已经登录过了，可能直接跳转到了控制台
-                    if "signin" not in page.url:
-                        self.log("似乎已处于登录状态，跳过点击按钮")
-                
-                # --- GitHub 登录流程 ---
+                # 处理 GitHub 登录表单
                 if "github.com/login" in page.url:
-                    page.wait_for_selector('input[name="login"]', timeout=20000)
-                    page.fill('input[name="login"]', self.gh_info["username"])
-                    page.fill('input[name="password"]', self.gh_info["password"])
+                    self.log("填充 GitHub 表单", "STEP")
+                    page.fill('input[name="login"]', self.gh_info.get("username", ""))
+                    page.fill('input[name="password"]', self.gh_info.get("password", ""))
                     page.click('input[type="submit"]')
-                    self.log("提交 GitHub 登录表单")
+                    time.sleep(5)
 
-                # --- 2FA 验证 ---
+                # 处理设备验证 (批准数字)
+                if "device-verification" in page.url or "verified-device" in page.url:
+                    self.log(f"检测到设备验证，等待 {DEVICE_VERIFY_WAIT} 秒...", "WARN")
+                    self.tg.photo(self.shot(page, "device_verify"), f"请在手机端批准登录")
+                    time.sleep(DEVICE_VERIFY_WAIT)
+
+                # 处理 2FA
                 if "two-factor" in page.url:
-                    self.log("检测到 2FA 验证")
                     self.handle_2fa(page)
 
-                # --- 授权 ---
+                # 处理 OAuth 授权
                 if "oauth/authorize" in page.url:
-                    self.log("检测到授权页面，正在确认...")
+                    self.log("点击 OAuth 授权", "STEP")
                     page.click('button[name="authorize"]')
+                    time.sleep(5)
 
-                # --- 区域检测 ---
-                # 只要 URL 包含 claw.cloud 就说明回来了
+                # 等待最终跳转回 Claw 并检测区域
                 page.wait_for_url(re.compile(r".*claw\.cloud.*"), timeout=60000)
-                
-                # 提取区域
-                current_url = page.url
-                parsed = urlparse(current_url)
-                if 'console.claw.cloud' in parsed.netloc:
+                parsed = urlparse(page.url)
+                if '.console.claw.cloud' in parsed.netloc:
                     self.detected_region = parsed.netloc.split('.')[0]
-                    self.log(f"成功进入控制台，区域: {self.detected_region}", "SUCCESS")
-                
-                # 更新 Session
-                new_s = next((c['value'] for c in context.cookies() if c['name'] == 'user_session'), None)
-                if new_s:
-                    self.session_updater.update(new_s)
-                    self.log("GitHub Session 已回写", "SUCCESS")
+                    self.log(f"成功进入 Claw 区域控制台: {self.detected_region}", "SUCCESS")
 
-                self.tg.send(f"✅ <b>ClawCloud 登录成功</b>\n用户: {self.gh_info['username']}\n区域: {self.detected_region}")
+                # 提取并回写新的 Session Cookie
+                new_cookies = context.cookies()
+                new_session = next((c['value'] for c in new_cookies if c['name'] == 'user_session'), None)
+                if new_session:
+                    self.session_updater.update(new_session)
+                    self.log("GitHub Session 已回写更新", "SUCCESS")
+
+                # 任务完成通知
+                duration = time.time() - start_ts
+                self.tg.send(f"✅ <b>ClawCloud 登录成功</b>\n<b>用户:</b> {self.gh_info.get('username')}\n<b>区域:</b> {self.detected_region}\n<b>耗时:</b> {duration:.1f}s")
 
             except Exception as e:
-                self.log(f"运行异常: {str(e)}", "ERROR")
-                # 优化3: 捕获异常时的截图也进行错误处理
+                self.log(f"运行失败: {str(e)}", "ERROR")
+                # 出错时强制截图并发送
                 try:
-                    path = self.shot(page, "error")
-                    self.tg.photo(path, f"❌ 任务失败详情: {str(e)[:200]}")
+                    error_shot = self.shot(page, "error_final")
+                    self.tg.photo(error_shot, f"❌ 任务失败: {str(e)[:150]}")
                 except:
-                    self.tg.send(f"❌ 任务失败且截图失败: {str(e)[:200]}")
+                    self.tg.send(f"❌ 任务失败 (截图失败): {str(e)[:150]}")
             finally:
                 browser.close()
+
 if __name__ == "__main__":
     AutoLogin().run()
