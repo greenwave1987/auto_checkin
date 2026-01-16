@@ -23,81 +23,76 @@ class ClawAutoLogin:
     def __init__(self):
         self.config = ConfigReader()
         
-        # --- 增强型数据读取 ---
+        # --- 核心修正：精准解析 PROXY_INFO ---
         raw_proxy = self.config.get_value("PROXY_INFO")
-        # 兼容 {"value": [...]} 或直接 [...]
+        self.proxy_list = []
+        
+        # 如果返回的是字典且包含 value 键
         if isinstance(raw_proxy, dict) and "value" in raw_proxy:
             self.proxy_list = raw_proxy["value"]
-        else:
-            self.proxy_list = raw_proxy or []
-
+        # 如果直接返回的是列表
+        elif isinstance(raw_proxy, list):
+            self.proxy_list = raw_proxy
+            
         self.bot_info = (self.config.get_value("BOT_INFO") or [{}])[0]
         self.gh_info = (self.config.get_value("GH_INFO") or [{}])[0]
-        
-        # --- 更新变量方式 ---
         self.session_updater = SecretUpdater("GH_SESSION", config_reader=self.config)
         self.gh_session = os.getenv("GH_SESSION", "").strip()
-        
-        self.n = 0
         self.gost_proc = None
 
     def log(self, msg, level="INFO"):
-        icons = {"INFO": "ℹ️", "SUCCESS": "✅", "ERROR": "❌", "WARN": "⚠️", "STEP": "🔹"}
+        icons = {"INFO": "ℹ️", "SUCCESS": "✅", "ERROR": "❌", "STEP": "🔹"}
         print(f"{icons.get(level, '•')} {msg}")
 
     def run(self):
-        # 强制打印诊断
-        self.log(f"诊断：读取到代理数量 = {len(self.proxy_list)}")
-        
+        # 1. 强制打印配置诊断
+        print(f"DEBUG: 原始代理数据类型: {type(self.config.get_value('PROXY_INFO'))}")
+        self.log(f"实际解析到的代理数量: {len(self.proxy_list)}")
+
+        # 2. 启动 Gost 隧道 (强制前置)
         local_proxy = "http://127.0.0.1:8080"
         
-        # ------------------------------------------------
-        # 1️⃣ 启动 Gost 隧道 (强制执行)
-        # ------------------------------------------------
         if not self.proxy_list:
-            self.log("致命错误：PROXY_INFO 为空，无法启动代理流程", "ERROR")
-            # 这里如果不退出，后面 page.goto 必然 ERR_EMPTY_RESPONSE
-        else:
-            p = self.proxy_list[0]
-            p_str = f"{p.get('username')}:{p.get('password')}@{p.get('server')}:{p.get('port')}"
-            
-            self.log(f"步骤 0: 启动隧道 [gost -L=:8080 -F=socks5://{p.get('server')}]", "STEP")
-            
-            try:
-                if os.path.exists("./gost"):
-                    os.chmod("./gost", 0o755)
-                
-                # 显式启动进程
-                self.gost_proc = subprocess.Popen(
-                    ["./gost", "-L=:8080", f"-F=socks5://{p_str}"],
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-                )
-                
-                self.log("正在验证隧道可用性 (5s)...", "INFO")
-                time.sleep(5)
-                
-                # 测试隧道
-                res = requests.get("https://api.ipify.org", 
-                                   proxies={"http": local_proxy, "https": local_proxy}, 
-                                   timeout=15)
-                self.log(f"✅ 隧道就绪，出口 IP: {res.text.strip()}", "SUCCESS")
-            except Exception as e:
-                self.log(f"❌ 隧道建立失败: {e}", "ERROR")
-                # 即使失败也记录下来，方便调试
+            self.log("致命错误：没有读取到有效的代理列表，脚本终止防止直连报错", "ERROR")
+            sys.exit(1) # 强制退出，不再往下走
 
-        # ------------------------------------------------
-        # 2️⃣ 启动浏览器 (带上代理参数)
-        # ------------------------------------------------
+        # 提取第一个代理
+        p = self.proxy_list[0]
+        p_str = f"{p.get('username')}:{p.get('password')}@{p.get('server')}:{p.get('port')}"
+        
+        self.log(f"步骤 0: 启动 Gost 隧道 -> {p.get('server')}", "STEP")
+        try:
+            if os.path.exists("./gost"):
+                os.chmod("./gost", 0o755)
+            
+            # 显式启动进程
+            self.gost_proc = subprocess.Popen(
+                ["./gost", "-L=:8080", f"-F=socks5://{p_str}"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            )
+            
+            self.log("等待隧道就绪...", "INFO")
+            time.sleep(5)
+            
+            # 测试出口
+            res = requests.get("https://api.ipify.org", 
+                               proxies={"http": local_proxy, "https": local_proxy}, 
+                               timeout=15)
+            self.log(f"隧道出口测试成功: {res.text.strip()}", "SUCCESS")
+        except Exception as e:
+            self.log(f"隧道启动失败: {e}", "ERROR")
+            if self.gost_proc: self.gost_proc.terminate()
+            sys.exit(1)
+
+        # 3. 启动浏览器
         with sync_playwright() as p:
-            self.log("初始化 Chromium 浏览器...", "INFO")
+            self.log("启动 Playwright (使用代理 127.0.0.1:8080)...", "INFO")
             browser = p.chromium.launch(
                 headless=True,
                 args=['--no-sandbox', '--disable-dev-shm-usage'],
-                proxy={"server": local_proxy} # 强制使用 gost 监听的 8080
+                proxy={"server": local_proxy} 
             )
-            context = browser.new_context(
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-            )
+            context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
             
             if self.gh_session:
                 context.add_cookies([{'name': 'user_session', 'value': self.gh_session, 'domain': 'github.com', 'path': '/'}])
@@ -105,66 +100,52 @@ class ClawAutoLogin:
             page = context.new_page()
 
             try:
-                # 严格按照要求的登录部分
+                # 步骤1: 访问
                 self.log("步骤1: 打开 ClawCloud 登录页", "STEP")
                 page.goto("https://console.run.claw.cloud/signin", timeout=60000)
-                page.wait_for_load_state('networkidle', timeout=30000)
-                time.sleep(2)
+                page.wait_for_load_state('networkidle')
                 
-                cur_url = page.url
-                self.log(f"当前 URL: {cur_url}")
-                
-                if 'signin' not in cur_url.lower() and 'claw.cloud' in cur_url:
-                    self.log("Session 有效，已进入控制台", "SUCCESS")
+                # 严格按照你要求的逻辑
+                if 'signin' not in page.url.lower() and 'claw.cloud' in page.url:
+                    self.log("已自动登录", "SUCCESS")
                 else:
-                    self.log("步骤2: 点击 GitHub 登录", "STEP")
-                    page.click('button:has-text("GitHub"), [data-provider="github"]', timeout=15000)
+                    self.log("步骤2: 点击 GitHub", "STEP")
+                    page.click('button:has-text("GitHub"), [data-provider="github"]')
                     time.sleep(5)
                     
                     if 'github.com/login' in page.url:
-                        self.log("步骤3: 填充 GitHub 认证信息", "STEP")
+                        self.log("步骤3: GitHub 认证", "STEP")
                         page.fill('input[name="login"]', self.gh_info.get("username", ""))
                         page.fill('input[name="password"]', self.gh_info.get("password", ""))
                         page.click('input[type="submit"]')
                         time.sleep(5)
                         
                         if "two-factor" in page.url:
-                            secret = self.gh_info.get("2fasecret", "").replace(" ", "")
-                            if secret:
-                                code = pyotp.TOTP(secret).now()
-                                self.log(f"自动填入 2FA 码: {code}", "SUCCESS")
-                                page.fill('input[id="app_totp"], input[name="otp"]', code)
-                                page.keyboard.press("Enter")
-                                time.sleep(5)
+                            code = pyotp.TOTP(self.gh_info.get("2fasecret", "").replace(" ", "")).now()
+                            page.fill('input[id="app_totp"], input[name="otp"]', code)
+                            page.keyboard.press("Enter")
+                            time.sleep(5)
 
                     if 'github.com/login/oauth/authorize' in page.url:
-                        self.log("执行 OAuth 授权点击", "STEP")
                         page.click('button[name="authorize"]')
-                        time.sleep(5)
 
-                # 4. 验证重定向
-                self.log("步骤4: 等待最终页面", "STEP")
+                # 验证与收尾
                 page.wait_for_url(re.compile(r".*claw\.cloud.*"), timeout=60000)
-                
                 if 'claw.cloud' in page.url and 'signin' not in page.url.lower():
-                    self.log("登录验证完成", "SUCCESS")
-                    # 提取并保存新 Cookie
+                    self.log("最终验证成功", "SUCCESS")
                     new_cookies = context.cookies()
                     new_s = next((c['value'] for c in new_cookies if c['name'] == 'user_session'), None)
                     if new_s:
                         self.session_updater.update(new_s)
-                        self.log("GH_SESSION 已同步至 Secrets", "SUCCESS")
-                    
-                    page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                        self.log("GH_SESSION 已同步更新", "SUCCESS")
                 else:
-                    raise Exception(f"未进入主页, 当前: {page.url}")
+                    raise Exception("未能进入控制台")
 
             except Exception as e:
                 self.log(f"运行异常: {e}", "ERROR")
             finally:
                 browser.close()
                 if self.gost_proc:
-                    self.log("清理 Gost 隧道进程")
                     self.gost_proc.terminate()
 
 if __name__ == "__main__":
