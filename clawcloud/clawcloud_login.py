@@ -170,7 +170,10 @@ def main():
                     region, base_url = detect_region(page.url)
                     print(f"📍 [结果] 账号名-自动检测区域: {region} | 基础 URL: {base_url}")
                     
-                    print(f"📸 [截图] 正在访问应用列表页面并准备截图...")
+                    page.screenshot(path=screenshot_path)
+                    print(f"🖼️ [截图] 已保存至: {screenshot_path}")
+                    
+                    print(f"📸 正在访问应用列表页面并准备截图...")
                     try:
                         page.goto(f"{base_url}/apps", timeout=30000)
                         page.wait_for_load_state("networkidle")
@@ -178,8 +181,6 @@ def main():
                     except Exception as e:
                         print(f"⚠️ [忽略] 跳转应用页失败 (可能无实例): {e}")
 
-                    page.screenshot(path=screenshot_path)
-                    print(f"🖼️ [截图] 已保存至: {screenshot_path}")
 
                     print(f"📤 [通知] 正在准备发送 Telegram 通知...")
                     title = f"{username}-自动检测区域: {region}"
