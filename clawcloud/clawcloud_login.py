@@ -169,18 +169,20 @@ def main():
                     print(f"🔍 [检测] 正在分析当前分配的节点区域...")
                     region, base_url = detect_region(page.url)
                     print(f"📍 [结果] 账号名-自动检测区域: {region} | 基础 URL: {base_url}")
-                    
-                    page.screenshot(path=screenshot_path)
-                    print(f"🖼️ [截图] 已保存至: {screenshot_path}")
+                    page.wait_for_load_state("networkidle")
+                    time.sleep(10) # 稍微多等一会儿确保实例列表加载出来
                     
                     print(f"📸 正在访问应用列表页面并准备截图...")
                     try:
-                        page.goto(f"{base_url}/apps", timeout=30000)
+                        page.goto("https://ap-northeast-1.run.claw.cloud", timeout=30000)
                         page.wait_for_load_state("networkidle")
                         time.sleep(3) # 稍微多等一会儿确保实例列表加载出来
                     except Exception as e:
                         print(f"⚠️ [忽略] 跳转应用页失败 (可能无实例): {e}")
-
+                        
+                    time.sleep(10) # 稍微多等一会儿确保实例列表加载出来
+                    page.screenshot(path=screenshot_path)
+                    print(f"🖼️ [截图] 已保存至: {screenshot_path}")
 
                     print(f"📤 [通知] 正在准备发送 Telegram 通知...")
                     title = f"{username}-自动检测区域: {region}"
