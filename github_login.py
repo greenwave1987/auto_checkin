@@ -11,14 +11,11 @@ from engine.main import ConfigReader, SecretUpdater
 from engine.notify import TelegramNotifier
 
 # ================== 常量 ==================
-
 GITHUB_LOGIN_URL = "https://github.com/login"
 GITHUB_TEST_URL = "https://github.com/settings/profile"
-
 SESSION_SECRET_NAME = "GT_SESSION"
 
 # ================== 工具函数 ==================
-
 def sep():
     print("=" * 60, flush=True)
 
@@ -30,8 +27,24 @@ def save_screenshot(page, name):
     page.screenshot(path=path)
     return path
 
-# ================== 主流程 ==================
+# ================== 2FA 填充逻辑 ==================
+def fill_2fa(page, totp_secret, retries=3, interval=2):
+    for attempt in range(retries):
+        try:
+            locator = page.locator('input[autocomplete="one-time-code"]')
+            if locator.is_visible(timeout=5000):
+                code = pyotp.TOTP(totp_secret).now()
+                page.fill('input[autocomplete="one-time-code"]', code)
+                page.keyboard.press("Enter")
+                time.sleep(2)
+                page.wait_for_load_state("networkidle", timeout=15000)
+                return True
+        except PWTimeout:
+            print(f"⚠️ 2FA 输入框未出现，重试 {attempt+1}/{retries}")
+            time.sleep(interval)
+    return False
 
+# ================== 主流程 ==================
 def main():
     # ---------- 读取配置 ----------
     config = ConfigReader()
@@ -60,7 +73,6 @@ def main():
 
             try:
                 # ================== 阶段一：cookies 校验 ==================
-
                 cookies_ok = False
                 existing_sessions = os.getenv(SESSION_SECRET_NAME, "")
                 if existing_sessions:
@@ -69,18 +81,8 @@ def main():
                         old_session = data.get(username)
                         if old_session:
                             context.add_cookies([
-                                {
-                                    "name": "user_session",
-                                    "value": old_session,
-                                    "domain": "github.com",
-                                    "path": "/"
-                                },
-                                {
-                                    "name": "logged_in",
-                                    "value": "yes",
-                                    "domain": "github.com",
-                                    "path": "/"
-                                }
+                                {"name": "user_session", "value": old_session, "domain": "github.com", "path": "/"},
+                                {"name": "logged_in", "value": "yes", "domain": "github.com", "path": "/"}
                             ])
                             page.goto(GITHUB_TEST_URL, timeout=30000)
                             page.wait_for_load_state("domcontentloaded", timeout=30000)
@@ -92,7 +94,6 @@ def main():
                         pass
 
                 # ================== 阶段二：登录 ==================
-
                 if not cookies_ok:
                     page.goto(GITHUB_LOGIN_URL, timeout=30000)
                     page.wait_for_load_state("domcontentloaded", timeout=30000)
@@ -110,18 +111,14 @@ def main():
                         if not totp_secret:
                             raise RuntimeError("缺少 2FA 密钥")
 
-                        code = pyotp.TOTP(totp_secret).now()
-                        page.fill('input[autocomplete="one-time-code"]', code, timeout=20000)
-                        page.keyboard.press("Enter")
-
-                        time.sleep(3)
-                        page.wait_for_load_state("networkidle", timeout=30000)
+                        ok = fill_2fa(page, totp_secret)
+                        if not ok:
+                            raise RuntimeError("2FA 输入框超时或未出现")
 
                     if "login" in page.url:
                         raise RuntimeError("登录失败，仍停留在 login")
 
                 # ================== 阶段三：获取 session ==================
-
                 new_session = None
                 for c in context.cookies():
                     if c["name"] == "user_session" and "github.com" in c["domain"]:
@@ -149,7 +146,6 @@ def main():
         browser.close()
 
     # ================== 更新 Secret ==================
-
     if all_sessions:
         secret.update(json.dumps(all_sessions, ensure_ascii=False))
         notifier.send(
@@ -160,6 +156,5 @@ def main():
     print("🟢 所有账号处理完成", flush=True)
 
 # ================== 入口 ==================
-
 if __name__ == "__main__":
     main()
