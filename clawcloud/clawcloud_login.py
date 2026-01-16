@@ -148,57 +148,91 @@ class AutoLogin:
 
     def run(self):
         with sync_playwright() as p:
-            proxy = self.pick_available_proxy()
-            browser = p.chromium.launch(headless=True, args=['--no-sandbox'], proxy={"server": proxy} if proxy else None)
-            context = browser.new_context(viewport={'width': 1280, 'height': 800})
+            proxy_url = self.pick_available_proxy()
+            # 增加浏览器启动参数，提高稳定性
+            browser = p.chromium.launch(
+                headless=True, 
+                args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'], 
+                proxy={"server": proxy_url} if proxy_url else None
+            )
+            context = browser.new_context(
+                viewport={'width': 1280, 'height': 800},
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
+            )
             
-            # 注入 Session
             if self.gh_session:
                 context.add_cookies([{'name': 'user_session', 'value': self.gh_session, 'domain': 'github.com', 'path': '/'}])
 
             page = context.new_page()
+            # 设置默认全局超时为 45 秒
+            page.set_default_timeout(45000)
+
             try:
-                self.log(f"正在访问 Claw: {SIGNIN_URL}")
-                page.goto(SIGNIN_URL, timeout=60000)
+                self.log(f"正在访问 Claw (代理: {proxy_url if proxy_url else '直连'})")
                 
-                # 流程：判断是否需登录 -> 点击 GitHub -> 处理 GitHub 表单 -> 处理 2FA -> 授权 -> 区域检测
-                if "signin" in page.url:
-                    page.click('button:has-text("GitHub"), [data-provider="github"]', timeout=10000)
+                # 优化1: 使用 domcontentloaded 减少等待时间
+                try:
+                    page.goto(SIGNIN_URL, wait_until="domcontentloaded", timeout=60000)
+                except Exception as e:
+                    self.log("初次加载超时，尝试等待 5 秒确认页面状态...", "WARN")
                     time.sleep(5)
 
+                # 优化2: 灵活检测登录按钮
+                login_btn = page.locator('button:has-text("GitHub"), [data-provider="github"]').first
+                if login_btn.is_visible(timeout=10000):
+                    login_btn.click()
+                    self.log("点击 GitHub 登录按钮")
+                else:
+                    # 如果已经登录过了，可能直接跳转到了控制台
+                    if "signin" not in page.url:
+                        self.log("似乎已处于登录状态，跳过点击按钮")
+                
+                # --- GitHub 登录流程 ---
                 if "github.com/login" in page.url:
+                    page.wait_for_selector('input[name="login"]', timeout=20000)
                     page.fill('input[name="login"]', self.gh_info["username"])
                     page.fill('input[name="password"]', self.gh_info["password"])
                     page.click('input[type="submit"]')
-                    time.sleep(5)
+                    self.log("提交 GitHub 登录表单")
 
+                # --- 2FA 验证 ---
                 if "two-factor" in page.url:
+                    self.log("检测到 2FA 验证")
                     self.handle_2fa(page)
 
+                # --- 授权 ---
                 if "oauth/authorize" in page.url:
+                    self.log("检测到授权页面，正在确认...")
                     page.click('button[name="authorize"]')
-                    time.sleep(5)
 
-                # 等待重定向回 claw 并检测 URL
+                # --- 区域检测 ---
+                # 只要 URL 包含 claw.cloud 就说明回来了
                 page.wait_for_url(re.compile(r".*claw\.cloud.*"), timeout=60000)
-                parsed = urlparse(page.url)
-                if '.console.claw.cloud' in parsed.netloc:
+                
+                # 提取区域
+                current_url = page.url
+                parsed = urlparse(current_url)
+                if 'console.claw.cloud' in parsed.netloc:
                     self.detected_region = parsed.netloc.split('.')[0]
-                    self.log(f"成功进入区域: {self.detected_region}", "SUCCESS")
-
+                    self.log(f"成功进入控制台，区域: {self.detected_region}", "SUCCESS")
+                
                 # 更新 Session
                 new_s = next((c['value'] for c in context.cookies() if c['name'] == 'user_session'), None)
                 if new_s:
                     self.session_updater.update(new_s)
-                    self.log("GH_SESSION 已回写更新", "SUCCESS")
+                    self.log("GitHub Session 已回写", "SUCCESS")
 
                 self.tg.send(f"✅ <b>ClawCloud 登录成功</b>\n用户: {self.gh_info['username']}\n区域: {self.detected_region}")
 
             except Exception as e:
-                self.log(f"致命错误: {e}", "ERROR")
-                self.tg.photo(self.shot(page, "crash"), f"❌ 任务失败: {str(e)[:100]}")
+                self.log(f"运行异常: {str(e)}", "ERROR")
+                # 优化3: 捕获异常时的截图也进行错误处理
+                try:
+                    path = self.shot(page, "error")
+                    self.tg.photo(path, f"❌ 任务失败详情: {str(e)[:200]}")
+                except:
+                    self.tg.send(f"❌ 任务失败且截图失败: {str(e)[:200]}")
             finally:
                 browser.close()
-
 if __name__ == "__main__":
     AutoLogin().run()
