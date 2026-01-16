@@ -1,0 +1,24 @@
+name: GitHub Login All
+
+on:
+  workflow_dispatch:
+
+jobs:
+  login:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install playwright pyotp cryptography
+          playwright install chromium
+
+      - name: Run GitHub login
+        run: python github_login.py
