@@ -47,6 +47,191 @@ def detect_region(url):
     try:
         parsed = urlparse(url)
         host = parsed.netloc
+        if "ap-northeast-1" in host: return "日本 (Tokyo)"
+        if "ap-southeast-1" in host: return "新加坡"
+        if "us-east-1" in host: return "美国 (Virginia)"
+        if "eu-central-1" in host: return "德国 (Frankfurt)"
+        return "主控制台"
+    except:
+        return "未知区域"
+
+def perform_gh_login(page, username, password, totp_secret):
+    """统一的 GitHub 登录逻辑"""
+    print(f"🔘 [点击] 正在通过 GitHub 按钮登录...")
+    page.click('button:has-text("GitHub"), [data-provider="github"]')
+    time.sleep(5)
+
+    if "github.com/login" in page.url:
+        print(f"⌨️ [表单] 输入 GitHub 凭据...")
+        page.fill('input[name="login"]', username)
+        page.fill('input[name="password"]', password)
+        page.keyboard.press("Enter")
+        time.sleep(5)
+
+        if "device-verification" in page.url:
+            print("⚠️ [设备] 需要邮件/App 验证...")
+            # 这里调用之前的验证逻辑或提醒
+            time.sleep(DEVICE_VERIFY_WAIT)
+
+        if "two-factor" in page.url:
+            print(f"🔢 [2FA] 输入验证码...")
+            code = pyotp.TOTP(totp_secret.replace(" ", "")).now()
+            page.locator('input#app_totp, input#otp, input[name="otp"]').first.fill(code)
+            page.keyboard.press("Enter")
+            page.wait_for_url("**/claw.cloud/**", timeout=60000)
+    return
+
+def save_state(context, username, current_url):
+    """保存当前 Session 和对应域名的 Cookie"""
+    print(f"💾 [保存] 更新 {username} 的状态...")
+    # 保存 GH Session
+    gh_cookies = context.cookies("https://github.com")
+    gh_val = next((c["value"] for c in gh_cookies if c["name"] == "user_session"), None)
+    if gh_val: all_gh_sessions[username] = gh_val
+    
+    # 保存当前页面的 Cookie
+    all_claw_cookies[username] = context.cookies(current_url)
+
+# ================== 核心逻辑 ==================
+
+def main():
+    if not gh_info: return
+
+    for idx, (account, proxy) in enumerate(zip(gh_info, proxy_info)):
+        username = account["username"]
+        password = account["password"]
+        totp_secret = account.get("2fasecret", "")
+        proxy_str = f"{proxy['username']}:{proxy['password']}@{proxy['server']}:{proxy['port']}"
+        local_proxy = "http://127.0.0.1:8080"
+        
+        print(f"\n{'='*20} 👤 账号: {username} {'='*20}")
+        gost_proc = None
+        screenshot_p1 = f"p1_{username}.png"
+        screenshot_p2 = f"p2_{username}.png"
+
+        try:
+            gost_proc = subprocess.Popen(["./gost", "-L=:8080", f"-F=socks5://{proxy_str}"], 
+                                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            time.sleep(5)
+
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
+                context = browser.new_context(proxy={"server": local_proxy}, viewport={'width': 1280, 'height': 800})
+                page = context.new_page()
+
+                # --- 第一阶段：主站登录验证 ---
+                print(f"🚩 [阶段 1] 正在登录主站: {CLAW_LOGIN_ENTRY}")
+                page.goto(CLAW_LOGIN_ENTRY)
+                
+                # 注入已有 Session 尝试直接进入
+                user_gh_session = all_gh_sessions.get(username)
+                if user_gh_session:
+                    context.add_cookies([{"name": "user_session", "value": user_gh_session, "domain": ".github.com", "path": "/"}])
+                
+                perform_gh_login(page, username, password, totp_secret)
+                page.wait_for_load_state("networkidle")
+
+                if "signin" not in page.url:
+                    print(f"✅ [成功] 阶段 1 登录成功，当前 URL: {page.url}")
+                    save_state(context, username, page.url)
+                    page.screenshot(path=screenshot_p1)
+                    notifier.send(title=f"{username}-主站检测成功", content=f"📍 区域: {detect_region(page.url)}\n🔗 URL: {page.url}", image_path=screenshot_p1)
+                else:
+                    print("❌ [错误] 阶段 1 登录失败")
+                    continue
+
+                # --- 第二阶段：日本站跳转验证 ---
+                print(f"🚩 [阶段 2] 尝试访问日本区域: {TARGET_REGION_URL}")
+                page.goto(TARGET_REGION_URL)
+                page.wait_for_load_state("networkidle")
+                time.sleep(5)
+
+                if "signin" in page.url or "login" in page.url:
+                    print("⚠️ [警告] 跳转日本站后被踢回登录页，执行补丁登录...")
+                    perform_gh_login(page, username, password, totp_secret)
+                    page.wait_for_url(f"**{urlparse(TARGET_REGION_URL).netloc}/**", timeout=30000)
+                    page.wait_for_load_state("networkidle")
+
+                # 最终确认状态
+                time.sleep(5)
+                print(f"📍 [结果] 最终停留 URL: {page.url}")
+                
+                # 再次截图和保存
+                page.screenshot(path=screenshot_p2)
+                save_state(context, username, page.url)
+                
+                final_region = detect_region(page.url)
+                notifier.send(
+                    title=f"{username}-日本区域检测", 
+                    content=f"📍 区域: {final_region}\n🔗 URL: {page.url}\n(此为跳转后的实际检测状态)", 
+                    image_path=screenshot_p2
+                )
+
+                browser.close()
+
+        except Exception as e:
+            print(f"💥 [异常] {username}: {e}")
+            notifier.send(title=f"{username} 运行异常", content=str(e)[:100])
+        finally:
+            if gost_proc: gost_proc.terminate()
+            for f in [screenshot_p1, screenshot_p2]:
+                if os.path.exists(f): os.remove(f)
+
+    # 回写 Secrets
+    gh_session_updater.update(json.dumps(all_gh_sessions))
+    claw_cookies_updater.update(json.dumps(all_claw_cookies))
+    print("🏁 任务结束")
+
+if __name__ == "__main__":
+    main()#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+import sys
+import os
+import json
+import time
+import subprocess
+import pyotp
+from urllib.parse import urlparse
+from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, BASE_DIR)
+
+from engine.main import ConfigReader, SecretUpdater
+from engine.notify import TelegramNotifier
+
+# ================== 基础配置 ==================
+CLAW_LOGIN_ENTRY = "https://console.run.claw.cloud/signin"
+TARGET_REGION_URL = "https://ap-northeast-1.run.claw.cloud"
+DEVICE_VERIFY_WAIT = 30 
+
+# ================== 初始化 ==================
+config = ConfigReader()
+notifier = TelegramNotifier(config)
+
+gh_session_env = os.getenv("GH_SESSION", "{}").strip()
+claw_cookies_env = os.getenv("CLAWCLOUD_COOKIES", "{}").strip()
+
+gh_info = config.get_value("GH_INFO")
+proxy_info = config.get_value("PROXY_INFO")
+
+gh_session_updater = SecretUpdater("GH_SESSION", config_reader=config)
+claw_cookies_updater = SecretUpdater("CLAWCLOUD_COOKIES", config_reader=config)
+
+try:
+    all_gh_sessions = json.loads(gh_session_env)
+    all_claw_cookies = json.loads(claw_cookies_env)
+except:
+    all_gh_sessions, all_claw_cookies = {}, {}
+
+# ================== 工具函数 ==================
+
+def detect_region(url):
+    """从 URL 中检测区域信息"""
+    try:
+        parsed = urlparse(url)
+        host = parsed.netloc
         if host.endswith('.console.claw.cloud'):
             region = host.replace('.console.claw.cloud', '')
             if region and region != 'console':
