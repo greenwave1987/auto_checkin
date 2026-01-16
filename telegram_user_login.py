@@ -4,7 +4,7 @@ import time
 import base64
 import asyncio
 import qrcode
-from telethon import TelegramClient, events
+from telethon import TelegramClient, events, Button
 from engine.main import SecretUpdater, ConfigReader
 
 # =========================
@@ -49,16 +49,46 @@ async def shutdown():
     await bot.disconnect()
     await user.disconnect()
     log("退出 workflow")
-    os._exit(0)   # ✅ CI / GitHub Actions 推荐
+    os._exit(0)
 
 # =========================
-# 登录逻辑
+# 发送操作菜单
 # =========================
-@bot.on(events.NewMessage(from_users=ADMIN_ID, pattern=r'^/qrlogin$'))
-async def qr_login(event):
-    log("收到 /qrlogin")
+async def send_login_menu():
+    await bot.send_message(
+        ADMIN_ID,
+        "请选择操作：",
+        buttons=[
+            [Button.inline("🔲 扫码登录", data=b"login_qr")],
+            [Button.inline("❌ 取消", data=b"login_cancel")]
+        ]
+    )
 
-    await user.start()
+# =========================
+# 按钮处理
+# =========================
+@bot.on(events.CallbackQuery)
+async def on_choice(event):
+    if event.sender_id != ADMIN_ID:
+        return
+
+    choice = event.data.decode()
+
+    if choice == "login_cancel":
+        await event.edit("❌ 已取消登录")
+        await shutdown()
+
+    elif choice == "login_qr":
+        await event.edit("🔲 已选择扫码登录，正在生成二维码…")
+        await start_qr_login()
+
+# =========================
+# 扫码登录流程
+# =========================
+async def start_qr_login():
+    if not user.is_connected():
+        log("连接 user client")
+        await user.connect()
 
     start = time.time()
 
@@ -112,7 +142,10 @@ async def qr_login(event):
 async def main():
     log("启动 bot")
     await bot.start(bot_token=BOT_TOKEN)
-    log("Bot 已就绪，请发送 /qrlogin")
+
+    log("发送登录菜单")
+    await send_login_menu()
+
     await asyncio.sleep(WAIT_SECONDS + 10)
     await shutdown()
 
