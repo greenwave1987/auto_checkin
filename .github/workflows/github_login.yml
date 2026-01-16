@@ -1,4 +1,4 @@
-name: GitHub Login All
+name: GitHub 登录更新
 
 on:
   workflow_dispatch:
@@ -17,7 +17,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install playwright pyotp cryptography requests nacl
+          pip install playwright pyotp cryptography requests pynacl
           playwright install chromium
 
       - name: Run GitHub login
