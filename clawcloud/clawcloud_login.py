@@ -18,10 +18,10 @@ from engine.main import ConfigReader, SecretUpdater
 from engine.notify import TelegramNotifier
 
 # ================== 基础配置 ==================
-USE_PROXY = False  # <--- 在这里控制是否使用代理: True 使用, False 直连
+USE_PROXY = True  # 是否使用代理
 CLAW_LOGIN_ENTRY = "https://console.run.claw.cloud/signin"
 TARGET_REGION_URL = "https://ap-northeast-1.run.claw.cloud"
-WAIT_MAX_TIMEOUT = 120000  # 120 秒
+WAIT_MAX_TIMEOUT = 120000  # 120 秒超时
 
 # ================== 初始化 ==================
 config = ConfigReader()
@@ -46,11 +46,14 @@ except:
 
 def perform_gh_login(page, username, password, totp_secret):
     """GitHub 授权逻辑"""
-    print(f"🔘 [点击] 尝试通过 GitHub 按钮登录...")
+    print(f"🔘 [点击] 尝试通过 GitHub 授权登录...")
     try:
-        page.click('button:has-text("GitHub"), [data-provider="github"]', timeout=15000)
+        # 寻找 GitHub 登录按钮
+        gh_btn = page.locator('button:has-text("GitHub"), [data-provider="github"]').first
+        gh_btn.wait_for(state="visible", timeout=15000)
+        gh_btn.click()
     except:
-        print("⚠️ 未发现 GitHub 按钮，可能已进入跳转流")
+        print("⚠️ 未发现登录按钮，可能已在跳转中...")
     
     time.sleep(5)
     if "github.com/login" in page.url:
@@ -86,93 +89,97 @@ def main():
         screenshot_p2 = f"p2_{username}.png"
 
         try:
-            # --- 代理控制 ---
+            # --- 代理处理 ---
             browser_proxy = None
             if USE_PROXY:
                 proxy_str = f"{proxy['username']}:{proxy['password']}@{proxy['server']}:{proxy['port']}"
-                local_proxy = "http://127.0.0.1:8080"
-                print(f"🔌 [代理] 启动 Gost 隧道: {proxy['server']}...")
                 gost_proc = subprocess.Popen(["./gost", "-L=:8080", f"-F=socks5://{proxy_str}"], 
                                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 time.sleep(5)
-                browser_proxy = {"server": local_proxy}
-            else:
-                print("🌐 [直连] 当前未启用代理变量。")
+                browser_proxy = {"server": "http://127.0.0.1:8080"}
 
             with sync_playwright() as p:
                 browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
-                # 根据 USE_PROXY 变量注入代理配置
                 context = browser.new_context(proxy=browser_proxy, viewport={'width': 1280, 'height': 800})
                 page = context.new_page()
 
-                # --- 🚩 阶段 1：主站登录 ---
-                print(f"🚩 [阶段 1] 登录主站: {CLAW_LOGIN_ENTRY}")
+                # --- 🚩 阶段 1：主站登录并点击 Launchpad ---
+                print(f"🚩 [阶段 1] 访问登录入口: {CLAW_LOGIN_ENTRY}")
                 page.goto(CLAW_LOGIN_ENTRY)
                 
+                # 注入 GitHub 会话
                 user_gh_session = all_gh_sessions.get(username)
                 if user_gh_session:
                     context.add_cookies([{"name": "user_session", "value": user_gh_session, "domain": ".github.com", "path": "/"}])
                 
                 perform_gh_login(page, username, password, totp_secret)
                 
-                # 等待离开登录页 (120s)
+                # 等待直到退出登录 URL (120s)
                 try:
                     page.wait_for_function("() => !window.location.href.includes('signin')", timeout=WAIT_MAX_TIMEOUT)
                 except:
                     print("⚠️ [警告] 阶段 1 离开登录页超时")
 
-                # 寻找 Launchpad
+                # 点击 App Launchpad 进入真实控制台
                 launchpad_success = False
-                print(f"🔍 [控制台] 寻找 Launchpad 入口 (限时120s)...")
+                print(f"🔍 [控制台] 寻找 'App Launchpad' 入口 (120s)...")
                 try:
-                    target = page.get_by_text("App Launchpad")
-                    target.wait_for(state="visible", timeout=WAIT_MAX_TIMEOUT)
-                    target.click()
+                    # 使用更加稳健的定位方式
+                    lp_btn = page.locator('p:has-text("App Launchpad"), div:has-text("App Launchpad")').last
+                    lp_btn.wait_for(state="visible", timeout=WAIT_MAX_TIMEOUT)
+                    lp_btn.click()
                     launchpad_success = True
-                    print("✅ [点击] 成功进入 Launchpad")
+                    print("✅ [点击] 成功进入 App Launchpad")
                     page.wait_for_load_state("networkidle")
                 except Exception as e:
                     print(f"❌ [失败] 未能点击 Launchpad: {e}")
 
-                # 阶段 1 强制截图与消息
+                # 截图并发送 P1 消息
                 page.screenshot(path=screenshot_p1)
                 save_state(context, username, page.url)
-                status_text = "成功" if launchpad_success else "失败/超时"
                 notifier.send(
-                    title=f"{username}-阶段1-{status_text}", 
-                    content=f"📍 当前网址: {page.url}\n💬 备注: 阶段1入口寻找完毕。", 
+                    title=f"{username}-阶段1-点击进入", 
+                    content=f"📍 网址: {page.url}\n💬 点击状态: {'成功' if launchpad_success else '失败'}", 
                     image_path=screenshot_p1
                 )
 
-                # --- 🚩 阶段 2：日本子站 ---
-                print(f"🚩 [阶段 2] 访问日本区域 (120s 监控)...")
+                # --- 🚩 阶段 2：跳转日本站抓余额 ---
+                print(f"🚩 [阶段 2] 跳转目标日本子站...")
                 page.goto(TARGET_REGION_URL)
                 time.sleep(5)
 
                 if "signin" in page.url or "login" in page.url:
+                    print("⚠️ [检测] 掉线，尝试补丁登录...")
                     perform_gh_login(page, username, password, totp_secret)
                 
                 try:
                     page.wait_for_function("() => !window.location.href.includes('signin')", timeout=WAIT_MAX_TIMEOUT)
+                    page.wait_for_load_state("networkidle")
                 except:
-                    print("⚠️ [警告] 阶段 2 离开登录页超时")
+                    print("⚠️ [警告] 阶段 2 状态校验超时")
 
-                # 寻找余额
+                # 深度缓存等待并抓取余额
                 time.sleep(15) 
-                balance_text = "未获取到"
+                balance_text = "N/A"
                 try:
-                    # 查找包含 $ 符号且不含 Credit 的数值
-                    balance_el = page.locator('p:has-text("$")').filter(has_not_text="Credit").first
-                    balance_el.wait_for(state="visible", timeout=30000)
-                    balance_text = balance_el.inner_text()
-                except:
-                    pass
+                    # 排除 Landing Page 的 "$5 Credit" 干扰，寻找纯数字金额
+                    # 逻辑：寻找包含 $ 符号，且父级或自身不包含 "Benefit" 或 "Credit" 的 P 标签
+                    balance_els = page.locator('p:has-text("$")')
+                    count = balance_els.count()
+                    for i in range(count):
+                        txt = balance_els.nth(i).inner_text()
+                        if "Credit" not in txt and "Benefit" not in txt:
+                            balance_text = txt
+                            break
+                    print(f"💰 [成功] 最终抓取余额: {balance_text}")
+                except Exception as e:
+                    print(f"❌ [失败] 无法提取余额: {e}")
 
-                # 阶段 2 强制截图与消息
+                # 截图并发送 P2 最终消息
                 page.screenshot(path=screenshot_p2)
                 save_state(context, username, page.url)
                 notifier.send(
-                    title=f"{username}-阶段2-最终状态", 
+                    title=f"{username}-阶段2-余额检测", 
                     content=f"💵 余额: {balance_text}\n📍 最终网址: {page.url}", 
                     image_path=screenshot_p2
                 )
@@ -181,13 +188,13 @@ def main():
 
         except Exception as e:
             print(f"💥 [严重异常] {username}: {e}")
-            notifier.send(title=f"{username}-运行异常", content=f"错误: {str(e)}\n网址: {page.url if 'page' in locals() else '未知'}")
+            notifier.send(title=f"{username}-运行异常", content=f"错误: {str(e)[:200]}")
         finally:
             if gost_proc: gost_proc.terminate()
             for f in [screenshot_p1, screenshot_p2]:
                 if os.path.exists(f): os.remove(f)
 
-    # 回写 Secrets
+    # 同步状态回写
     gh_session_updater.update(json.dumps(all_gh_sessions))
     claw_cookies_updater.update(json.dumps(all_claw_cookies))
 
