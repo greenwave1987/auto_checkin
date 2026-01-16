@@ -9,6 +9,9 @@ import pyotp
 import requests
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, BASE_DIR)
+
 # 导入自定义模块
 from engine.main import ConfigReader, SecretUpdater
 from engine.notify import TelegramNotifier
