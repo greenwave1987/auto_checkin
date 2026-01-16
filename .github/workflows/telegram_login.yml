@@ -27,4 +27,4 @@ jobs:
         env:
          CONFIG_PASSWORD: ${{ secrets.CONFIG_PASSWORD }}
         run: |
-          python telegram_user_login.py
+          python telegram_login.py
