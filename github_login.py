@@ -2,122 +2,164 @@
 # -*- coding: utf-8 -*-
 
 import os
-import json
 import time
+import json
 import pyotp
-from playwright.sync_api import sync_playwright
-from engine.main import ConfigReader ,SecretUpdater
+from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
+
+from engine.main import ConfigReader, SecretUpdater
 from engine.notify import TelegramNotifier
 
-# ================= 基础配置 =================
-SESSION_SECRET = "GT_SESSION"
+# ================== 常量 ==================
 
-# ================= 读取加密配置 =================
-config = ConfigReader()
-GH_INFO = config.get_value("GH_INFO")  # 列表
+GITHUB_LOGIN_URL = "https://github.com/login"
+GITHUB_TEST_URL = "https://github.com/settings/profile"
 
-# 初始化 session SecretUpdater
-secret = SecretUpdater(SESSION_SECRET, config_reader=config)
+SESSION_SECRET_NAME = "GT_SESSION"
 
-# 初始化 Telegram 通知器
-notifier = TelegramNotifier(config)
+# ================== 工具函数 ==================
 
-# 读取已有 session dict
-raw = os.getenv(SESSION_SECRET)
-session_map = json.loads(raw) if raw else {}
+def sep():
+    print("=" * 60, flush=True)
 
-# ================= 工具函数 =================
-def screenshot(page, name):
+def mask_user(u: str) -> str:
+    return u[:2] + "***" + u[-2:] if len(u) > 4 else "***"
+
+def save_screenshot(page, name):
     path = f"{name}.png"
     page.screenshot(path=path)
     return path
 
-def extract_session(context):
-    for c in context.cookies():
-        if c["name"] == "user_session":
-            return c["value"]
-    return None
+# ================== 主流程 ==================
 
-def validate_session(context, page, session_value):
-    context.clear_cookies()
-    context.add_cookies([{
-        "name": "user_session",
-        "value": session_value,
-        "domain": "github.com",
-        "path": "/"
-    }])
-    page.goto("https://github.com/settings/profile")
-    page.wait_for_load_state("domcontentloaded")
-    return "login" not in page.url
-
-def github_login(page, username, password, totp_secret=None):
-    page.goto("https://github.com/login")
-    page.fill('input[name="login"]', username)
-    page.fill('input[name="password"]', password)
-    page.click('input[type="submit"]')
-    time.sleep(2)
-    page.wait_for_load_state("networkidle")
-
-    if "two-factor" in page.url and totp_secret:
-        code = pyotp.TOTP(totp_secret).now()
-        page.fill('input[autocomplete="one-time-code"]', code)
-        page.keyboard.press("Enter")
-        time.sleep(2)
-        page.wait_for_load_state("networkidle")
-
-    if "login" in page.url:
-        raise RuntimeError("GitHub 登录失败")
-
-# ================= 主流程 =================
 def main():
+    # ---------- 读取配置 ----------
+    config = ConfigReader()
+    gh_list = config.get_value("GH_INFO")
+    notifier = TelegramNotifier(config)
+    secret = SecretUpdater(SESSION_SECRET_NAME, config_reader=config)
+
+    print(f"🔐 读取账号数: {len(gh_list)}", flush=True)
+    sep()
+
+    all_sessions = {}
+
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
-        context = browser.new_context()
-        page = context.new_page()
 
-        for idx, account in enumerate(GH_INFO):
-            username = account["username"]
-            password = account["password"]
-            totp = account.get("2fasecret")
-            masked = username[:2] + "***" + username[-2:]
+        for idx, gh in enumerate(gh_list):
+            username = gh.get("username")
+            password = gh.get("password")
+            totp_secret = gh.get("2fasecret")
 
+            masked = mask_user(username)
             print(f"👤 账号 {idx}: {masked}", flush=True)
 
+            context = browser.new_context()
+            page = context.new_page()
+
             try:
-                need_login = True
+                # ================== 阶段一：cookies 校验 ==================
 
-                # 检查已有 session
-                if username in session_map:
-                    print("🍪 校验已有 session", flush=True)
-                    if validate_session(context, page, session_map[username]):
-                        print("✅ session 有效，跳过登录", flush=True)
-                        need_login = False
-                    else:
-                        print("⚠️ session 失效，需要重新登录", flush=True)
+                cookies_ok = False
+                existing_sessions = os.getenv(SESSION_SECRET_NAME, "")
+                if existing_sessions:
+                    try:
+                        data = json.loads(existing_sessions)
+                        old_session = data.get(username)
+                        if old_session:
+                            context.add_cookies([
+                                {
+                                    "name": "user_session",
+                                    "value": old_session,
+                                    "domain": "github.com",
+                                    "path": "/"
+                                },
+                                {
+                                    "name": "logged_in",
+                                    "value": "yes",
+                                    "domain": "github.com",
+                                    "path": "/"
+                                }
+                            ])
+                            page.goto(GITHUB_TEST_URL, timeout=30000)
+                            page.wait_for_load_state("domcontentloaded", timeout=30000)
+                            if "login" not in page.url:
+                                print("✅ cookies 有效，跳过登录", flush=True)
+                                cookies_ok = True
+                                all_sessions[username] = old_session
+                    except Exception:
+                        pass
 
-                if need_login:
-                    github_login(page, username, password, totp)
-                    session = extract_session(context)
-                    if not session:
-                        raise RuntimeError("未获取 session")
+                # ================== 阶段二：登录 ==================
 
-                    session_map[username] = session
-                    # 更新 Secret
-                    secret.update(json.dumps(session_map, ensure_ascii=False))
-                    print("✅ 登录成功 & Session 已更新", flush=True)
+                if not cookies_ok:
+                    page.goto(GITHUB_LOGIN_URL, timeout=30000)
+                    page.wait_for_load_state("domcontentloaded", timeout=30000)
+
+                    page.fill('input[name="login"]', username)
+                    page.fill('input[name="password"]', password)
+                    page.click('input[type="submit"]')
+
+                    time.sleep(3)
+                    page.wait_for_load_state("networkidle", timeout=30000)
+
+                    # ---------- 2FA ----------
+                    if "two-factor" in page.url:
+                        print("🔑 检测到两步验证", flush=True)
+                        if not totp_secret:
+                            raise RuntimeError("缺少 2FA 密钥")
+
+                        code = pyotp.TOTP(totp_secret).now()
+                        page.fill('input[autocomplete="one-time-code"]', code, timeout=20000)
+                        page.keyboard.press("Enter")
+
+                        time.sleep(3)
+                        page.wait_for_load_state("networkidle", timeout=30000)
+
+                    if "login" in page.url:
+                        raise RuntimeError("登录失败，仍停留在 login")
+
+                # ================== 阶段三：获取 session ==================
+
+                new_session = None
+                for c in context.cookies():
+                    if c["name"] == "user_session" and "github.com" in c["domain"]:
+                        new_session = c["value"]
+                        break
+
+                if not new_session:
+                    raise RuntimeError("未获取到 user_session")
+
+                all_sessions[username] = new_session
+                print("🍪 Session 获取成功", flush=True)
 
             except Exception as e:
-                shot = screenshot(page, f"login_failed_{idx}")
-                notifier.send(
-                    title="❌ GitHub 登录失败",
-                    content=f"{masked}\n原因: {e}",
-                    image_path=shot
-                )
                 print(f"❌ 账号失败但继续下一个: {e}", flush=True)
+                shot = save_screenshot(page, f"login_failed_{idx}")
+                notifier.send(
+                    "❌ GitHub 登录失败",
+                    f"账号：{masked}\n错误：{e}",
+                    shot
+                )
 
-        context.close()
+            finally:
+                context.close()
+
         browser.close()
-        print("🟢 所有账号处理完成", flush=True)
+
+    # ================== 更新 Secret ==================
+
+    if all_sessions:
+        secret.update(json.dumps(all_sessions, ensure_ascii=False))
+        notifier.send(
+            "✅ GitHub Session 更新完成",
+            f"成功更新账号数：{len(all_sessions)}"
+        )
+
+    print("🟢 所有账号处理完成", flush=True)
+
+# ================== 入口 ==================
 
 if __name__ == "__main__":
     main()
