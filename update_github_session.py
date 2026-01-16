@@ -8,9 +8,9 @@ import pyotp
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 
+from engine.config_reader import ConfigReader
 from engine.main import SecretUpdater
 from engine.notify import send_notify
-from engine.config_reader import ConfigReader  # 假设你的类文件名是 config_reader.py
 
 # ================= 基础配置 =================
 SESSION_SECRET = "GT_SESSION"
