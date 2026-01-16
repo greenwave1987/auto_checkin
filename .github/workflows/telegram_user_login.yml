@@ -25,11 +25,6 @@ jobs:
 
       - name: Run login bot
         env:
-          API_ID: ${{ secrets.API_ID }}
-          API_HASH: ${{ secrets.API_HASH }}
-          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-          ADMIN_ID: ${{ secrets.ADMIN_ID }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPO: ${{ github.repository }}
+         CONFIG_PASSWORD: ${{ secrets.CONFIG_PASSWORD }}
         run: |
           python telegram_user_login.py
