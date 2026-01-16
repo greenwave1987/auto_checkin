@@ -127,7 +127,7 @@ def main():
                         notifier.send("GitHub 登录失败", f"{username} 2FA 输入框未出现", shot)
                         continue
 
-                # 校验是否登录成功
+                # ================== 登录校验 ==================
                 page.goto(GITHUB_TEST_URL, timeout=30000)
                 page.wait_for_load_state("domcontentloaded", timeout=30000)
                 if "login" in page.url:
