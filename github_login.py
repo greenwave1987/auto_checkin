@@ -6,8 +6,7 @@ import json
 import time
 import pyotp
 from playwright.sync_api import sync_playwright
-from engine.config_reader import ConfigReader
-from engine.main import SecretUpdater
+from engine.main import ConfigReader ,SecretUpdater
 from engine.notify import TelegramNotifier
 
 # ================= 基础配置 =================
