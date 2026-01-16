@@ -2,7 +2,9 @@ name: GitHub 登录更新
 
 on:
   workflow_dispatch:
-
+  schedule:
+    - cron: "5 0 * * *"
+    
 jobs:
   login:
     runs-on: ubuntu-latest
