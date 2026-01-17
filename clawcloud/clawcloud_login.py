@@ -12,7 +12,7 @@ from urllib.parse import urlparse
 from playwright.sync_api import sync_playwright
 
 # 策略配置
-USE_PROXY = True  # 是否使用代理总开关
+USE_PROXY = False  # 是否使用代理总开关
 DEBUG_MODE = False # 调试模式
 
 # 导入原有类
