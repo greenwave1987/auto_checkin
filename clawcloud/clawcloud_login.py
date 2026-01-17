@@ -107,11 +107,29 @@ class ClawLoginTask:
         self.log("正在处理 OAuth 授权...", "STEP")
         self.click(page, ['button[name="authorize"]'], "授权按钮")
 
-    def wait_redirect(self, page):
-        for _ in range(15):
-            if "claw.cloud" in page.url and "callback" not in page.url and "signin" not in page.url:
+    def wait_redirect(self, page, wait=60):
+        """等待重定向并检测区域"""
+        self.log("等待重定向...", "STEP")
+        for i in range(wait):
+            url = page.url
+            
+            # 检查是否已跳转到 claw.cloud
+            if 'claw.cloud' in url and 'signin' not in url.lower()and 'callback' not in url.lower():
+                self.log("重定向成功！", "SUCCESS")
+                
+                # 检测并记录区域
+                self.detect_region(url)
+                
                 return True
+            
+            if 'github.com/login/oauth/authorize' in url:
+                self.oauth(page)
+            
             time.sleep(1)
+            if i % 10 == 0:
+                self.log(f"  等待... ({i}秒)")
+        
+        self.log("重定向超时", "ERROR")
         return False
 
     def send_final_report(self, photo_path, caption):
