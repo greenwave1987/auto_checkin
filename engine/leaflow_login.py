@@ -42,7 +42,26 @@ def open_browser(proxy_url=None):
     print("✅ 浏览器启动完成")
     return pw, browser, ctx, page
 
+# ================= 获取余额和已消费金额 =================
+def get_balance_info(page):
+    # 访问页面
+    page.goto("https://leaflow.net/balance")
+    
+    # 1. 定位并获取“当前余额”
+    # 使用 title 属性定位是最精确的
+    balance_locator = page.locator('p[title="点击显示完整格式"]')
+    current_balance = balance_locator.text_content()
+    
+    # 2. 定位并获取“已消费金额”
+    # 由于该元素没有 title，且类名与余额相同，可以使用文字特征或索引
+    # 这里使用 nth(1) 如果它是页面第二个匹配该类名的 p 标签
+    # 或者使用更稳健的方法：寻找不带 title 属性的那个 p 标签
+    spent_locator = page.locator('p.text-3xl.font-bold:not([title])')
+    spent_amount = spent_locator.text_content()
+    
+    print(f"🏦余额: {current_balance.strip()},已消费: {spent_amount.strip()}")
 
+    return f"🏦余额: {current_balance.strip()},已消费: {spent_amount.strip()}"
 # ==================================================
 # Cookie 校验
 # ==================================================
