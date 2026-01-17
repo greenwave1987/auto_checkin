@@ -16,6 +16,7 @@ from engine.leaflow_login import (
     open_browser,
     cookies_ok,
     login_and_get_cookies,
+    get_balance_info
 )
 from engine.main import (
     perform_token_checkin,
@@ -96,13 +97,14 @@ def run_task_for_account(account, proxy, cookie=None):
             else:
                 print(f"⚠ cookie 无效，需要登录获取")
                 note = f"⚠ cookie 无效，需要登录获取"
-                final_cookie = login_and_get_cookies(page, username, account['password'])
+                page = login_and_get_cookies(page, username, account['password'])
         else:
             print("⚠ 没有 cookie，开始登录获取")
             note = f"⚠ 没有 cookie，开始登录获取"
-            final_cookie = login_and_get_cookies(page, username, account['password'])
-
-
+            page = login_and_get_cookies(page, username, account['password'])
+        
+        final_cookie=page.context.cookies()
+        
         # ----------------------------
         # 5️⃣ 执行签到逻辑
         # ----------------------------
@@ -124,9 +126,10 @@ def run_task_for_account(account, proxy, cookie=None):
             headers=headers,
             proxy_url=local_proxy
         )
-        print(f"📢 签到结果:{success} ,{msg}")
+        balance_info=get_balance_info(page)
+        print(f"📢 签到结果:{success} ,{msg},{balance_info}")
 
-        return success, final_cookie, f"{note} | {msg}"
+        return success, final_cookie, f"{note} | {msg},{balance_info}"
 
     except Exception as e:
         print(f"❌ 账号 {username} 执行异常: {e}")
