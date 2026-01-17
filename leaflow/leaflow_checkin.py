@@ -254,16 +254,16 @@ def main():
             ok, newcookie,msg = run_task_for_account(account, proxy,cookies.get(username,''))
     
             if ok:
-                print(f"✅ 账号 {username} 执行成功，保存新 cookie")
-                results.append(f"✅ 账号 {username} 执行成功:{msg}")
+                print(f"    ✅ 执行成功，保存新 cookie")
+                results.append(f"    ✅ 执行成功:{msg}")
                 newcookies[username]=newcookie
             else:
-                print(f"⚠️ 账号 {username} 执行失败，不保存 cookie")
-                results.append(f"⚠️ 账号 {username} 执行失败:{msg}")
+                print(f"    ⚠️ 执行失败，不保存 cookie")
+                results.append(f"    ⚠️ 执行失败:{msg}")
     
         except Exception as e:
-            print(f"❌ 账号 {username} 执行异常: {e}")
-            results.append(f"❌ 账号 {username} 执行异常: {e}")
+            print(f"    ❌ 执行异常: {e}")
+            results.append(f"    ❌ 执行异常: {e}")
 
     # 写入
     secret.update(newcookies)
