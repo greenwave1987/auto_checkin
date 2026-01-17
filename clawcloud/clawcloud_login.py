@@ -1,10 +1,6 @@
 import os
 import sys
 import time
-import base64
-import re
-import requests
-import pyotp
 from urllib.parse import urlparse
 from playwright.sync_api import sync_playwright
 
@@ -21,124 +17,70 @@ except ImportError:
         def update(self, name, value): return False
 
 # ==================== 配置 ====================
-LOGIN_ENTRY_URL = "https://console.run.claw.cloud"
-SIGNIN_URL = f"{LOGIN_ENTRY_URL}/signin"
+SIGNIN_URL = "https://console.run.claw.cloud/signin"
 
-class AutoLogin:
-    def __init__(self, account_info, proxy_config, bot_info, config_reader):
-        self.username = account_info.get('username')
-        self.password = account_info.get('password')
-        self.totp_secret = account_info.get('2fasecret') or account_info.get('totp')
-        self.gh_session = account_info.get('session', '')
-        
-        # --- 核心修正：代理处理 ---
-        self.proxy = None
-        if proxy_config:
-            # 确保 socks5 协议头正确
-            server = proxy_config.get('server')
-            port = proxy_config.get('port')
-            user = proxy_config.get('username')
-            pwd = proxy_config.get('password')
-            # Playwright 格式: socks5://user:pass@host:port
-            self.proxy = {
-                "server": f"socks5://{server}:{port}",
-                "username": user,
-                "password": pwd
-            }
-        
-        self.secret = SecretUpdater("GH_SESSION", config_reader=config_reader)
-        self.tg_token = bot_info.get('token')
-        self.tg_chat_id = bot_info.get('id')
-        
-        self.n = 0
-        self.logs = []
-        self.region_base_url = None
-
-    def log(self, msg, level="INFO"):
-        icons = {"INFO": "ℹ️", "SUCCESS": "✅", "ERROR": "❌", "WARN": "⚠️"}
-        print(f"{icons.get(level, '•')} {msg}")
-
-    # -------------------- 你的原始逻辑保持不变 --------------------
-    def handle_2fa(self, page):
-        if self.totp_secret:
-            self.log("🔢 正在计算 TOTP...")
-            code = pyotp.TOTP(self.totp_secret.replace(" ", "")).now()
-            page.locator('input[autocomplete="one-time-code"], input#app_totp').first.fill(code)
-            page.keyboard.press("Enter")
-            time.sleep(5)
-            return True
-        return False
-
-    def run_single(self):
-        with sync_playwright() as p:
-            # 使用修正后的代理配置
-            launch_args = {
-                "headless": True, 
-                "args": ['--no-sandbox', '--disable-setuid-sandbox']
-            }
-            if self.proxy:
-                launch_args["proxy"] = self.proxy
-                self.log(f"使用代理: {self.proxy['server']}", "INFO")
-
-            browser = p.chromium.launch(**launch_args)
-            context = browser.new_context(viewport={'width': 1920, 'height': 1080})
-            
-            # 注入现有 Session
-            if self.gh_session:
-                context.add_cookies([{'name': 'user_session', 'value': self.gh_session, 'domain': 'github.com', 'path': '/'}])
-
-            page = context.new_page()
-            try:
-                self.log(f"正在访问登录页: {self.username}")
-                page.goto(SIGNIN_URL, timeout=60000)
-                
-                # 如果没直接进去，点击 GitHub 登录
-                if "signin" in page.url:
-                    page.locator('button:has-text("GitHub"), [data-provider="github"]').first.click()
-                    time.sleep(5)
-                    
-                    if "github.com/login" in page.url:
-                        page.locator('input[name="login"]').fill(self.username)
-                        page.locator('input[name="password"]').fill(self.password)
-                        page.locator('input[type="submit"]').click()
-                        time.sleep(5)
-                        
-                        if "two-factor" in page.url:
-                            self.handle_2fa(page)
-
-                # 授权页处理
-                if "github.com/login/oauth/authorize" in page.url:
-                    page.locator('button[name="authorize"]').click()
-
-                time.sleep(10)
-                if "claw.cloud" in page.url and "signin" not in page.url:
-                    self.log(f"✅ 账号 {self.username} 登录成功", "SUCCESS")
-                else:
-                    self.log(f"❌ 账号 {self.username} 状态异常: {page.url}", "ERROR")
-
-            except Exception as e:
-                self.log(f"❌ 运行异常: {str(e)}", "ERROR")
-            finally:
-                browser.close()
-
-# ==================== 主调度 ====================
 def main():
     config = ConfigReader()
-    accounts = config.get_value("GH_INFO") or []
-    proxies = config.get_value("PROXY_INFO")
-    if isinstance(proxies, dict): proxies = proxies.get("value", [])
-    bots = config.get_value("BOT_INFO") or [{}]
-    bot_info = bots[0] if isinstance(bots, list) else bots
+    # 1. 从环境变量读取 GH_SESSION (GitHub 登录凭证)
+    gh_session = os.environ.get("GH_SESSION")
+    if not gh_session:
+        print("❌ 错误: 环境变量中未找到 GH_SESSION，无法执行")
+        return
 
-    for i, acc in enumerate(accounts):
-        # 匹配当前账号的代理配置对象
-        current_proxy_cfg = proxies[i] if i < len(proxies) else None
+    # 初始化更新器，准备更新 CLAW_COOKIE
+    secret_manager = SecretUpdater("CLAW_COOKIE", config_reader=config)
+
+    with sync_playwright() as p:
+        # 不使用代理启动
+        browser = p.chromium.launch(headless=True, args=['--no-sandbox'])
+        context = browser.new_context(viewport={'width': 1280, 'height': 720})
         
-        worker = AutoLogin(acc, current_proxy_cfg, bot_info, config)
-        worker.run_single()
-        
-        if i < len(accounts) - 1:
-            time.sleep(5)
+        # 2. 注入 GitHub Session
+        context.add_cookies([{
+            'name': 'user_session', 
+            'value': gh_session, 
+            'domain': 'github.com', 
+            'path': '/'
+        }])
+
+        page = context.new_page()
+        try:
+            print(f"🚀 正在尝试通过 Session 登录 Claw Cloud...")
+            page.goto(SIGNIN_URL, timeout=60000)
+            time.sleep(3)
+
+            # 3. 检查是否跳到了 GitHub 登录页
+            if "github.com/login" in page.url:
+                print("⚠️ Session 已失效，GitHub 要求重新登录。正在退出...")
+                return
+
+            # 如果在登录页，点击 GitHub 按钮触发 OAuth
+            if "/signin" in page.url:
+                page.locator('button:has-text("GitHub"), [data-provider="github"]').first.click()
+                time.sleep(8)
+
+            # 4. 获取 Claw Cloud 重定向后的 Cookie
+            if "claw.cloud" in page.url and "signin" not in page.url:
+                print(f"✅ 登录成功，当前 URL: {page.url}")
+                
+                # 提取 claw.cloud 的所有 cookies 并拼成字符串
+                cookies = context.cookies()
+                claw_cookies = [f"{c['name']}={c['value']}" for c in cookies if "claw.cloud" in c['domain']]
+                cookie_str = "; ".join(claw_cookies)
+
+                if cookie_str:
+                    # 5. 只上传更新最后完成重定向的 claw_cookie
+                    if secret_manager.update("CLAW_COOKIE", cookie_str):
+                        print("✅ 已成功更新 CLAW_COOKIE 至环境变量")
+                    else:
+                        print("❌ CLAW_COOKIE 更新失败")
+            else:
+                print(f"❌ 最终状态校验失败，停留在: {page.url}")
+
+        except Exception as e:
+            print(f"❌ 运行异常: {str(e)}")
+        finally:
+            browser.close()
 
 if __name__ == "__main__":
     main()
