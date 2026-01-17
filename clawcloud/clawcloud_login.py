@@ -149,7 +149,7 @@ class ClawLoginTask:
 
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True, args=['--no-sandbox'])
-            context =rowser.new_context(
+            context =browser.new_context(
                 viewport={'width': 1920, 'height': 1080},
                 user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
             )
