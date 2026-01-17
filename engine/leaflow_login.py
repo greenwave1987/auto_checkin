@@ -160,7 +160,7 @@ def login_and_get_cookies(page, email, password):
             raise RuntimeError("登录失败：仍在登录页")
 
         print("🎉 登录成功")
-        return page.context.cookies()
+        return page
 
     except Exception as e:
         print(f"❌ 登录失败: {e}")
