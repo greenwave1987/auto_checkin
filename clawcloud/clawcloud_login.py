@@ -78,6 +78,9 @@ def main():
             success = False
             for _ in range(20):
                 curr_url = page.url
+                if 'cf_chl_rt_tk' in curr_url:
+                    print(f"触发人机验证:{curr_url}")
+                    time.sleep(5)
                 # 成功的标准：包含 claw.cloud 且不是 signin/callback/login 页面
                 if "claw.cloud" in curr_url and all(x not in curr_url for x in ["signin", "callback", "login"]):
                     success = True
