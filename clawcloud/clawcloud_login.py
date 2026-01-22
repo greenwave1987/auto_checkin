@@ -1073,7 +1073,7 @@ def main():
     # 使用 zip 实现一一对应
     for account, proxy  in zip(accounts, proxies):
         username=account['username']
-        proxy={
+        proxywz={
                 "type": "socks5",
                 "server": "jz.hndz.qzz.io",
                 "port": 19873
