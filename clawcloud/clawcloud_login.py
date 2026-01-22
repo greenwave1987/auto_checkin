@@ -1,9 +1,10 @@
 import os
+import re
 import sys
 import time
 import random
 import requests
-import re
+import json
 from urllib.parse import urlparse
 from playwright.sync_api import sync_playwright
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
@@ -154,7 +155,7 @@ class AutoLogin:
                     time.sleep(random.uniform(0.2, 0.4))
                     el.click(force=True)
     
-                    self.log(f"✅ 已点击: {desc}", "SUCCESS")
+                    self.log(f"已点击: {desc}", "SUCCESS")
                     return True
     
                 except PlaywrightTimeoutError:
@@ -629,11 +630,16 @@ class AutoLogin:
         self.shot(page, "完成")
 
     def check_and_process_domain(self, domain):
-        if ".run.claw.cloud" in domain:
-            if "signin" in domain:
-                return "signin"
-            else:
-                return "logged"
+
+        # 检查域名是否以.run.claw.cloud结尾 
+        if domain.endswith('.run.claw.cloud'): 
+            return "logged" 
+        # 检查域名是否以.run.claw.cloud/signin结尾 
+        if domain.endswith('.run.claw.cloud/signin'): 
+            return "signin"
+        # 检查域名是否以.run.claw.cloud结尾 
+        if "callback" in domain: 
+            return "redirect"
         return "invalid"
     
     def run(self):
@@ -760,11 +766,18 @@ class AutoLogin:
                                 self.log(f"[2.{i}]: 找不到 GitHub 按钮", "WARN")
                                 continue
                             else:
-                                resault=self.check_and_process_domain(page.url)
-                                if resault=="logged":
-                                    self.log(f"[2.{i}]: 已登录: {page.url}", "SUCCESS")
-                                    break
- 
+                                for j in range(10):
+                                    resault=self.check_and_process_domain(page.url)
+                                    if resault=="logged":
+                                        self.log(f"[2.{i}.{j}]: 已登录: {page.url}", "SUCCESS")
+                                        break
+                                    if resault=="redirect":
+                                        self.log(f"[2.{i}.{j}]: 正在重定向: {page.url}", "INFO")
+                                        time.sleep(random.uniform(10, 15))
+                                        continue
+                                    if "github.com/login" in page.url:
+                                        self.log(f"[2.{i}.{j}]: github登录过期，{page.url}", "ERROR")
+                                        return False,  None, f"github登录过期！"   
                     except:
                         if i <10:
                             self.log(f"[1.{i}]: 未打开登录页，重试", "WARN")
