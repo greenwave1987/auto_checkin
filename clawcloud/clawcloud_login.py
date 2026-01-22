@@ -821,8 +821,9 @@ class AutoLogin:
                 self.log("步骤4: 更新 local_storage", "STEP")
                 storage_state = self.get_storage(context)
                 if storage_state:
+                    print_dict_tree(storage_state)
                     storage_state_json = json.dumps(storage_state, ensure_ascii=False)
-                    print_dict_tree(storage_state_json)
+                    
                     storage_state_b64 = base64.b64encode(storage_state_json.encode("utf-8")).decode("utf-8")
                     print(f"STORAGE_STATE_B64={storage_state_b64}")
                     ok=True
