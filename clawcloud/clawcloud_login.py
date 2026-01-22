@@ -690,7 +690,8 @@ class AutoLogin:
                     '[data-provider="github"]'
                 ], "GitHub"):
                     self.log("找不到按钮", "ERROR")
-                    self.notify(False, "找不到 GitHub 按钮")
+
+                    self.notify.send(title="clawcloud 自动登录保活",content="找不到 GitHub 按钮",image_path=self.shot)
                     sys.exit(1)
                 
                 time.sleep(3)
@@ -704,8 +705,8 @@ class AutoLogin:
                     # 检测区域
                     self.detect_region(url)
                     self.keepalive(page)
-                    
-                    self.notify(True)
+                    self.notify.send(title="clawcloud 自动登录保活",content="GitHub 登录成功")
+
                     print("\n✅ 成功！\n")
                     return
                 
@@ -717,7 +718,7 @@ class AutoLogin:
                 if 'github.com/login' in url or 'github.com/session' in url:
                     if not self.login_github(page, context):
                         self.shot(page, "登录失败")
-                        self.notify(False, "GitHub 登录失败")
+                        self.notify.send(title="clawcloud 自动登录保活",content="GitHub 登录失败")
                         sys.exit(1)
                 elif 'github.com/login/oauth/authorize' in url:
                     self.log("Cookie 有效", "SUCCESS")
@@ -727,7 +728,7 @@ class AutoLogin:
                 self.log("步骤4: 等待重定向", "STEP")
                 if not self.wait_redirect(page):
                     self.shot(page, "重定向失败")
-                    self.notify(False, "重定向失败")
+                    self.notify.send(title="clawcloud 自动登录保活",content="重定向失败")
                     sys.exit(1)
                 
                 self.shot(page, "重定向成功")
@@ -736,7 +737,7 @@ class AutoLogin:
                 self.log("步骤5: 验证", "STEP")
                 current_url = page.url
                 if 'claw.cloud' not in current_url or 'signin' in current_url.lower():
-                    self.notify(False, "验证失败")
+                    self.notify.send(title="clawcloud 自动登录保活",content="验证失败")
                     sys.exit(1)
                 
                 # 再次确认区域检测
@@ -756,7 +757,7 @@ class AutoLogin:
                 else:
                     self.log("未获取到 storage_state", "WARN")
                 
-                self.notify(True)
+                self.notify.send(title="clawcloud 自动登录保活",content="✅ 成功！")
                 print("\n" + "="*50)
                 print("✅ 成功！")
                 if self.detected_region:
@@ -768,7 +769,7 @@ class AutoLogin:
                 self.shot(page, "异常")
                 import traceback
                 traceback.print_exc()
-                self.notify(False, str(e))
+                self.notify.send(title="clawcloud 自动登录保活",content=str(e))
                 sys.exit(1)
             finally:
                 browser.close()
