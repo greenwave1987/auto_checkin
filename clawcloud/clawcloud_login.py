@@ -785,7 +785,7 @@ def main():
     print(f"📊 检测到 {len(accounts)} 个账号和 {len(proxies)} 个代理")
 
     # 使用 zip 实现一一对应
-    for account, proxy in zip(accounts, proxies):
+    for account,cookie, proxy ,gh_session in zip(accounts,cookies, proxies,gh_sessions):
         username=account['username']
 
         print(f"🚀 开始处理账号: {username}, 使用代理: {proxy['server']}")
@@ -794,11 +794,10 @@ def main():
         cc_info['gh_username'] = username
         #cc_info['gh_password'] = account.get('password')
         cc_info['cc_proxy'] = proxy
-        cookie=cookies.get(username, '')
         cc_info['cc_session'] = cookie.get('cc_session', '').strip()
         cc_info['cc_cookie'] = cookie.get('cc_cookie', '').strip()
-        cc_info['gh_session'] = gh_sessions.get(username, '').strip()
-        
+        cc_info['gh_session'] = gh_session
+         print(cc_info)
         return
         
         try:
