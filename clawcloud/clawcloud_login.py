@@ -108,33 +108,57 @@ class AutoLogin:
             except:
                 pass
         return False
-    def click(self, page, sels, desc=""):
-        for s in sels:
-            try:
-                el = page.locator(s).first
+    def click(self, page, desc=""):
+        """
+        专用于 Chakra UI / SPA / iframe 登录按钮
+        """
+        self.log(f"🔍 尝试查找并点击: {desc}", "INFO")
     
-                # 等它真正可点击
-                el.wait_for(state="visible", timeout=10000)
-                el.wait_for(state="attached", timeout=10000)
-                el.wait_for(state="enabled", timeout=10000)
+        # 1️⃣ 等页面真正稳定（比 networkidle 更可靠）
+        try:
+            page.wait_for_load_state("domcontentloaded", timeout=15000)
+            page.wait_for_timeout(2000)
+        except:
+            pass
     
-                # Chakra / React 必须等 layout 稳定
-                page.wait_for_timeout(500)
+        # 2️⃣ 收集主页面 + 所有 iframe
+        frames = [page.main_frame]
+        frames += page.frames
     
-                el.scroll_into_view_if_needed()
-                page.wait_for_timeout(200)
+        selectors = [
+            # Chakra Button（最稳）
+            'button.chakra-button',
     
-                el.hover()
-                page.wait_for_timeout(200)
+            # 带 GitHub svg 的按钮（极稳）
+            'button:has(svg)',
     
-                el.click(force=True)
+            # XPath 兜底
+            '//button[.//text()[contains(., "GitHub")]]',
+            '//button[.//*[name()="svg"]]',
+        ]
     
-                self.log(f"已点击: {desc}", "SUCCESS")
-                return True
+        for frame in frames:
+            for sel in selectors:
+                try:
+                    el = frame.locator(sel).first
     
-            except Exception as e:
-                self.log(f"尝试点击失败: {s} -> {e}", "DEBUG")
+                    el.wait_for(state="visible", timeout=5000)
     
+                    # 模拟人类
+                    time.sleep(random.uniform(0.5, 1.2))
+                    el.hover()
+                    time.sleep(random.uniform(0.2, 0.4))
+                    el.click(force=True)
+    
+                    self.log(f"✅ 已点击: {desc}", "SUCCESS")
+                    return True
+    
+                except PlaywrightTimeoutError:
+                    self.log(f"• 尝试点击失败: {sel}", "DEBUG")
+                except Exception as e:
+                    self.log(f"• 点击异常: {sel} -> {e}", "DEBUG")
+    
+        self.log(f"❌ 找不到按钮: {desc}", "ERROR")
         return False
     
 
