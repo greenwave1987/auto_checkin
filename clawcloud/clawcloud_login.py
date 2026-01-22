@@ -244,7 +244,7 @@ class AutoLogin:
 请打开手机 GitHub App 批准本次登录（会让你确认一个数字）。
 等待时间：{TWO_FACTOR_WAIT} 秒""")
         if shot:
-            self.notify.photo(shot, "两步验证页面（数字在图里）")
+            self.notify.send(title="clawcloud 自动登录保活",content="两步验证页面（数字在图里）",shot)
         
         # 不要频繁 reload，避免把流程刷回登录页
         for i in range(TWO_FACTOR_WAIT):
@@ -268,7 +268,7 @@ class AutoLogin:
                 self.log(f"  等待... ({i}/{TWO_FACTOR_WAIT}秒)")
                 shot = self.shot(page, f"两步验证_{i}s")
                 if shot:
-                    self.notify.send(title="clawcloud 自动登录保活",content=f"两步验证页面（第{i}秒）",image_path=self.shot)
+                    self.notify.send(title="clawcloud 自动登录保活",content=f"两步验证页面（第{i}秒）",image_path=shot)
             
             # 只在 30 秒、60 秒... 做一次轻刷新（可选，频率很低）
             if i % 30 == 0 and i != 0:
@@ -342,7 +342,7 @@ class AutoLogin:
 
 等待时间：{TWO_FACTOR_WAIT} 秒""")
         if shot:
-            self.notify.send(title="clawcloud 自动登录保活",content="两步验证页面",image_path=self.shot)
+            self.notify.send(title="clawcloud 自动登录保活",content="两步验证页面",image_path=shot)
 
         self.log(f"等待验证码（{TWO_FACTOR_WAIT}秒）...", "WARN")
         code = '真需要的话使用库自动生成'
@@ -690,8 +690,9 @@ class AutoLogin:
                     '[data-provider="github"]'
                 ], "GitHub"):
                     self.log("找不到按钮", "ERROR")
-
-                    self.notify.send(title="clawcloud 自动登录保活",content="找不到 GitHub 按钮",image_path=self.shot)
+                    shot = self.shot(page, "找不到按钮")
+                    if shot:
+                        self.notify.send(title="clawcloud 自动登录保活",content="找不到 GitHub 按钮",image_path=shot)
                     sys.exit(1)
                 
                 time.sleep(3)
