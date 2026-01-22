@@ -490,6 +490,7 @@ def print_dict_tree(d, prefix=""):
     :param prefix: 前缀，用于缩进和分支显示
     """
     if not isinstance(d, dict):
+        print(d)
         return
 
     keys = list(d.keys())
