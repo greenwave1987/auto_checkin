@@ -166,7 +166,11 @@ class AutoLogin:
         self.log(f"❌ 找不到按钮: {desc}", "ERROR")
         return False
     
-
+    def mask_url(self,url):
+        url = re.sub(r'code=[^&]+', 'code=***', url)
+        url = re.sub(r'state=[^&]+', 'state=***', url)
+        return url
+        
     def detect_region(self, url):
         """
         从 URL 中检测区域信息
@@ -772,7 +776,7 @@ class AutoLogin:
                                         self.log(f"[2.{i}.{j}]: 已登录: {page.url}", "SUCCESS")
                                         break
                                     if resault=="redirect":
-                                        self.log(f"[2.{i}.{j}]: 正在重定向: {page.url}", "INFO")
+                                        self.log(f"[2.{i}.{j}]: 正在重定向: {self.mask_url(page.url)}", "INFO")
                                         time.sleep(random.uniform(10, 15))
                                         continue
                                     if "github.com/login" in page.url:
