@@ -3,10 +3,12 @@ import re
 import sys
 import json
 import time
+import atexit
 import base64
 import random
 import requests
 import datetime
+import subprocess
 
 from urllib.parse import urlparse
 from playwright.sync_api import sync_playwright
@@ -234,6 +236,43 @@ class AutoLogin:
             
         return auth_token,app_token,lastLogin
         
+    def start_gost_proxy(self, proxy):
+        """
+        使用 gost 将 socks5(带认证) 转为本地 http 代理
+        """
+        listen_port = random.randint(20000, 30000)
+        listen = f"http://127.0.0.1:{listen_port}"
+
+        auth = ""
+        if proxy.get("username") and proxy.get("password"):
+            auth = f"{proxy['username']}:{proxy['password']}@"
+
+        remote = f"socks5://{auth}{proxy['server']}:{proxy['port']}"
+
+        cmd = [
+            "gost",
+            "-L", listen,
+            "-F", remote
+        ]
+
+        self.log(f"启动 Gost: {' '.join(cmd)}", "INFO")
+
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+
+        atexit.register(proc.terminate)
+
+        time.sleep(1.5)  # 给 gost 启动时间
+
+        return {
+            "server": listen,
+            "process": proc
+        }
+
+    
     def build_session(self,token):
         cookies=self.get_clawcloud_cookies()
                 
@@ -797,16 +836,25 @@ class AutoLogin:
             if self.cc_proxy:
                 try:
                     p_url = self.cc_proxy
-                    proxy_config = {
-                        "server": f"{p_url['type']}://{p_url['server']}:{p_url['port']}"
-                    }
-                    if p_url['type']=='socks5' and p_url.get("username") and p_url.get("password"):
-                        proxy_config["username"] = p_url["username"]
-                        proxy_config["password"] = p_url["password"]
-                        self.log(f"无法直接启用带认证socks代理！")
+                    # ===== 新增：socks5 带认证 → gost =====
+                    if (
+                        p_url.get("type") == "socks5"
+                        and p_url.get("username")
+                        and p_url.get("password")
+                    ):
+                        gost = self.start_gost_proxy(p_url)
+                        launch_args["proxy"] = {
+                            "server": gost["server"]
+                        }
+                        self.log(f"使用 Gost 本地代理: {gost['server']}", "SUCCESS")
+
                     else:
+                        proxy_config = {
+                            "server": f"{p_url['type']}://{p_url['server']}:{p_url['port']}"
+                        }
                         launch_args["proxy"] = proxy_config
                         self.log(f"启用代理: {proxy_config['server'][:-6]}")
+
                 except Exception as e:
                     self.log(f"代理配置解析失败: {e}", "ERROR")
 
