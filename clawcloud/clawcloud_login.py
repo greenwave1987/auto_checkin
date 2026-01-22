@@ -16,7 +16,7 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE_DIR)
 from engine.notify import TelegramNotifier
 try:
-    from engine.main import ConfigReader, SecretUpdater，print_dict_tree
+    from engine.main import ConfigReader, SecretUpdater,print_dict_tree
 except ImportError:
     class ConfigReader:
         def get_value(self, key): return os.environ.get(key)
