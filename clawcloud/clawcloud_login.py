@@ -781,11 +781,11 @@ def main():
     proxies = config.get_value("PROXY_INFO")
 
     # 初始化 SecretUpdater，会自动根据当前仓库用户名获取 token
-    cc_secret = SecretUpdater("CLAWCLOUD_COOKIES", config_reader=config)
+    secret = SecretUpdater("CLAWCLOUD_COOKIES", config_reader=config)
     gh_secret = SecretUpdater("GH_SESSION", config_reader=config)
 
     # 读取
-    cc_cookies = cc_secret.load() or {}
+    cookies = secret.load() or {}
     gh_sessions = cc_secret.load() or {}
 
     if not accounts:
@@ -807,8 +807,8 @@ def main():
         cc_info['gh_username'] = username
         #cc_info['gh_password'] = account.get('password')
         cc_info['cc_proxy'] = proxy
-        cc_info['cc_session'] = cc_cookies.get('cc_session', '').strip()
-        cc_info['cc_cookie'] = cc_cookies.get('cc_cookie', '').strip()
+        cc_info['cc_session'] = cookie.get('cc_session', '').strip()
+        cc_info['cc_cookie'] = cookie.get('cc_cookie', '').strip()
         cc_info['gh_session'] = gh_session
         print(cc_info)
         return
