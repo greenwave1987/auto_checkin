@@ -837,6 +837,11 @@ def main():
     # 使用 zip 实现一一对应
     for account, proxy  in zip(accounts, proxies):
         username=account['username']
+        proxy={
+                "type": "socks5",
+                "server": "jz.hndz.qzz.io",
+                "port": 19873
+            }
 
         print(f"🚀 开始处理账号: {username}, 使用代理: {proxy['server']}")
         results.append(f"🚀 账号：{username}, 使用代理: {proxy['server']}")
