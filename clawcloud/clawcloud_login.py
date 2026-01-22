@@ -797,7 +797,7 @@ def main():
         cc_info['cc_session'] = cookie.get('cc_session', '').strip()
         cc_info['cc_cookie'] = cookie.get('cc_cookie', '').strip()
         cc_info['gh_session'] = gh_session
-         print(cc_info)
+        print(cc_info)
         return
         
         try:
