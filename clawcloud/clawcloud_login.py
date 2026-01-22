@@ -769,7 +769,7 @@ class AutoLogin:
                         if resault=="signin":
                             self.log(f"[1.{i}]: 需登录: {page.url}", "INFO")
                             # 步骤2: 点击 GitHub
-                            self.log("[2.{i}]: 点击 GitHub", "STEP")
+                            self.log(f"[2.{i}]: 点击 GitHub", "STEP")
                             if not self.click(page, desc="GitHub 登录按钮"):
                                 shot = self.shot(page, "找不到 GitHub 按钮")
                                 if shot:
