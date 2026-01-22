@@ -862,14 +862,18 @@ def main():
     # 读取代理信息
     proxies = config.get_value("PROXY_INFO")
 
-    # 初始化 SecretUpdater，会自动根据当前仓库用户名获取 token
+    # 初始化 get_notifier
     notify=get_notifier()
-    secret = SecretUpdater("CLAWCLOUD_LOCALS", config_reader=config)
+    # 初始化 SecretUpdater，会自动根据当前仓库用户名获取 token
     gh_secret = SecretUpdater("GH_SESSION", config_reader=config)
-
+    # 读取
+    gh_sessions = gh_secret.load() or {}
+    
+    # 初始化 SecretUpdater，会自动根据当前仓库用户名获取 token
+    secret = SecretUpdater("CLAWCLOUD_LOCALS", config_reader=config)
     # 读取
     cc_locals = secret.load() or {}
-    gh_sessions = gh_secret.load() or {}
+    
 
     if not accounts:
         print("❌ 错误: 未配置 LEAFLOW_ACCOUNTS")
