@@ -517,3 +517,38 @@ def print_dict_tree(d, prefix=""):
                     # 列表中字典继续递归
                     sub_prefix = next_prefix + ("   " if j == len(v) - 1 else "│  ")
                     print_dict_tree(item, sub_prefix)
+def test_proxy(proxy_info, timeout=5):
+    """
+    测试代理是否可用
+    proxy_info: dict, 包含以下字段
+        - type: 'http', 'https', 'socks5'
+        - server: 代理地址
+        - port: 端口
+        - username: 用户名 (可为空)
+        - password: 密码 (可为空)
+    timeout: 请求超时时间（秒）
+    
+    返回: True 可用, False 不可用
+    """
+    try:
+        # 构建 proxies 字典
+        if proxy_info.get("username") and proxy_info.get("password"):
+            auth_part = f"{proxy_info['username']}:{proxy_info['password']}@"
+        else:
+            auth_part = ""
+
+        proxy_url = f"{proxy_info['type']}://{auth_part}{proxy_info['server']}:{proxy_info['port']}"
+        proxies = {
+            "http": proxy_url,
+            "https": proxy_url
+        }
+
+        # 测试请求
+        test_res = requests.get("https://httpbin.org/ip", proxies=proxies, timeout=timeout)
+        test_res.raise_for_status()
+        print(f"✅ 代理可用: {proxy_url}")
+        return proxy_url
+
+    except Exception as e:
+        print(f"❌ 代理不可用: {proxy_url}, 错误: {e}")
+        return None
