@@ -35,7 +35,7 @@ class AutoLogin:
         #self.gh_password = config.get('gh_password')
         self.gh_session = config.get('gh_session', '').strip()
         self.cc_session = config.get('cc_session', '').strip()
-        self.cc_cookies = config.get('cc_cookies', '').strip()
+        self.cc_cookie = config.get('cc_cookie', '').strip()
         self.cc_proxy = config.get('cc_proxy', '').strip()
         #self.tg = Telegram()
         #self.secret = SecretUpdater()
@@ -753,8 +753,81 @@ class AutoLogin:
             finally:
                 browser.close()
 
-
 def main():
+    global config
+    if config is None:
+        config = ConfigReader()
+    useproxy = True
+    newcookies={}
+    results = []
+
+    # 读取账号信息
+    accounts = config.get_value("GH_INFO")
+    
+    # 读取代理信息
+    proxies = config.get_value("PROXY_INFO")
+
+    # 初始化 SecretUpdater，会自动根据当前仓库用户名获取 token
+    cc_secret = SecretUpdater("CLAWCLOUD_COOKIES", config_reader=config)
+    gh_secret = SecretUpdater("GH_SESSION", config_reader=config)
+
+    # 读取
+    cc_cookies = cc_secret.load() or {}
+    gh_sessions = cc_secret.load() or {}
+
+    if not accounts:
+        print("❌ 错误: 未配置 LEAFLOW_ACCOUNTS")
+        return
+    if not proxies:
+        print("📢 警告: 未配置 proxy ，将直连")
+        useproxy = False
+
+    print(f"📊 检测到 {len(accounts)} 个账号和 {len(proxies)} 个代理")
+
+    # 使用 zip 实现一一对应
+    for account, proxy in zip(accounts, proxies):
+        username=account['username']
+
+        print(f"🚀 开始处理账号: {username}, 使用代理: {proxy['server']}")
+        results.append(f"🚀 账号：{username}, 使用代理: {proxy['server']}")
+        cc_info={}
+        cc_info['gh_username'] = username
+        #cc_info['gh_password'] = account.get('password')
+        cc_info['cc_proxy'] = proxy
+        cookie=cookies.get(username, '')
+        cc_info['cc_session'] = cookie.get('cc_session', '').strip()
+        cc_info['cc_cookie'] = cookie.get('cc_cookie', '').strip()
+        cc_info['gh_session'] = gh_sessions.get(username, '').strip()
+        
+        return
+        
+        try:
+            # run_task_for_account 返回 ok（bool）和 newcookie（dict 或 str）
+            AutoLogin= AutoLogin(cc_info)
+            ok, newcookie,msg = AutoLogin.run()
+    
+            if ok:
+                print(f"    ✅ 执行成功，保存新 cookie")
+                results.append(f"    ✅ 执行成功:{msg}")
+                newcookies[username]=newcookie
+            else:
+                print(f"    ⚠️ 执行失败，不保存 cookie")
+                results.append(f"    ⚠️ 执行失败:{msg}")
+    
+        except Exception as e:
+            print(f"    ❌ 执行异常: {e}")
+            results.append(f"    ❌ 执行异常: {e}")
+
+    # 写入
+    cc_secret.update(newcookies)
+    # 发送结果
+    get_notifier().send(
+        title="Leaflow 自动签到汇总",
+        content="\n".join(results)
+    )
+
+
+def jmain():
     config = ConfigReader()
     gh_session = os.environ.get("GH_SESSION")
     
