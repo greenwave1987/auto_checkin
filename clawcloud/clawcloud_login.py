@@ -52,6 +52,7 @@ class AutoLogin:
     """自动登录，因 GH_SESSIION 每日更新，不考虑登录github，直接注入GH_SESSIION"""
     
     def __init__(self, config):
+        self.host = urlparse(BOARD_ENTRY_URL).netloc
         self.gh_username = config.get('gh_username')
         # self.gh_password = config.get('gh_password')
         
@@ -82,6 +83,7 @@ class AutoLogin:
         # 区域相关
         self.detected_region = 'ap-northeast-1'  # 检测到的区域，如 "us-west-1"
         self.region_base_url = 'https://ap-northeast-1.run.claw.cloud'  # 检测到的区域基础 URL
+        self.auth_token,self.app_token,self.lastLogin=self.get_local_token()
 
         
     def log(self, msg, level="INFO"):
@@ -167,6 +169,112 @@ class AutoLogin:
     
         self.log(f"❌ 找不到按钮: {desc}", "ERROR")
         return False
+
+    def get_clawcloud_cookies(self):
+        """
+        从 storage_state 中提取 domain 包含 claw.cloud 的 cookies
+        """
+        if not isinstance(self.cc_local, dict):
+            return []
+    
+        cookies = self.cc_local.get("cookies", [])
+        if not isinstance(cookies, list):
+            return []
+    
+        return [
+            c for c in cookies
+            if isinstance(c, dict) and "domain" in c and "claw.cloud" in c["domain"]
+        ]
+    def get_local_storage_by_origin(self):
+        """
+        根据 origin 获取对应的 localStorage
+        """
+        if not isinstance(self.cc_local, dict):
+            return []
+    
+        origins = self.cc_local.get("origins", [])
+        if not isinstance(origins, list):
+            return []
+    
+        for o in origins:
+            if not isinstance(o, dict):
+                continue
+            if self.host in o.get("origin"):
+                return o.get("localStorage", [])
+    
+        return []
+    def get_local_token(self):
+        local_storage=self.get_local_storage_by_origin(self.cc_local)
+        # 从localStorage中提取token
+        auth_token = None
+        app_token = None
+        lastLogin=None
+        for ls in local_storage:
+            if ls.get('name')=='lastLoginUpdateTime':
+                lastLogin = ls['value']
+                continue
+            if ls.get('name')=='session':
+                session_data = ls['value']
+                if isinstance(session_data, dict) and 'state' in session_data:
+                    if 'token' in session_data['state']:
+                        auth_token = session_data['state']['token']
+                    if 'session' in session_data['state'] and 'token' in session_data['state']['session']:
+                        app_token = session_data['state']['session']['token']
+
+        if not auth_token:
+            print(f"❌ [错误] 无法从保存的数据中提取 auth_token")
+
+        if not app_token:
+            print(f"❌ [错误] 无法从保存的数据中提取 app_token")
+        if not lastLogin:
+            print(f"❌ [错误] 无法从保存的数据中提取 lastLoginUpdateTime")
+            
+        return auth_token,app_token,lastLogin
+        
+    def build_session(self,token):
+        cookies=self.get_clawcloud_cookies()
+                
+        try:
+            s = requests.Session()
+            s.headers.update({
+                    "authority": self.host,
+                    "accept": "application/json, text/plain, */*",
+                    "authorization": token, # 纯 Token 模式
+                    "referer": f"https://{self.host}/",
+                    "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
+            })
+                
+            for c in cookies:
+                s.cookies.set(c["name"], c["value"])
+            return s
+        except Exception as e:
+            print(f"⚠️ [build_session 异常] {e}")
+            return None
+
+    def get_balance_with_token(self):
+        print(f"📊 [步骤 8] 正在查询余额...")
+        
+        session=self.build_session(self.app_token)
+        try:
+            api_url = f"https://{self.host}/api/accountcenter/creditsUsage"
+            
+            for retry in range(2):
+                res = session.get(api_url, timeout=60)
+                res.raise_for_status()
+                res_data = res.json()
+                if res_data.get("code") == 200:
+                    plan = res_data["data"]["creditsUsage"]["currentPlan"]
+                    total, used = plan["total"] / 1000000, plan["used"] / 1000000
+                    result = f"💵  {total:.2f} - 📉  {used:.2f} = 🔋 {total-used:.2f} $"
+                    print(result)
+                    return result
+                print(f"  ⏳ [等待重试] 响应: {res_data.get('message')}")
+                time.sleep(5)
+            
+        except Exception as e:
+            print(f"⚠️ [提取异常] {e}")
+        return None
+
     
     def mask_url(self,url):
         url = re.sub(r'code=[^&]+', 'code=***', url)
@@ -235,6 +343,7 @@ class AutoLogin:
         """提取 storage_state"""
         try:
             state = context.storage_state()
+            self.cc_local = state
             return state
         except Exception as e:
             self.log(f"获取 storage_state 失败: {e}", "WARN")
@@ -659,7 +768,7 @@ class AutoLogin:
         print("\n" + "="*50)
         print("🚀 ClawCloud 自动登录")
         print("="*50 + "\n")
-        ok, new_local,msg = False,  None, f"🚀 ClawCloud 自动登录"
+        ok, new_local,msg = False,  None, f"🚀 ClawCloud 自动登录\n"
         self.log(f"用户名: {self.gh_username}")
         self.log(f"Session: {'有' if self.gh_session else '无'}")
         #self.log(f"密码: {'有' if self.password else '无'}")
@@ -698,18 +807,31 @@ class AutoLogin:
                 except Exception as e:
                     self.log(f"代理配置解析失败: {e}", "ERROR")
 
+            """
+            与当前时间比较，是否相差 >= 20 天
+            ts_ms: 毫秒时间戳
+            """
+            lastLogin=self.lastLogin
+            now_ms = int(time.time() * 1000)
+            diff_ms = abs(now_ms - lastLogin)
+        
+            DAY_MS = 24 * 60 * 60 * 1000
+            dt = datetime.datetime.utcfromtimestamp(lastLogin / 1000) + datetime.timedelta(hours=8)
+            if diff_ms >= 20 * DAY_MS:
+                self.log(f"上次登录{dt},已过20天，重新登录！", "WARN")
+            else:
+                self.log(f"上次登录{dt},查询余额！", "INFO")
+                msg=f"上次登录{dt},查询余额！"
+                msg+=self.get_balance_with_token()
+                return True, None,msg
+                
+                
+            
             browser = p.chromium.launch(**launch_args)
-            # 预加载localStorage数据，验证有效不再使用 gh_session
-            storage_state = None
-            if self.cc_local:
-                try:
-                    storage_state = json.loads(base64.b64decode(self.cc_local).decode("utf-8"))
-                    self.log("已加载 storage_state", "SUCCESS")
-                except Exception as e:
-                    self.log(f"加载 storage_state 失败: {e}", "WARN")
+            
             
             context = browser.new_context(
-                storage_state=storage_state,
+                storage_state=self.cc_local,
                 viewport={'width': 1920, 'height': 1080},
                 user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
             )
@@ -821,7 +943,7 @@ class AutoLogin:
                 self.shot(page, "找不到 GitHub 按钮")
                 # 3. 查询余额和登录信息
                 self.log("步骤3: 查询余额和登录信息", "STEP")
-                ##self.keepalive(page)
+                msg+=self.get_balance_with_token()
                 
                 # 4. 提取并保存新 local_storage
                 self.log("步骤4: 更新 local_storage", "STEP")
@@ -854,7 +976,8 @@ class AutoLogin:
                     self.notify.send(title="clawcloud 自动登录保活",content=f"❌ {self.gh_username}:{str(e)}",image_path=self.shots[-1])
                 msg= f"访问 {page.url} 失败！"   
             finally:
-                browser.close()
+                if browser:
+                    browser.close()
                 return ok, new_local,msg
 
 def main():
@@ -924,7 +1047,15 @@ def main():
             continue
         
         if isinstance(cc_locals, dict):
-            cc_info['cc_local'] = cc_locals.get(username,'')
+            # 预加载localStorage数据，验证有效不再使用 gh_session
+            storage_state = None
+            cc_local=cc_locals.get(username,'')
+            if cc_local:
+                try:
+                    cc_info['cc_local'] =  json.loads(base64.b64decode(cc_local).decode("utf-8"))
+                    print("✅ 已加载 storage_state")
+                except Exception as e:
+                    print(f"❌ 加载 storage_state 失败: {e}")
         else:
             print(f"⚠️ cc_locals 格式错误！")
             cc_info['cc_local'] = []
