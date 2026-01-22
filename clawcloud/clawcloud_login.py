@@ -275,7 +275,7 @@ class AutoLogin:
     
     def build_session(self,token):
         cookies=self.get_clawcloud_cookies()
-                
+        
         try:
             s = requests.Session()
             s.headers.update({
@@ -295,13 +295,28 @@ class AutoLogin:
 
     def get_balance_with_token(self):
         print(f"📊 [步骤 8] 正在查询余额...")
-        
+        proxies = None
+        if self.cc_proxy:
+            try:
+                p_url = self.cc_proxy
+                # ===== 新增：socks5 带认证 → gost =====
+                
+                proxies = {
+                    "http": f"{p_url['type']}://{p_url['username']}:{p_url['password']}@{p_url['server']}:{p_url['port']}",
+                    "https": f"{p_url['type']}://{p_url['username']}:{p_url['password']}@{p_url['server']}:{p_url['port']}"
+                }
+                
+                self.log(f"启用代理: {p_url['server'][:-3]}***")
+    
+            except Exception as e:
+                self.log(f"代理配置解析失败: {e}", "ERROR")
+                
         session=self.build_session(self.app_token)
         try:
             api_url = f"https://{self.host}/api/accountcenter/creditsUsage"
             
             for retry in range(2):
-                res = session.get(api_url, timeout=60)
+                res = session.get(api_url, proxies=proxies, timeout=60)
                 res.raise_for_status()
                 res_data = res.json()
                 if res_data.get("code") == 200:
