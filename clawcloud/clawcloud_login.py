@@ -209,7 +209,7 @@ class AutoLogin:
 2️⃣ 或在 GitHub App 批准""")
         
         if self.shots:
-            self.notify.photo(self.shots[-1], "设备验证页面")
+            self.notify.send(title="clawcloud 自动登录保活",content="设备验证页面",image_path=self.shots[-1])
         
         for i in range(DEVICE_VERIFY_WAIT):
             time.sleep(1)
@@ -268,7 +268,7 @@ class AutoLogin:
                 self.log(f"  等待... ({i}/{TWO_FACTOR_WAIT}秒)")
                 shot = self.shot(page, f"两步验证_{i}s")
                 if shot:
-                    self.notify.photo(shot, f"两步验证页面（第{i}秒）")
+                    self.notify.send(title="clawcloud 自动登录保活",content=f"两步验证页面（第{i}秒）",image_path=self.shot)
             
             # 只在 30 秒、60 秒... 做一次轻刷新（可选，频率很低）
             if i % 30 == 0 and i != 0:
@@ -342,10 +342,10 @@ class AutoLogin:
 
 等待时间：{TWO_FACTOR_WAIT} 秒""")
         if shot:
-            self.notify.photo(shot, "两步验证页面")
+            self.notify.send(title="clawcloud 自动登录保活",content="两步验证页面",image_path=self.shot)
 
         self.log(f"等待验证码（{TWO_FACTOR_WAIT}秒）...", "WARN")
-        code = self.notify.wait_code(timeout=TWO_FACTOR_WAIT)
+        code = '真需要的话使用库自动生成'
 
         if not code:
             self.log("等待验证码超时", "ERROR")
@@ -570,35 +570,6 @@ class AutoLogin:
                 self.log(f"访问 {name} 失败: {e}", "WARN")
         
         self.shot(page, "完成")
-    
-    def notify(self, ok, err=""):
-        if not self.notify.ok:
-            return
-        
-        region_info = f"\n<b>区域:</b> {self.detected_region or '默认'}" if self.detected_region else ""
-        
-        msg = f"""<b>🤖 ClawCloud 自动登录</b>
-
-<b>状态:</b> {"✅ 成功" if ok else "❌ 失败"}
-<b>用户:</b> {self.gh_username}{region_info}
-<b>时间:</b> {time.strftime('%Y-%m-%d %H:%M:%S')}"""
-        
-        if err:
-            msg += f"\n<b>错误:</b> {err}"
-        
-        msg += "\n\n<b>日志:</b>\n" + "\n".join(self.logs[-6:])
-        
-        self.notify.send(title="clawcloud 自动登录保活",content=msg)
-        
-        if self.shots:
-            if not ok:
-                for s in self.shots[-3:]:
-                    self.notify.photo(s, s)
-            else:
-                # for s in self.shots[-3:]:
-                #     self.notify.photo(s, s)
-                if self.shots:
-                   self.notify.photo(self.shots[-1], "完成")
     
     def run(self):
         print("\n" + "="*50)
