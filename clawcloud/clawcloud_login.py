@@ -27,6 +27,19 @@ SIGNIN_URL = f"{LOGIN_ENTRY_URL}/signin"
 DEVICE_VERIFY_WAIT = 30  # Mobile验证 默认等 30 秒
 TWO_FACTOR_WAIT = int(os.environ.get("TWO_FACTOR_WAIT", "120"))  # 2FA验证 默认等 120 秒
 
+# 初始化
+_notifier = None
+config = None
+
+def get_notifier():
+    global _notifier,config
+    if config is None:
+        config = ConfigReader()
+    if _notifier is None:
+        _notifier = TelegramNotifier(config)
+    return _notifier
+
+
 class AutoLogin:
     """自动登录，因 GH_SESSIION 每日更新，不考虑登录github，直接注入GH_SESSIION"""
     
