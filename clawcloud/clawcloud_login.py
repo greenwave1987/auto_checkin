@@ -762,6 +762,7 @@ class AutoLogin:
                         page.goto(BOARD_ENTRY_URL, timeout=60000)
                         page.wait_for_load_state('networkidle', timeout=60000)
                         resault=self.check_and_process_domain(page.url)
+                        self.shot(page, "找不到 GitHub 按钮")
                         if resault=="invalid":
                             self.log(f"[1.{i}]: 非域名: {page.url}", "WARN")
                             continue
@@ -777,24 +778,29 @@ class AutoLogin:
                                 if shot:
                                     self.notify.send(title="clawcloud 自动登录保活",content="找不到 GitHub 按钮",image_path=shot)
                                 self.log(f"[2.{i}]: 找不到 GitHub 按钮", "WARN")
+                                self.shot(page, "找不到 GitHub 按钮")
                                 continue
                             else:
                                 for j in range(10):
                                     resault=self.check_and_process_domain(page.url)
                                     if resault=="logged":
                                         self.log(f"[2.{i}.{j}]: 已登录: {page.url}", "SUCCESS")
+                                        self.shot(page, "找不到 GitHub 按钮")
                                         break
                                     if resault=="redirect":
                                         self.log(f"[2.{i}.{j}]: 正在重定向: {self.mask_url(page.url)}", "INFO")
                                         try:
                                             page.wait_for_url("https://*.run.claw.cloud", timeout=60000)
                                             self.log(f"URL 已跳转: {page.url}", "SUCCESS")
+                                            self.shot(page, "找不到 GitHub 按钮")
                                             break
                                         except PlaywrightTimeoutError:
                                             self.log(f"等待 URL 跳转超时: {page.url}", "ERROR")
+                                            self.shot(page, "找不到 GitHub 按钮")
                                         continue
                                     if "github.com/login" in page.url:
                                         self.log(f"[2.{i}.{j}]: github登录过期，{page.url}", "ERROR")
+                                        self.shot(page, "找不到 GitHub 按钮")
                                         return False,  None, f"github登录过期！"   
                     except:
                         if i <10:
@@ -812,7 +818,7 @@ class AutoLogin:
                 # 再次确认区域检测
                 if not self.detected_region:
                     self.detect_region(current_url)
-                
+                self.shot(page, "找不到 GitHub 按钮")
                 # 3. 查询余额和登录信息
                 self.log("步骤3: 查询余额和登录信息", "STEP")
                 ##self.keepalive(page)
@@ -837,13 +843,15 @@ class AutoLogin:
                 if self.detected_region:
                     print(f"📍 区域: {self.detected_region}")
                 print("="*50 + "\n")
-                
+                if self.shots:
+                    self.notify.send(title="clawcloud 自动登录保活",content=f"✅ {self.gh_username}成功！",image_path=self.shots[-1])
             except Exception as e:
                 self.log(f"异常: {e}", "ERROR")
                 self.shot(page, "异常")
                 import traceback
                 traceback.print_exc()
-                self.notify.send(title="clawcloud 自动登录保活",content=str(e))
+                if self.shots:
+                    self.notify.send(title="clawcloud 自动登录保活",content=f"❌ {self.gh_username}:{str(e)}",image_path=self.shots[-1])
                 msg= f"访问 {page.url} 失败！"   
             finally:
                 browser.close()
@@ -937,7 +945,7 @@ def main():
         except Exception as e:
             print(f"    ❌ 执行异常: {e}")
             results.append(f"    ❌ 执行异常: {e}")
-        break
+        #break
     # 写入
     secret.update(cc_locals)
     # 发送结果
