@@ -743,27 +743,27 @@ class AutoLogin:
                         page.goto(BOARD_ENTRY_URL, timeout=60000)
                         page.wait_for_load_state('networkidle', timeout=60000)
                         resault=self.check_and_process_domain(page.url)
-                    if resault=="invalid":
-                        self.log(f"[1.{i}]: 非域名: {page.url}", "WARN")
-                        continue
-                    if resault=="logged":
-                        self.log(f"[1.{i}]: 已登录: {page.url}", "SUCCESS")
-                        break
-                    if resault=="signin":
-                        self.log(f"[1.{i}]: 需登录: {page.url}", "INFO")
-                        # 步骤2: 点击 GitHub
-                        self.log("[2.{i}]: 点击 GitHub", "STEP")
-                        if not self.click(page, desc="GitHub 登录按钮"):
-                            shot = self.shot(page, "找不到 GitHub 按钮")
-                            if shot:
-                                self.notify.send(title="clawcloud 自动登录保活",content="找不到 GitHub 按钮",image_path=shot)
-                            self.log(f"[2.{i}]: 找不到 GitHub 按钮", "WARN")
+                        if resault=="invalid":
+                            self.log(f"[1.{i}]: 非域名: {page.url}", "WARN")
                             continue
-                        else:
-                            resault=check_and_process_domain(page.url)
-                            if resault=="logged":
-                                self.log(f"[2.{i}]: 已登录: {page.url}", "SUCCESS")
-                                break
+                        if resault=="logged":
+                            self.log(f"[1.{i}]: 已登录: {page.url}", "SUCCESS")
+                            break
+                        if resault=="signin":
+                            self.log(f"[1.{i}]: 需登录: {page.url}", "INFO")
+                            # 步骤2: 点击 GitHub
+                            self.log("[2.{i}]: 点击 GitHub", "STEP")
+                            if not self.click(page, desc="GitHub 登录按钮"):
+                                shot = self.shot(page, "找不到 GitHub 按钮")
+                                if shot:
+                                    self.notify.send(title="clawcloud 自动登录保活",content="找不到 GitHub 按钮",image_path=shot)
+                                self.log(f"[2.{i}]: 找不到 GitHub 按钮", "WARN")
+                                continue
+                            else:
+                                resault=self.check_and_process_domain(page.url)
+                                if resault=="logged":
+                                    self.log(f"[2.{i}]: 已登录: {page.url}", "SUCCESS")
+                                    break
  
                     except:
                         if i <10:
