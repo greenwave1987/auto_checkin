@@ -204,7 +204,7 @@ class AutoLogin:
     
         return []
     def get_local_token(self):
-        local_storage=self.get_local_storage_by_origin(self.cc_local)
+        local_storage=self.get_local_storage_by_origin()
         # 从localStorage中提取token
         auth_token = None
         app_token = None
