@@ -44,14 +44,30 @@ def get_notifier():
 class AutoLogin:
     """自动登录，因 GH_SESSIION 每日更新，不考虑登录github，直接注入GH_SESSIION"""
     
-    def __init__(self,config):
+    def __init__(self, config):
         self.gh_username = config.get('gh_username')
-        #self.gh_password = config.get('gh_password')
-        self.gh_session = config.get('gh_session', '').strip()
-        self.cc_local = config.get('cc_local', '').strip()
-        self.cc_proxy = config.get('cc_proxy', '').strip()
+        # self.gh_password = config.get('gh_password')
+        
+        # gh_session 处理类型安全
+        gh_sess = config.get('gh_session', '')
+        if isinstance(gh_sess, str):
+            self.gh_session = gh_sess.strip()
+        elif isinstance(gh_sess, list):
+            self.gh_session = gh_sess[0] if gh_sess else ''
+        else:
+            self.gh_session = ''
+        
+        # cc_local 处理类型安全
+        cc_local_val = config.get('cc_local', '')
+        if isinstance(cc_local_val, str):
+            self.cc_local = cc_local_val.strip()
+        else:
+            # storage_state 本身是 dict，无需 strip
+            self.cc_local = cc_local_val
+        
+        self.cc_proxy = config.get('cc_proxy', '').strip() if isinstance(config.get('cc_proxy', ''), str) else config.get('cc_proxy')
         self.notify = config.get('notify')
-        #self.secret = SecretUpdater()
+        # self.secret = SecretUpdater()
         self.shots = []
         self.logs = []
         self.n = 0
@@ -59,6 +75,7 @@ class AutoLogin:
         # 区域相关
         self.detected_region = 'ap-northeast-1'  # 检测到的区域，如 "us-west-1"
         self.region_base_url = 'https://ap-northeast-1.run.claw.cloud'  # 检测到的区域基础 URL
+
         
     def log(self, msg, level="INFO"):
         icons = {"INFO": "ℹ️", "SUCCESS": "✅", "ERROR": "❌", "WARN": "⚠️", "STEP": "🔹"}
@@ -829,12 +846,15 @@ def main():
         cc_info['cc_proxy'] = proxy
         cc_info['notify'] = notify
 
-
         if isinstance(gh_sessions, dict):
-            gh_session = gh_sessions.get(username,[])
+            gh_session = gh_sessions.get(username,'')
+            if isinstance(gh_session, list):
+                gh_session = gh_session[0] if gh_session else ''
             cc_info['gh_session'] = gh_session
         else:
             print(f"⚠️ gh_sessions 格式错误！")
+            cc_info['gh_session'] = ''
+
         if not gh_session:
             print(f"⚠️ 缺少对应账号的 gh_session ，退出！")
             continue
