@@ -809,7 +809,7 @@ def main():
         cc_info['cc_proxy'] = proxy
 
         if isinstance(gh_sessions, dict):
-            gh_session = gh_sessions.get(username,'').strip()
+            gh_session = gh_sessions.get(username,[])
             cc_info['gh_session'] = gh_session[0]
         else:
             print(f"⚠️ gh_sessions 格式错误！")
@@ -818,10 +818,10 @@ def main():
             continue
         
         if isinstance(sessions, dict):
-            session = sessions.get(username,{}).strip()
+            session = sessions.get(username,{})
             if isinstance(session, dict):
-                cc_info['cc_session'] = session.get('cc_session',[]).strip()
-                cc_info['cc_cookie'] = session.get('cc_cookie',[]).strip()
+                cc_info['cc_session'] = session.get('cc_session',[])
+                cc_info['cc_cookie'] = session.get('cc_cookie',[])
             else:
                 print(f"⚠️ session 格式错误！")
                 cc_info['cc_session'] = []
