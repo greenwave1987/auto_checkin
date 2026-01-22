@@ -3,6 +3,7 @@ import sys
 import time
 import requests
 from playwright.sync_api import sync_playwright
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 # ==================== 基准数据对接 ====================
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
