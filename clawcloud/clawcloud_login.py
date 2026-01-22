@@ -701,7 +701,7 @@ class AutoLogin:
                         
                 # 1. 访问 ClawCloud 登录入口
                 self.log("步骤1: 打开 ClawCloud 登录页", "STEP")
-                page.goto(, timeout=60000)
+                page.goto(LOGIN_ENTRY_URL, timeout=60000)
                 page.wait_for_load_state('networkidle', timeout=60000)
                 time.sleep(2)
                 self.shot(page, "clawcloud")
@@ -933,7 +933,7 @@ def jmain():
         try:
             print(f"🚀 访问 Claw Cloud 登录入口...")
             # 使用 wait_until="commit" 快速响应，避免因 Region Error 导致的无限等待
-            page.goto(, wait_until="domcontentloaded", timeout=60000)
+            page.goto(LOGIN_ENTRY_URL, wait_until="domcontentloaded", timeout=60000)
             time.sleep(5)
 
             # 4. 核心逻辑：检测是否直接遇到了 REGION_NOT_AVAILABLE
