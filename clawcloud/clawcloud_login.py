@@ -561,7 +561,7 @@ class AutoLogin:
         if 'github.com/login/oauth/authorize' in page.url:
             self.log("处理 OAuth...", "STEP")
             self.shot(page, "oauth")
-            self.click(page, ['button[name="authorize"]', 'button:has-text("Authorize")'], "授权")
+            self.jclick(page, ['button[name="authorize"]', 'button:has-text("Authorize")'], "授权")
             time.sleep(3)
             page.wait_for_load_state('networkidle', timeout=30000)
     
@@ -737,15 +737,12 @@ class AutoLogin:
             
                # 2. 点击 GitHub
                 self.log("步骤2: 点击 GitHub", "STEP")
-                if not self.click(page, [
-                    'button:has-text("GitHub")',
-                    'a:has-text("GitHub")',
-                    '[data-provider="github"]'
-                ], "GitHub"):
-                    self.log("找不到按钮", "ERROR")
+                if not self.click(page, desc="GitHub 登录按钮"):
+                    
                     shot = self.shot(page, "找不到按钮")
                     if shot:
                         self.notify.send(title="clawcloud 自动登录保活",content="找不到 GitHub 按钮",image_path=shot)
+                    raise Exception("GitHub 登录按钮未找到")
                     sys.exit(1)
                 
                 time.sleep(3)
