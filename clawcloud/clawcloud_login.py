@@ -622,7 +622,7 @@ class AutoLogin:
                 try:
                     p_url = self.cc_proxy
                     proxy_config = {
-                        "server": f"{p_url["type"]}://{p_url["server"]}:{p_url["port"]}"
+                        "server": f"{p_url['type']}://{p_url['server']}:{p_url['port']}"
                     }
                     if p_url["username"]:
                         proxy_config["username"] = p_url["username"]
