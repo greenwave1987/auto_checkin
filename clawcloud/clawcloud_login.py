@@ -633,7 +633,7 @@ class AutoLogin:
                     proxy_config = {
                         "server": f"{p_url['type']}://{p_url['server']}:{p_url['port']}"
                     }
-                    if p_url['type']='socks5' and p_url.get("username") and p_url.get("password"):
+                    if p_url['type']=='socks5' and p_url.get("username") and p_url.get("password"):
                         proxy_config["username"] = p_url["username"]
                         proxy_config["password"] = p_url["password"]
                         self.log(f"无法直接启用带认证socks代理！")
