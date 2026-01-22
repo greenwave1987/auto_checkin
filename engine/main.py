@@ -546,7 +546,7 @@ def test_proxy(proxy_info, timeout=5):
         # 测试请求
         test_res = requests.get("https://httpbin.org/ip", proxies=proxies, timeout=timeout)
         test_res.raise_for_status()
-        print(f"✅ 代理可用: {proxy_url}")
+        print(f"✅ 代理可用: {proxy_info['server']}")
         return proxy_url
 
     except Exception as e:
