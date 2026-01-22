@@ -786,7 +786,7 @@ def main():
 
     # 读取
     cookies = secret.load() or {}
-    gh_sessions = cc_secret.load() or {}
+    gh_sessions = gh_secret.load() or {}
 
     if not accounts:
         print("❌ 错误: 未配置 LEAFLOW_ACCOUNTS")
