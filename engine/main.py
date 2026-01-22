@@ -482,3 +482,37 @@ def check_checkin_response(html):
 
     print("❌ 未检测到成功标志")
     return False, "签到返回失败"
+
+def print_dict_tree(d, prefix=""):
+    """
+    打印字典 key 层级，类似 tree 命令
+    :param d: dict 对象
+    :param prefix: 前缀，用于缩进和分支显示
+    """
+    if not isinstance(d, dict):
+        return
+
+    keys = list(d.keys())
+    last_index = len(keys) - 1
+
+    for i, k in enumerate(keys):
+        connector = "└─ " if i == last_index else "├─ "
+        print(prefix + connector + str(k))
+        v = d[k]
+
+        # 准备下一层前缀
+        if i == last_index:
+            next_prefix = prefix + "   "
+        else:
+            next_prefix = prefix + "│  "
+
+        if isinstance(v, dict):
+            print_dict_tree(v, next_prefix)
+        elif isinstance(v, list):
+            for j, item in enumerate(v):
+                item_connector = "└─ " if j == len(v) - 1 else "├─ "
+                print(next_prefix + item_connector + f"[{j}]")
+                if isinstance(item, dict):
+                    # 列表中字典继续递归
+                    sub_prefix = next_prefix + ("   " if j == len(v) - 1 else "│  ")
+                    print_dict_tree(item, sub_prefix)
