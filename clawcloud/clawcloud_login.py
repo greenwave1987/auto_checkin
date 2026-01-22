@@ -1,10 +1,12 @@
 import os
 import re
 import sys
+import json
 import time
+import base64
 import random
 import requests
-import json
+
 from urllib.parse import urlparse
 from playwright.sync_api import sync_playwright
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
