@@ -3,6 +3,7 @@ import sys
 import time
 import random
 import requests
+from urllib.parse import urlparse
 from playwright.sync_api import sync_playwright
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
@@ -167,16 +168,16 @@ class AutoLogin:
     def detect_region(self, url):
         """
         从 URL 中检测区域信息
-        例如: https://us-west-1.console.claw.cloud/... -> us-west-1
+        例如: https://us-west-1.run.claw.cloud/... -> us-west-1
         """
         try:
             parsed = urlparse(url)
-            host = parsed.netloc  # 如 "us-west-1.console.claw.cloud"
+            host = parsed.netloc  # 如 "us-west-1.run.claw.cloud"
             
             # 检查是否是区域子域名格式
-            # 格式: {region}.console.claw.cloud
-            if host.endswith('.console.claw.cloud'):
-                region = host.replace('.console.claw.cloud', '')
+            # 格式: {region}.run.claw.cloud
+            if host.endswith('.run.claw.cloud'):
+                region = host.replace('.run.claw.cloud', '')
                 if region and region != 'console':  # 排除无效情况
                     self.detected_region = region
                     self.region_base_url = f"https://{host}"
@@ -193,7 +194,7 @@ class AutoLogin:
                 if region_match:
                     region = region_match.group(1)
                     self.detected_region = region
-                    self.region_base_url = f"https://{region}.console.claw.cloud"
+                    self.region_base_url = f"https://{region}.run.claw.cloud"
                     self.log(f"从路径检测到区域: {region}", "SUCCESS")
                     return region
             
@@ -625,12 +626,29 @@ class AutoLogin:
                 self.log(f"访问 {name} 失败: {e}", "WARN")
         
         self.shot(page, "完成")
+
+    def check_and_process_domain(self, domain):
+        # 检查域名是否有效
+        if not domain or not isinstance(domain, str):
+            print("域名无效！")
+            return "invalid"
+        
+        # 检查域名是否以.run.claw.cloud结尾
+        if domain.endswith('.run.claw.cloud'):
+            return "logged"
+        
+        # 检查域名是否以.run.claw.cloud/signin结尾
+        if domain.endswith('.run.claw.cloud/signin'):
+            return "signin"
+        
+        print(f"未知状态:{domain}")
+        return "unknown"
     
     def run(self):
         print("\n" + "="*50)
         print("🚀 ClawCloud 自动登录")
         print("="*50 + "\n")
-        
+        ok, new_local,msg = False,  None, f"🚀 ClawCloud 自动登录"
         self.log(f"用户名: {self.gh_username}")
         self.log(f"Session: {'有' if self.gh_session else '无'}")
         #self.log(f"密码: {'有' if self.password else '无'}")
@@ -638,9 +656,9 @@ class AutoLogin:
         
         if not self.gh_username: #or not self.password:
             self.log("缺少凭据", "ERROR")
-            self.notify(False, "凭据未配置")
-            sys.exit(1)
-        
+           
+            return False,  None, f"❌ "缺少凭据""
+                    
         with sync_playwright() as p:
             # 代理配置解析
             launch_args = {
@@ -727,90 +745,70 @@ class AutoLogin:
                         
                 # 1. 访问 ClawCloud 登录入口
                 self.log("步骤1: 打开 ClawCloud 登录页", "STEP")
-                page.goto(BOARD_ENTRY_URL, timeout=60000)
-                page.wait_for_load_state('networkidle', timeout=60000)
-                time.sleep(10)
-                self.shot(page, "clawcloud")
-                
-                # 检查当前 URL，可能已经自动跳转到区域
-                current_url = page.url
-                self.log(f"当前 URL: {current_url}")
-  
-            
-               # 2. 点击 GitHub
-                self.log("步骤2: 点击 GitHub", "STEP")
-                if not self.click(page, desc="GitHub 登录按钮"):
+
+                for i in range(10):
+                    try:
+                        page.goto(BOARD_ENTRY_URL, timeout=60000)
+                        page.wait_for_load_state('networkidle', timeout=60000)
+                        resault=check_and_process_domain(page.url)
+                    if resault=="invalid":
+                        self.log(f"[1.{i}]: 非域名: {page.url}", "WARN")
+                        continue
+                    if resault=="logged":
+                        self.log(f"[1.{i}]: 已登录: {page.url}", "SUCCESS")
+                        break
+                    if resault=="signin":
+                        self.log(f"[1.{i}]: 需登录: {page.url}", "INFO")
+                        # 步骤2: 点击 GitHub
+                        self.log("[2.{i}]: 点击 GitHub", "STEP")
+                        if not self.click(page, desc="GitHub 登录按钮"):
+                            shot = self.shot(page, "找不到 GitHub 按钮")
+                            if shot:
+                                self.notify.send(title="clawcloud 自动登录保活",content="找不到 GitHub 按钮",image_path=shot)
+                            self.log(f"[2.{i}]: "找不到 GitHub 按钮", "WARN")
+                            continue
+                        else:
+                            resault=check_and_process_domain(page.url)
+                            if resault=="logged":
+                                self.log(f"[2.{i}]: 已登录: {page.url}", "SUCCESS")
+                                break
                     
-                    shot = self.shot(page, "找不到按钮")
-                    if shot:
-                        self.notify.send(title="clawcloud 自动登录保活",content="找不到 GitHub 按钮",image_path=shot)
-                    raise Exception("GitHub 登录按钮未找到")
-                    sys.exit(1)
-                
-                time.sleep(3)
-                page.wait_for_load_state('networkidle', timeout=120000)
-                self.shot(page, "点击后")
-                url = page.url
-                self.log(f"当前: {url}")
-
-                if 'signin' not in url.lower() and 'claw.cloud' in url and  'github.com' not in url:
-                    self.log("已登录！", "SUCCESS")
-                    # 检测区域
-                    self.detect_region(url)
-                    self.keepalive(page)
-                    self.notify.send(title="clawcloud 自动登录保活",content="GitHub 登录成功")
-
-                    print("\n✅ 成功！\n")
-                    return
-                
-
-                
-                # 3. GitHub 登录
-                self.log("步骤3: GitHub 认证", "STEP")
-                
-                if 'github.com/login' in url or 'github.com/session' in url:
-                    if not self.login_github(page, context):
-                        self.shot(page, "登录失败")
-                        self.notify.send(title="clawcloud 自动登录保活",content="GitHub 登录失败")
-                        sys.exit(1)
-                elif 'github.com/login/oauth/authorize' in url:
-                    self.log("Cookie 有效", "SUCCESS")
-                    self.oauth(page)
-                
-                # 4. 等待重定向（会自动检测区域）
-                self.log("步骤4: 等待重定向", "STEP")
-                if not self.wait_redirect(page):
-                    self.shot(page, "重定向失败")
-                    self.notify.send(title="clawcloud 自动登录保活",content="重定向失败")
-                    sys.exit(1)
-                
-                self.shot(page, "重定向成功")
-                
-                # 5. 验证
-                self.log("步骤5: 验证", "STEP")
-                current_url = page.url
-                if 'claw.cloud' not in current_url or 'signin' in current_url.lower():
-                    self.notify.send(title="clawcloud 自动登录保活",content="验证失败")
-                    sys.exit(1)
+                    if resault=="unknown":
+                        self.log(f"[1.{i}]: 已跳转到: {page.url}", "WARN")
+  
+                    except:
+                        if i <10:
+                            self.log(f"[1.{i}]: 未打开登录页，重试", "WARN")
+                            time.sleep(random.uniform(10, 15))
+                        else:
+                            self.log(f"[1.{i}]: 访问 {page.url} 失败！", "ERROR")
+                            browser.close()
+                            return False,  None, f"访问 {BOARD_ENTRY_URL} 失败！"   
+                    
+        
+                # 检测区域
+                self.detect_region(page.url)
                 
                 # 再次确认区域检测
                 if not self.detected_region:
                     self.detect_region(current_url)
                 
-                # 6. 保活（使用检测到的区域 URL）
-                self.keepalive(page)
+                # 3. 查询余额和登录信息
+                self.log("步骤3: 查询余额和登录信息", "STEP")
+                ##self.keepalive(page)
                 
-                # 7. 提取并保存新 Cookie
-                self.log("步骤6: 更新 local_storage", "STEP")
+                # 4. 提取并保存新 local_storage
+                self.log("步骤4: 更新 local_storage", "STEP")
                 storage_state = self.get_storage(context)
                 if storage_state:
                     storage_state_json = json.dumps(storage_state, ensure_ascii=False)
                     storage_state_b64 = base64.b64encode(storage_state_json.encode("utf-8")).decode("utf-8")
                     print(f"STORAGE_STATE_B64={storage_state_b64}")
+                    new_local=storage_state_b64
                 else:
                     self.log("未获取到 storage_state", "WARN")
                 
-                self.notify.send(title="clawcloud 自动登录保活",content="✅ 成功！")
+                msg= "✅ 成功！")
                 print("\n" + "="*50)
                 print("✅ 成功！")
                 if self.detected_region:
@@ -823,9 +821,10 @@ class AutoLogin:
                 import traceback
                 traceback.print_exc()
                 self.notify.send(title="clawcloud 自动登录保活",content=str(e))
-                sys.exit(1)
+                msg= f"访问 {page.url} 失败！"   
             finally:
                 browser.close()
+                return ok, new_local,msg
 
 def main():
     global config
