@@ -214,12 +214,14 @@ class AutoLogin:
                 lastLogin = ls['value']
                 continue
             if ls.get('name')=='session':
-                session_data = ls['value']
+                session_data = json.loads(ls['value'])
                 if isinstance(session_data, dict) and 'state' in session_data:
                     if 'token' in session_data['state']:
                         auth_token = session_data['state']['token']
                     if 'session' in session_data['state'] and 'token' in session_data['state']['session']:
                         app_token = session_data['state']['session']['token']
+                
+            
 
         if not auth_token:
             print(f"❌ [错误] 无法从保存的数据中提取 auth_token")
@@ -811,7 +813,7 @@ class AutoLogin:
             与当前时间比较，是否相差 >= 20 天
             ts_ms: 毫秒时间戳
             """
-            lastLogin=self.lastLogin
+            lastLogin=int(self.lastLogin)
             now_ms = int(time.time() * 1000)
             diff_ms = abs(now_ms - lastLogin)
         
