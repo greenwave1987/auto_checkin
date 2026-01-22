@@ -810,21 +810,27 @@ def main():
 
         if isinstance(gh_sessions, dict):
             gh_session = gh_sessions.get(username,'').strip()
+            cc_info['gh_session'] = gh_session[0]
         else:
-            print(f"⚠️ 没有缓存相应账号的 gh_session")
+            print(f"⚠️ gh_sessions 格式错误！")
+        if not gh_session:
+            print(f"⚠️ 缺少对应账号的 gh_session ，退出！")
             continue
         
         if isinstance(sessions, dict):
-            session = sessions.get(username,'').strip()
-            cc_info['cc_session'] = session.get('cc_session').strip()
-            cc_info['cc_cookie'] = session.get('cc_cookie').strip()
+            session = sessions.get(username,{}).strip()
+            if isinstance(session, dict):
+                cc_info['cc_session'] = session.get('cc_session'，[]).strip()
+                cc_info['cc_cookie'] = session.get('cc_cookie',[]).strip()
+            else:
+                print(f"⚠️ session 格式错误！")
+                cc_info['cc_session'] = []
+                cc_info['cc_cookie'] = []
         else:
-            print(f"⚠️ 没有缓存相应账号的 session")
+            print(f"⚠️ sessions 格式错误！")
             cc_info['cc_session'] = []
             cc_info['cc_cookie'] = []
 
-        cc_info['gh_session'] = gh_session
-        
         print(cc_info)
         return
         
