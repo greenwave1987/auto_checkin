@@ -639,7 +639,7 @@ class AutoLogin:
                         self.log(f"无法直接启用带认证socks代理！")
                     else:
                         launch_args["proxy"] = proxy_config
-                        self.log(f"启用代理: {proxy_config['server']}")
+                        self.log(f"启用代理: {proxy_config['server'][:-6]}")
                 except Exception as e:
                     self.log(f"代理配置解析失败: {e}", "ERROR")
 
