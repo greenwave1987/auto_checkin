@@ -30,10 +30,13 @@ TWO_FACTOR_WAIT = int(os.environ.get("TWO_FACTOR_WAIT", "120"))  # 2FA验证 默
 class AutoLogin:
     """自动登录，因 GH_SESSIION 每日更新，不考虑登录github，直接注入GH_SESSIION"""
     
-    def __init__(self):
-        self.username = os.environ.get('GH_USERNAME')
-        #self.password = os.environ.get('GH_PASSWORD')
-        self.gh_session = os.environ.get('GH_SESSION', '').strip()
+    def __init__(self,config):
+        self.gh_username = config.get('gh_username')
+        #self.gh_password = config.get('gh_password')
+        self.gh_session = config.get('gh_session', '').strip()
+        self.cc_session = config.get('cc_session', '').strip()
+        self.cc_cookies = config.get('cc_cookies', '').strip()
+        self.cc_proxy = config.get('cc_proxy', '').strip()
         #self.tg = Telegram()
         #self.secret = SecretUpdater()
         self.shots = []
@@ -41,13 +44,13 @@ class AutoLogin:
         self.n = 0
         
         # 区域相关
-        self.detected_region = 'us-west-1'  # 检测到的区域，如 "us-west-1"
-        self.region_base_url = 'https://us-west-1.run.claw.cloud'  # 检测到的区域基础 URL
+        self.detected_region = 'ap-northeast-1'  # 检测到的区域，如 "us-west-1"
+        self.region_base_url = 'https://ap-northeast-1.run.claw.cloud'  # 检测到的区域基础 URL
         
     def log(self, msg, level="INFO"):
         icons = {"INFO": "ℹ️", "SUCCESS": "✅", "ERROR": "❌", "WARN": "⚠️", "STEP": "🔹"}
         line = f"{icons.get(level, '•')} {msg}"
-        print(line)
+        print(line, flush=True)
         self.logs.append(line)
     
     def shot(self, page, name):
@@ -294,7 +297,7 @@ class AutoLogin:
         # 发送提示并等待验证码
         self.tg.send(f"""🔐 <b>需要验证码登录</b>
 
-用户{self.username}正在登录，请在 Telegram 里发送：
+用户{self.gh_username}正在登录，请在 Telegram 里发送：
 <code>/code 你的6位验证码</code>
 
 等待时间：{TWO_FACTOR_WAIT} 秒""")
@@ -386,7 +389,7 @@ class AutoLogin:
             user_input = page.locator('input[name="login"]')
             user_input.click()
             time.sleep(random.uniform(0.3, 0.8))
-            user_input.type(self.username, delay=random.randint(30, 100))
+            user_input.type(self.gh_username, delay=random.randint(30, 100))
 
             time.sleep(random.uniform(0.5, 1.0))
 
@@ -537,7 +540,7 @@ class AutoLogin:
         msg = f"""<b>🤖 ClawCloud 自动登录</b>
 
 <b>状态:</b> {"✅ 成功" if ok else "❌ 失败"}
-<b>用户:</b> {self.username}{region_info}
+<b>用户:</b> {self.gh_username}{region_info}
 <b>时间:</b> {time.strftime('%Y-%m-%d %H:%M:%S')}"""
         
         if err:
@@ -562,12 +565,12 @@ class AutoLogin:
         print("🚀 ClawCloud 自动登录")
         print("="*50 + "\n")
         
-        self.log(f"用户名: {self.username}")
+        self.log(f"用户名: {self.gh_username}")
         self.log(f"Session: {'有' if self.gh_session else '无'}")
         self.log(f"密码: {'有' if self.password else '无'}")
         self.log(f"登录入口: {LOGIN_ENTRY_URL}")
         
-        if not self.username or not self.password:
+        if not self.gh_username or not self.password:
             self.log("缺少凭据", "ERROR")
             self.notify(False, "凭据未配置")
             sys.exit(1)
@@ -751,9 +754,6 @@ class AutoLogin:
                 browser.close()
 
 
-if __name__ == "__main__":
-    AutoLogin().run()
-
 def main():
     config = ConfigReader()
     gh_session = os.environ.get("GH_SESSION")
@@ -768,6 +768,8 @@ def main():
         return
 
     secret_manager = SecretUpdater("CLAW_COOKIE", config_reader=config)
+    
+    AutoLogin().run()
     
     with sync_playwright() as p:
         # 1. 使用固定的 User-Agent 和特定的启动参数避开检测
