@@ -22,8 +22,8 @@ except ImportError:
 PROXY_DSN = os.environ.get("PROXY_DSN", "").strip()
 
 # 固定自己创建有APP的登录入口，若SIGNIN_URL = "https://console.run.claw.cloud/signin"在OAuth后会自动跳转到根据IP定位的区域,
-LOGIN_ENTRY_URL = "https://ap-northeast-1.run.claw.cloud/login"
-SIGNIN_URL = f"{LOGIN_ENTRY_URL}/signin"
+BOARD_ENTRY_URL = "https://ap-northeast-1.run.claw.cloud"
+SIGNIN_URL = f"{BOARD_ENTRY_URL}/signin"
 DEVICE_VERIFY_WAIT = 30  # Mobile验证 默认等 30 秒
 TWO_FACTOR_WAIT = int(os.environ.get("TWO_FACTOR_WAIT", "120"))  # 2FA验证 默认等 120 秒
 
@@ -47,8 +47,7 @@ class AutoLogin:
         self.gh_username = config.get('gh_username')
         #self.gh_password = config.get('gh_password')
         self.gh_session = config.get('gh_session', '').strip()
-        self.cc_session = config.get('cc_session', '').strip()
-        self.cc_cookie = config.get('cc_cookie', '').strip()
+        self.cc_local = config.get('cc_local', '').strip()
         self.cc_proxy = config.get('cc_proxy', '').strip()
         #self.tg = Telegram()
         #self.secret = SecretUpdater()
@@ -146,6 +145,25 @@ class AutoLogin:
             for c in context.cookies():
                 if c['name'] == 'user_session' and 'github' in c.get('domain', ''):
                     return c['value']
+        except:
+            pass
+        return None
+    
+    def get_storage(self, page):
+        """提取 local_storage"""
+        try:
+            local_storage = page.evaluate("""
+            () => {
+                const data = {};
+                for (let i = 0; i < localStorage.length; i++) {
+                    const k = localStorage.key(i);
+                    data[k] = localStorage.getItem(k);
+                }
+                return data;
+            }
+            """)
+
+            return local_storage
         except:
             pass
         return None
@@ -580,10 +598,10 @@ class AutoLogin:
         
         self.log(f"用户名: {self.gh_username}")
         self.log(f"Session: {'有' if self.gh_session else '无'}")
-        self.log(f"密码: {'有' if self.password else '无'}")
+        #self.log(f"密码: {'有' if self.password else '无'}")
         self.log(f"登录入口: {LOGIN_ENTRY_URL}")
         
-        if not self.gh_username or not self.password:
+        if not self.gh_username: #or not self.password:
             self.log("缺少凭据", "ERROR")
             self.notify(False, "凭据未配置")
             sys.exit(1)
@@ -600,16 +618,16 @@ class AutoLogin:
                 ]
             }
 
-            if PROXY_DSN:
+            if self.cc_proxy:
                 try:
-                    p_url = urlparse(PROXY_DSN)
+                    p_url = self.cc_proxy
                     proxy_config = {
-                        "server": f"{p_url.scheme}://{p_url.hostname}:{p_url.port}"
+                        "server": f"{p_url["type"]}://{p_url["server"]}:{p_url["port"]}"
                     }
-                    if p_url.username:
-                        proxy_config["username"] = p_url.username
-                    if p_url.password:
-                        proxy_config["password"] = p_url.password
+                    if p_url["username"]:
+                        proxy_config["username"] = p_url["username"]
+                    if p_url["password"]:
+                        proxy_config["password"] = p_url["password"]
 
                     launch_args["proxy"] = proxy_config
                     self.log(f"启用代理: {proxy_config['server']}")
@@ -617,10 +635,23 @@ class AutoLogin:
                     self.log(f"代理配置解析失败: {e}", "ERROR")
 
             browser = p.chromium.launch(**launch_args)
-            context = browser.new_context(
-                viewport={'width': 1920, 'height': 1080},
-                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
-            )
+            # 预加载localStorage数据，验证有效不再使用 gh_session
+            storage_state = None
+            if self.cc_local:
+                storage_state = json.loads(
+                    base64.b64decode(self.cc_local).decode()
+                )
+                context = browser.new_context(
+                    storage_state=storage_state,
+                    viewport={'width': 1920, 'height': 1080},
+                    user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
+                )
+            else:
+                context = browser.new_context(
+                    viewport={'width': 1920, 'height': 1080},
+                    user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
+                )
+            
             page = context.new_page()
             page.add_init_script("""
                 // 基础反检测
@@ -649,9 +680,8 @@ class AutoLogin:
                     originalQuery(parameters)
                 );
             """)
-            
             try:
-                # 预加载 Cookie
+                # 预加载 加载gh_session
                 if self.gh_session:
                     try:
                         context.add_cookies([
@@ -661,7 +691,7 @@ class AutoLogin:
                         self.log("已加载 Session Cookie", "SUCCESS")
                     except:
                         self.log("加载 Cookie 失败", "WARN")
-                
+                        
                 # 1. 访问 ClawCloud 登录入口
                 self.log("步骤1: 打开 ClawCloud 登录页", "STEP")
                 page.goto(SIGNIN_URL, timeout=60000)
@@ -743,11 +773,15 @@ class AutoLogin:
                 
                 # 7. 提取并保存新 Cookie
                 self.log("步骤6: 更新 Cookie", "STEP")
-                new = self.get_session(context)
+                local_storage = self.get_session(page)
                 if new:
-                    self.save_cookie(new)
+                    local_storage_json = json.dumps(local_storage, ensure_ascii=False)
+                    local_storage_b64 = base64.b64encode(
+                        local_storage_json.encode("utf-8")
+                    ).decode("utf-8")
+                    print(f"LOCALSTORAGE_B64={local_storage_b64}")
                 else:
-                    self.log("未获取到新 Cookie", "WARN")
+                    self.log("未获取到新 local_storage", "WARN")
                 
                 self.notify(True)
                 print("\n" + "="*50)
@@ -781,11 +815,11 @@ def main():
     proxies = config.get_value("PROXY_INFO")
 
     # 初始化 SecretUpdater，会自动根据当前仓库用户名获取 token
-    secret = SecretUpdater("CLAWCLOUD_COOKIES", config_reader=config)
+    secret = SecretUpdater("CLAWCLOUD_LOCALS", config_reader=config)
     gh_secret = SecretUpdater("GH_SESSION", config_reader=config)
 
     # 读取
-    sessions = secret.load() or {}
+    cc_locals = secret.load() or {}
     gh_sessions = gh_secret.load() or {}
 
     if not accounts:
@@ -810,39 +844,28 @@ def main():
 
         if isinstance(gh_sessions, dict):
             gh_session = gh_sessions.get(username,[])
-            cc_info['gh_session'] = gh_session[0]
+            cc_info['gh_session'] = gh_session
         else:
             print(f"⚠️ gh_sessions 格式错误！")
         if not gh_session:
             print(f"⚠️ 缺少对应账号的 gh_session ，退出！")
             continue
         
-        if isinstance(sessions, dict):
-            session = sessions.get(username,{})
-            if isinstance(session, dict):
-                cc_info['cc_session'] = session.get('cc_session',[])
-                cc_info['cc_cookie'] = session.get('cc_cookie',[])
-            else:
-                print(f"⚠️ session 格式错误！")
-                cc_info['cc_session'] = []
-                cc_info['cc_cookie'] = []
+        if isinstance(cc_locals, dict):
+            cc_info['cc_local'] = cc_locals.get(username,{})
         else:
-            print(f"⚠️ sessions 格式错误！")
-            cc_info['cc_session'] = []
-            cc_info['cc_cookie'] = []
+            print(f"⚠️ cc_locals 格式错误！")
+            cc_info['cc_local'] = []
 
-        print(cc_info)
-        return
-        
         try:
-            # run_task_for_account 返回 ok（bool）和 newcookie（dict 或 str）
+
             AutoLogin= AutoLogin(cc_info)
-            ok, newcookie,msg = AutoLogin.run()
+            ok, new_local,msg = AutoLogin.run()
     
             if ok:
-                print(f"    ✅ 执行成功，保存新 cookie")
+                print(f"    ✅ 执行成功，保存新 new_session")
                 results.append(f"    ✅ 执行成功:{msg}")
-                newcookies[username]=newcookie
+                cc_locals[username]=new_local
             else:
                 print(f"    ⚠️ 执行失败，不保存 cookie")
                 results.append(f"    ⚠️ 执行失败:{msg}")
@@ -852,10 +875,10 @@ def main():
             results.append(f"    ❌ 执行异常: {e}")
 
     # 写入
-    cc_secret.update(newcookies)
+    secret.update(cc_locals)
     # 发送结果
     get_notifier().send(
-        title="Leaflow 自动签到汇总",
+        title="clawcloud 自动登录保活汇总",
         content="\n".join(results)
     )
 
