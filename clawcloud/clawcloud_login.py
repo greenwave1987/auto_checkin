@@ -808,7 +808,8 @@ def main():
         #cc_info['gh_password'] = account.get('password')
         cc_info['cc_proxy'] = proxy
         cc_info['gh_session'] = gh_session
-        if cookie:
+        print(cookie)
+        if cookie and cookie.get('cc_session') and cookie.get('cc_cookie'):
             cc_info['cc_session'] = cookie.get('cc_session').strip()
             cc_info['cc_cookie'] = cookie.get('cc_cookie').strip()
         else:
