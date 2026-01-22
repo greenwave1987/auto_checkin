@@ -1066,9 +1066,11 @@ def main():
             ok, new_local,msg = auto_login.run()
     
             if ok:
-                print(f"    ✅ 执行成功，保存新 new_session")
+                print(f"    ✅ 执行成功")
                 results.append(f"    ✅ 执行成功:{msg}")
-                cc_locals[username]=new_local
+                if new_local:
+                    print(f"    ✅ 保存新 new_local")
+                    cc_locals[username]=new_local
             else:
                 print(f"    ⚠️ 执行失败，不保存 cookie")
                 results.append(f"    ⚠️ 执行失败:{msg}")
