@@ -39,7 +39,7 @@ jobs:
           
           # 2. 从 Secrets 获取的动态变量 (脚本会读取并全量回写)
           GH_SESSION: ${{ secrets.GH_SESSION }}
-          CLAWCLOUD_COOKIES: ${{ secrets.CLAWCLOUD_COOKIES }}
+          CLAWCLOUD_LOCALS: ${{ secrets.CLAWCLOUD_LOCALS }}
           
           # 3. GitHub 权限令牌 (SecretUpdater 必要)
           GITHUB_REPOSITORY: ${{ github.repository }}
