@@ -7,6 +7,7 @@ from playwright.sync_api import sync_playwright
 # ==================== 基准数据对接 ====================
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE_DIR)
+from engine.notify import TelegramNotifier
 try:
     from engine.main import ConfigReader, SecretUpdater
 except ImportError:
@@ -49,7 +50,7 @@ class AutoLogin:
         self.gh_session = config.get('gh_session', '').strip()
         self.cc_local = config.get('cc_local', '').strip()
         self.cc_proxy = config.get('cc_proxy', '').strip()
-        #self.tg = Telegram()
+        self.notify = config.get('notify')
         #self.secret = SecretUpdater()
         self.shots = []
         self.logs = []
@@ -169,10 +170,10 @@ class AutoLogin:
         # 自动更新 Secret
         if self.secret.update('GH_SESSION', value):
             self.log("已自动更新 GH_SESSION", "SUCCESS")
-            self.tg.send("🔑 <b>Cookie 已自动更新</b>\n\nGH_SESSION 已保存")
+            self.notify.send(title="clawcloud 自动登录保活",content="🔑 <b>Cookie 已自动更新</b>\n\nGH_SESSION 已保存")
         else:
             # 通过 Telegram 发送
-            self.tg.send(f"""🔑 <b>新 Cookie</b>
+            self.notify.send(title="clawcloud 自动登录保活",content=f"""🔑 <b>新 Cookie</b>
 
 请更新 Secret <b>GH_SESSION</b> (点击查看):
 <tg-spoiler>{value}</tg-spoiler>
@@ -184,14 +185,14 @@ class AutoLogin:
         self.log(f"需要设备验证，等待 {DEVICE_VERIFY_WAIT} 秒...", "WARN")
         self.shot(page, "设备验证")
         
-        self.tg.send(f"""⚠️ <b>需要设备验证</b>
+        self.notify.send(title="clawcloud 自动登录保活",content=f"""⚠️ <b>需要设备验证</b>
 
 请在 {DEVICE_VERIFY_WAIT} 秒内批准：
 1️⃣ 检查邮箱点击链接
 2️⃣ 或在 GitHub App 批准""")
         
         if self.shots:
-            self.tg.photo(self.shots[-1], "设备验证页面")
+            self.notify.photo(self.shots[-1], "设备验证页面")
         
         for i in range(DEVICE_VERIFY_WAIT):
             time.sleep(1)
@@ -200,7 +201,7 @@ class AutoLogin:
                 url = page.url
                 if 'verified-device' not in url and 'device-verification' not in url:
                     self.log("设备验证通过！", "SUCCESS")
-                    self.tg.send("✅ <b>设备验证通过</b>")
+                    self.notify.send(title="clawcloud 自动登录保活",content="✅ <b>设备验证通过</b>")
                     return True
                 try:
                     page.reload(timeout=10000)
@@ -212,7 +213,7 @@ class AutoLogin:
             return True
         
         self.log("设备验证超时", "ERROR")
-        self.tg.send("❌ <b>设备验证超时</b>")
+        self.notify.send(title="clawcloud 自动登录保活",content="❌ <b>设备验证超时</b>")
         return False
     
     def wait_two_factor_mobile(self, page):
@@ -221,12 +222,12 @@ class AutoLogin:
         
         # 先截图并立刻发出去（让你看到数字）
         shot = self.shot(page, "两步验证_mobile")
-        self.tg.send(f"""⚠️ <b>需要两步验证（GitHub Mobile）</b>
+        self.notify.send(title="clawcloud 自动登录保活",content=f"""⚠️ <b>需要两步验证（GitHub Mobile）</b>
 
 请打开手机 GitHub App 批准本次登录（会让你确认一个数字）。
 等待时间：{TWO_FACTOR_WAIT} 秒""")
         if shot:
-            self.tg.photo(shot, "两步验证页面（数字在图里）")
+            self.notify.photo(shot, "两步验证页面（数字在图里）")
         
         # 不要频繁 reload，避免把流程刷回登录页
         for i in range(TWO_FACTOR_WAIT):
@@ -237,7 +238,7 @@ class AutoLogin:
             # 如果离开 two-factor 流程页面，认为通过
             if "github.com/sessions/two-factor/" not in url:
                 self.log("两步验证通过！", "SUCCESS")
-                self.tg.send("✅ <b>两步验证通过</b>")
+                self.notify.send(title="clawcloud 自动登录保活",content="✅ <b>两步验证通过</b>")
                 return True
             
             # 如果被刷回登录页，说明这次流程断了（不要硬等）
@@ -250,7 +251,7 @@ class AutoLogin:
                 self.log(f"  等待... ({i}/{TWO_FACTOR_WAIT}秒)")
                 shot = self.shot(page, f"两步验证_{i}s")
                 if shot:
-                    self.tg.photo(shot, f"两步验证页面（第{i}秒）")
+                    self.notify.photo(shot, f"两步验证页面（第{i}秒）")
             
             # 只在 30 秒、60 秒... 做一次轻刷新（可选，频率很低）
             if i % 30 == 0 and i != 0:
@@ -261,7 +262,7 @@ class AutoLogin:
                     pass
         
         self.log("两步验证超时", "ERROR")
-        self.tg.send("❌ <b>两步验证超时</b>")
+        self.notify.send(title="clawcloud 自动登录保活",content="❌ <b>两步验证超时</b>")
         return False
     
     def handle_2fa_code_input(self, page):
@@ -317,26 +318,26 @@ class AutoLogin:
             pass
 
         # 发送提示并等待验证码
-        self.tg.send(f"""🔐 <b>需要验证码登录</b>
+        self.notify.send(title="clawcloud 自动登录保活",content=f"""🔐 <b>需要验证码登录</b>
 
 用户{self.gh_username}正在登录，请在 Telegram 里发送：
 <code>/code 你的6位验证码</code>
 
 等待时间：{TWO_FACTOR_WAIT} 秒""")
         if shot:
-            self.tg.photo(shot, "两步验证页面")
+            self.notify.photo(shot, "两步验证页面")
 
         self.log(f"等待验证码（{TWO_FACTOR_WAIT}秒）...", "WARN")
-        code = self.tg.wait_code(timeout=TWO_FACTOR_WAIT)
+        code = self.notify.wait_code(timeout=TWO_FACTOR_WAIT)
 
         if not code:
             self.log("等待验证码超时", "ERROR")
-            self.tg.send("❌ <b>等待验证码超时</b>")
+            self.notify.send(title="clawcloud 自动登录保活",content="❌ <b>等待验证码超时</b>")
             return False
 
         # 不打印验证码明文，只提示收到
         self.log("收到验证码，正在填入...", "SUCCESS")
-        self.tg.send("✅ 收到验证码，正在填入...")
+        self.notify.send(title="clawcloud 自动登录保活",content="✅ 收到验证码，正在填入...")
 
         # 常见 OTP 输入框 selector（优先级排序）
         selectors = [
@@ -388,17 +389,17 @@ class AutoLogin:
                     # 检查是否通过
                     if "github.com/sessions/two-factor/" not in page.url:
                         self.log("验证码验证通过！", "SUCCESS")
-                        self.tg.send("✅ <b>验证码验证通过</b>")
+                        self.notify.send(title="clawcloud 自动登录保活",content="✅ <b>验证码验证通过</b>")
                         return True
                     else:
                         self.log("验证码可能错误", "ERROR")
-                        self.tg.send("❌ <b>验证码可能错误，请检查后重试</b>")
+                        self.notify.send(title="clawcloud 自动登录保活",content="❌ <b>验证码可能错误，请检查后重试</b>")
                         return False
             except:
                 pass
 
         self.log("没找到验证码输入框", "ERROR")
-        self.tg.send("❌ <b>没找到验证码输入框</b>")
+        self.notify.send(title="clawcloud 自动登录保活",content="❌ <b>没找到验证码输入框</b>")
         return False
     
     def login_github(self, page, context):
@@ -554,7 +555,7 @@ class AutoLogin:
         self.shot(page, "完成")
     
     def notify(self, ok, err=""):
-        if not self.tg.ok:
+        if not self.notify.ok:
             return
         
         region_info = f"\n<b>区域:</b> {self.detected_region or '默认'}" if self.detected_region else ""
@@ -570,17 +571,17 @@ class AutoLogin:
         
         msg += "\n\n<b>日志:</b>\n" + "\n".join(self.logs[-6:])
         
-        self.tg.send(msg)
+        self.notify.send(title="clawcloud 自动登录保活",content=msg)
         
         if self.shots:
             if not ok:
                 for s in self.shots[-3:]:
-                    self.tg.photo(s, s)
+                    self.notify.photo(s, s)
             else:
                 # for s in self.shots[-3:]:
-                #     self.tg.photo(s, s)
+                #     self.notify.photo(s, s)
                 if self.shots:
-                   self.tg.photo(self.shots[-1], "完成")
+                   self.notify.photo(self.shots[-1], "完成")
     
     def run(self):
         print("\n" + "="*50)
@@ -799,6 +800,7 @@ def main():
     proxies = config.get_value("PROXY_INFO")
 
     # 初始化 SecretUpdater，会自动根据当前仓库用户名获取 token
+    notify=get_notifier()
     secret = SecretUpdater("CLAWCLOUD_LOCALS", config_reader=config)
     gh_secret = SecretUpdater("GH_SESSION", config_reader=config)
 
@@ -825,6 +827,8 @@ def main():
         cc_info['gh_username'] = username
         #cc_info['gh_password'] = account.get('password')
         cc_info['cc_proxy'] = proxy
+        cc_info['notify'] = notify
+
 
         if isinstance(gh_sessions, dict):
             gh_session = gh_sessions.get(username,[])
@@ -861,7 +865,7 @@ def main():
     # 写入
     secret.update(cc_locals)
     # 发送结果
-    get_notifier().send(
+    notify.send(
         title="clawcloud 自动登录保活汇总",
         content="\n".join(results)
     )
