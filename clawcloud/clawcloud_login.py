@@ -633,13 +633,13 @@ class AutoLogin:
                     proxy_config = {
                         "server": f"{p_url['type']}://{p_url['server']}:{p_url['port']}"
                     }
-                    if p_url["username"]:
+                    if p_url['type']='socks5' and p_url.get("username") and p_url.get("password"):
                         proxy_config["username"] = p_url["username"]
-                    if p_url["password"]:
                         proxy_config["password"] = p_url["password"]
-
-                    launch_args["proxy"] = proxy_config
-                    self.log(f"启用代理: {proxy_config['server']}")
+                        self.log(f"无法直接启用带认证socks代理！")
+                    else:
+                        launch_args["proxy"] = proxy_config
+                        self.log(f"启用代理: {proxy_config['server']}")
                 except Exception as e:
                     self.log(f"代理配置解析失败: {e}", "ERROR")
 
