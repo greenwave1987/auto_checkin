@@ -726,10 +726,7 @@ class AutoLogin:
                     # 检测区域
                     self.detect_region(url)
                     self.keepalive(page)
-                    # 提取并保存新 Cookie
-                    new = self.get_session(context)
-                    if new:
-                        self.save_cookie(new)
+                    
                     self.notify(True)
                     print("\n✅ 成功！\n")
                     return
@@ -772,8 +769,8 @@ class AutoLogin:
                 self.keepalive(page)
                 
                 # 7. 提取并保存新 Cookie
-                self.log("步骤6: 更新 Cookie", "STEP")
-                local_storage = self.get_session(page)
+                self.log("步骤6: 更新 local_storage", "STEP")
+                local_storage = self.get_storage(page)
                 if new:
                     local_storage_json = json.dumps(local_storage, ensure_ascii=False)
                     local_storage_b64 = base64.b64encode(
