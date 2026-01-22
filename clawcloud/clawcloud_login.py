@@ -649,7 +649,7 @@ class AutoLogin:
         if not self.gh_username: #or not self.password:
             self.log("缺少凭据", "ERROR")
            
-            return False,  None, f"❌ "缺少凭据""
+            return False,  None, f"❌ 缺少凭据"
                     
         with sync_playwright() as p:
             # 代理配置解析
