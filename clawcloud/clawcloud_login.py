@@ -786,7 +786,12 @@ class AutoLogin:
                                         break
                                     if resault=="redirect":
                                         self.log(f"[2.{i}.{j}]: 正在重定向: {self.mask_url(page.url)}", "INFO")
-                                        time.sleep(random.uniform(10, 15))
+                                        try:
+                                            page.wait_for_url("https://*.run.claw.cloud", timeout=60000)
+                                            self.log(f"URL 已跳转: {page.url}", "SUCCESS")
+                                            break
+                                        except PlaywrightTimeoutError:
+                                            self.log(f"等待 URL 跳转超时: {page.url}", "ERROR")
                                         continue
                                     if "github.com/login" in page.url:
                                         self.log(f"[2.{i}.{j}]: github登录过期，{page.url}", "ERROR")
