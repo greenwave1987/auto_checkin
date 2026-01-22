@@ -244,7 +244,7 @@ class AutoLogin:
 请打开手机 GitHub App 批准本次登录（会让你确认一个数字）。
 等待时间：{TWO_FACTOR_WAIT} 秒""")
         if shot:
-            self.notify.send(title="clawcloud 自动登录保活",content="两步验证页面（数字在图里）",shot)
+            self.notify.send(title="clawcloud 自动登录保活",content="两步验证页面（数字在图里）",mage_path=shot)
         
         # 不要频繁 reload，避免把流程刷回登录页
         for i in range(TWO_FACTOR_WAIT):
