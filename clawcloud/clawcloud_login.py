@@ -254,7 +254,7 @@ class AutoLogin:
         remote = f"socks5://{auth}{proxy['server']}:{proxy['port']}"
 
         cmd = [
-            "gost",
+            "./gost",
             "-L", listen,
             "-F", remote
         ]
@@ -270,6 +270,11 @@ class AutoLogin:
         atexit.register(proc.terminate)
 
         time.sleep(1.5)  # 给 gost 启动时间
+        # ----------------------------
+        # 2️⃣ 测试隧道是否可用
+        # ----------------------------
+        res = requests.get("https://api.ipify.org", proxies={"http": remote, "https": remote}, timeout=15)
+        self.log(f"隧道就绪，出口 IP: {res.text.strip()}", "INFO")
 
         return {
             "server": listen,
