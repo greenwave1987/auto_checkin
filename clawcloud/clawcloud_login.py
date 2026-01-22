@@ -819,12 +819,15 @@ class AutoLogin:
             diff_ms = abs(now_ms - lastLogin)
         
             DAY_MS = 24 * 60 * 60 * 1000
-            dt = datetime.datetime.utcfromtimestamp(lastLogin / 1000) + datetime.timedelta(hours=8)
+            dt = (
+                datetime.datetime.utcfromtimestamp(lastLogin / 1000)
+                + datetime.timedelta(hours=8)
+            ).replace(second=0, microsecond=0)
             if diff_ms >= 20 * DAY_MS:
                 self.log(f"上次登录{dt},已过20天，重新登录！", "WARN")
             else:
                 self.log(f"上次登录{dt},查询余额！", "INFO")
-                msg=f"上次登录{dt},查询余额！"
+                msg=f"上次登录{dt}\n    余额："
                 msg+=self.get_balance_with_token()
                 return True, None,msg
                 
@@ -1028,8 +1031,8 @@ def main():
                 "port": 19873
             }
 
-        print(f"🚀 开始处理账号: {username}, 使用代理: {proxy['server']}")
-        results.append(f"🚀 账号：{username}, 使用代理: {proxy['server']}")
+        print(f"\n🚀 开始处理账号: {username}\n  🌐 使用代理: {proxy['server'][:-4]}***\n")
+        results.append(f"🚀 账号：{username}\n    🌐 使用代理: {proxy['server'][:-4]}***\n")
         cc_info={}
         cc_info['gh_username'] = username
         #cc_info['gh_password'] = account.get('password')
@@ -1070,7 +1073,7 @@ def main():
     
             if ok:
                 print(f"    ✅ 执行成功")
-                results.append(f"    ✅ 执行成功:{msg}")
+                results.append(f"    ✅ {msg}")
                 if new_local:
                     print(f"    ✅ 保存新 new_local")
                     cc_locals[username]=new_local
