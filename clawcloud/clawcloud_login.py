@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+import random
 import requests
 from playwright.sync_api import sync_playwright
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
