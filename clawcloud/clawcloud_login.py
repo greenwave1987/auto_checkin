@@ -79,7 +79,7 @@ class AutoLogin:
         self.cc_proxy = config.get('cc_proxy', '').strip() if isinstance(config.get('cc_proxy', ''), str) else config.get('cc_proxy')
         self.proxy_url=test_proxy(self.cc_proxy)
         if not self.proxy_url:
-            self.cc_proxy = =None
+            self.cc_proxy = config.get('wz_proxy')
             
         self.notify = config.get('notify')
         # self.secret = SecretUpdater()
