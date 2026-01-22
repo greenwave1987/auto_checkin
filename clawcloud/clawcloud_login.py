@@ -22,9 +22,9 @@ except ImportError:
 # 格式: socks5://user:pass@host:port 或 http://user:pass@host:port
 PROXY_DSN = os.environ.get("PROXY_DSN", "").strip()
 
-# 固定自己创建有APP的登录入口，若SIGNIN_URL = "https://console.run.claw.cloud/signin"在OAuth后会自动跳转到根据IP定位的区域,
+# 固定自己创建有APP的登录入口，若LOGIN_ENTRY_URL = "https://console.run.claw.cloud/signin"在OAuth后会自动跳转到根据IP定位的区域,
 BOARD_ENTRY_URL = "https://ap-northeast-1.run.claw.cloud"
-SIGNIN_URL = f"{BOARD_ENTRY_URL}/signin"
+LOGIN_ENTRY_URL = f"{BOARD_ENTRY_URL}/signin"
 DEVICE_VERIFY_WAIT = 30  # Mobile验证 默认等 30 秒
 TWO_FACTOR_WAIT = int(os.environ.get("TWO_FACTOR_WAIT", "120"))  # 2FA验证 默认等 120 秒
 
@@ -701,7 +701,7 @@ class AutoLogin:
                         
                 # 1. 访问 ClawCloud 登录入口
                 self.log("步骤1: 打开 ClawCloud 登录页", "STEP")
-                page.goto(SIGNIN_URL, timeout=60000)
+                page.goto(, timeout=60000)
                 page.wait_for_load_state('networkidle', timeout=60000)
                 time.sleep(2)
                 self.shot(page, "clawcloud")
@@ -933,7 +933,7 @@ def jmain():
         try:
             print(f"🚀 访问 Claw Cloud 登录入口...")
             # 使用 wait_until="commit" 快速响应，避免因 Region Error 导致的无限等待
-            page.goto(SIGNIN_URL, wait_until="domcontentloaded", timeout=60000)
+            page.goto(, wait_until="domcontentloaded", timeout=60000)
             time.sleep(5)
 
             # 4. 核心逻辑：检测是否直接遇到了 REGION_NOT_AVAILABLE
