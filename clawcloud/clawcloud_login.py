@@ -701,9 +701,9 @@ class AutoLogin:
                         
                 # 1. 访问 ClawCloud 登录入口
                 self.log("步骤1: 打开 ClawCloud 登录页", "STEP")
-                page.goto(LOGIN_ENTRY_URL, timeout=60000)
+                page.goto(BOARD_ENTRY_URL, timeout=60000)
                 page.wait_for_load_state('networkidle', timeout=60000)
-                time.sleep(2)
+                time.sleep(10)
                 self.shot(page, "clawcloud")
                 
                 # 检查当前 URL，可能已经自动跳转到区域
