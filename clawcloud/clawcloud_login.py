@@ -93,7 +93,7 @@ class AutoLogin:
             pass
         return f
     
-    def click(self, page, sels, desc=""):
+    def jclick(self, page, sels, desc=""):
         for s in sels:
             try:
                 el = page.locator(s).first
@@ -108,7 +108,36 @@ class AutoLogin:
             except:
                 pass
         return False
+    def click(self, page, sels, desc=""):
+        # 1️⃣ 先在主页面找
+        for s in sels:
+            try:
+                el = page.locator(s).first
+                if el.is_visible():
+                    time.sleep(random.uniform(0.5, 1.2))
+                    el.hover()
+                    el.click()
+                    self.log(f"已点击: {desc} (main frame)", "SUCCESS")
+                    return True
+            except:
+                pass
     
+        # 2️⃣ 再遍历所有 iframe
+        for frame in page.frames:
+            for s in sels:
+                try:
+                    el = frame.locator(s).first
+                    if el.is_visible():
+                        time.sleep(random.uniform(0.5, 1.2))
+                        el.hover()
+                        el.click()
+                        self.log(f"已点击: {desc} (iframe)", "SUCCESS")
+                        return True
+                except:
+                    pass
+    
+        return False
+
     def detect_region(self, url):
         """
         从 URL 中检测区域信息
