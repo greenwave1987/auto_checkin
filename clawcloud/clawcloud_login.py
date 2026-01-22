@@ -820,7 +820,7 @@ def main():
         if isinstance(sessions, dict):
             session = sessions.get(username,{}).strip()
             if isinstance(session, dict):
-                cc_info['cc_session'] = session.get('cc_session'，[]).strip()
+                cc_info['cc_session'] = session.get('cc_session',[]).strip()
                 cc_info['cc_cookie'] = session.get('cc_cookie',[]).strip()
             else:
                 print(f"⚠️ session 格式错误！")
