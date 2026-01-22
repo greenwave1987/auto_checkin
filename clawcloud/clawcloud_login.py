@@ -807,9 +807,13 @@ def main():
         cc_info['gh_username'] = username
         #cc_info['gh_password'] = account.get('password')
         cc_info['cc_proxy'] = proxy
-        cc_info['cc_session'] = cookie.get('cc_session', '').strip()
-        cc_info['cc_cookie'] = cookie.get('cc_cookie', '').strip()
         cc_info['gh_session'] = gh_session
+        if cookie:
+            cc_info['cc_session'] = cookie.get('cc_session').strip()
+            cc_info['cc_cookie'] = cookie.get('cc_cookie').strip()
+        else:
+            cc_info['cc_session'] = []
+            cc_info['cc_cookie'] = []
         print(cc_info)
         return
         
