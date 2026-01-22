@@ -3,6 +3,7 @@ import sys
 import time
 import random
 import requests
+import re
 from urllib.parse import urlparse
 from playwright.sync_api import sync_playwright
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
@@ -628,21 +629,12 @@ class AutoLogin:
         self.shot(page, "完成")
 
     def check_and_process_domain(self, domain):
-        # 检查域名是否有效
-        if not domain or not isinstance(domain, str):
-            print("域名无效！")
-            return "invalid"
-        
-        # 检查域名是否以.run.claw.cloud结尾
-        if domain.endswith('.run.claw.cloud'):
-            return "logged"
-        
-        # 检查域名是否以.run.claw.cloud/signin结尾
-        if domain.endswith('.run.claw.cloud/signin'):
-            return "signin"
-        
-        print(f"未知状态:{domain}")
-        return "unknown"
+        if ".run.claw.cloud" in domain:
+            if "signin" in domain:
+                return "signin"
+            else:
+                return "logged"
+        return "invalid"
     
     def run(self):
         print("\n" + "="*50)
@@ -750,7 +742,7 @@ class AutoLogin:
                     try:
                         page.goto(BOARD_ENTRY_URL, timeout=60000)
                         page.wait_for_load_state('networkidle', timeout=60000)
-                        resault=check_and_process_domain(page.url)
+                        resault=self.check_and_process_domain(page.url)
                     if resault=="invalid":
                         self.log(f"[1.{i}]: 非域名: {page.url}", "WARN")
                         continue
@@ -772,10 +764,7 @@ class AutoLogin:
                             if resault=="logged":
                                 self.log(f"[2.{i}]: 已登录: {page.url}", "SUCCESS")
                                 break
-                    
-                    if resault=="unknown":
-                        self.log(f"[1.{i}]: 已跳转到: {page.url}", "WARN")
-  
+ 
                     except:
                         if i <10:
                             self.log(f"[1.{i}]: 未打开登录页，重试", "WARN")
