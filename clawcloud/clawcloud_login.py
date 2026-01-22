@@ -808,7 +808,7 @@ class AutoLogin:
                 else:
                     self.log("未获取到 storage_state", "WARN")
                 
-                msg= "✅ 成功！")
+                msg= "✅ 成功！"
                 print("\n" + "="*50)
                 print("✅ 成功！")
                 if self.detected_region:
