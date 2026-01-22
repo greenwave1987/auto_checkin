@@ -793,6 +793,7 @@ class AutoLogin:
                     storage_state_json = json.dumps(storage_state, ensure_ascii=False)
                     storage_state_b64 = base64.b64encode(storage_state_json.encode("utf-8")).decode("utf-8")
                     print(f"STORAGE_STATE_B64={storage_state_b64}")
+                    ok=True
                     new_local=storage_state_b64
                 else:
                     self.log("未获取到 storage_state", "WARN")
