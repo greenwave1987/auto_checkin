@@ -16,7 +16,7 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE_DIR)
 from engine.notify import TelegramNotifier
 try:
-    from engine.main import ConfigReader, SecretUpdater
+    from engine.main import ConfigReader, SecretUpdater，print_dict_tree
 except ImportError:
     class ConfigReader:
         def get_value(self, key): return os.environ.get(key)
@@ -822,6 +822,7 @@ class AutoLogin:
                 storage_state = self.get_storage(context)
                 if storage_state:
                     storage_state_json = json.dumps(storage_state, ensure_ascii=False)
+                    print_dict_tree(storage_state_json)
                     storage_state_b64 = base64.b64encode(storage_state_json.encode("utf-8")).decode("utf-8")
                     print(f"STORAGE_STATE_B64={storage_state_b64}")
                     ok=True
@@ -931,7 +932,7 @@ def main():
         except Exception as e:
             print(f"    ❌ 执行异常: {e}")
             results.append(f"    ❌ 执行异常: {e}")
-
+        break
     # 写入
     secret.update(cc_locals)
     # 发送结果
