@@ -843,8 +843,8 @@ def main():
 
         try:
 
-            AutoLogin= AutoLogin(cc_info)
-            ok, new_local,msg = AutoLogin.run()
+            auto_login= AutoLogin(cc_info)
+            ok, new_local,msg = auto_login.run()
     
             if ok:
                 print(f"    ✅ 执行成功，保存新 new_session")
