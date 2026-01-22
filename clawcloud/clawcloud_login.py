@@ -109,34 +109,34 @@ class AutoLogin:
                 pass
         return False
     def click(self, page, sels, desc=""):
-        # 1️⃣ 先在主页面找
         for s in sels:
             try:
                 el = page.locator(s).first
-                if el.is_visible():
-                    time.sleep(random.uniform(0.5, 1.2))
-                    el.hover()
-                    el.click()
-                    self.log(f"已点击: {desc} (main frame)", "SUCCESS")
-                    return True
-            except:
-                pass
     
-        # 2️⃣ 再遍历所有 iframe
-        for frame in page.frames:
-            for s in sels:
-                try:
-                    el = frame.locator(s).first
-                    if el.is_visible():
-                        time.sleep(random.uniform(0.5, 1.2))
-                        el.hover()
-                        el.click()
-                        self.log(f"已点击: {desc} (iframe)", "SUCCESS")
-                        return True
-                except:
-                    pass
+                # 等它真正可点击
+                el.wait_for(state="visible", timeout=10000)
+                el.wait_for(state="attached", timeout=10000)
+                el.wait_for(state="enabled", timeout=10000)
+    
+                # Chakra / React 必须等 layout 稳定
+                page.wait_for_timeout(500)
+    
+                el.scroll_into_view_if_needed()
+                page.wait_for_timeout(200)
+    
+                el.hover()
+                page.wait_for_timeout(200)
+    
+                el.click(force=True)
+    
+                self.log(f"已点击: {desc}", "SUCCESS")
+                return True
+    
+            except Exception as e:
+                self.log(f"尝试点击失败: {s} -> {e}", "DEBUG")
     
         return False
+    
 
     def detect_region(self, url):
         """
