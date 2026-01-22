@@ -765,7 +765,7 @@ class AutoLogin:
                             shot = self.shot(page, "找不到 GitHub 按钮")
                             if shot:
                                 self.notify.send(title="clawcloud 自动登录保活",content="找不到 GitHub 按钮",image_path=shot)
-                            self.log(f"[2.{i}]: "找不到 GitHub 按钮", "WARN")
+                            self.log(f"[2.{i}]: 找不到 GitHub 按钮", "WARN")
                             continue
                         else:
                             resault=check_and_process_domain(page.url)
