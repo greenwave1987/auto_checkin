@@ -1086,11 +1086,6 @@ def main():
     # 使用 zip 实现一一对应
     for account, proxy  in zip(accounts, proxies):
         username=account['username']
-        proxywz={
-                "type": "socks5",
-                "server": "jz.hndz.qzz.io",
-                "port": 19873
-            }
 
         print(f"\n🚀 开始处理账号: {username}\n  🌐 使用代理: {proxy['server'][:-4]}***\n")
         results.append(f"🚀 账号：{username}\n    🌐 使用代理: {proxy['server'][:-4]}***\n")
@@ -1099,6 +1094,7 @@ def main():
         #cc_info['gh_password'] = account.get('password')
         cc_info['cc_proxy'] = proxy
         cc_info['notify'] = notify
+        cc_info['wz_proxy'] = proxies[4]
 
         if isinstance(gh_sessions, dict):
             gh_session = gh_sessions.get(username,'')
