@@ -785,7 +785,7 @@ def main():
     gh_secret = SecretUpdater("GH_SESSION", config_reader=config)
 
     # 读取
-    cookies = secret.load() or {}
+    sessions = secret.load() or {}
     gh_sessions = gh_secret.load() or {}
 
     if not accounts:
@@ -798,7 +798,7 @@ def main():
     print(f"📊 检测到 {len(accounts)} 个账号和 {len(proxies)} 个代理")
 
     # 使用 zip 实现一一对应
-    for account,cookie, proxy ,gh_session in zip(accounts,cookies, proxies,gh_sessions):
+    for account, proxy  in zip(accounts, proxies):
         username=account['username']
 
         print(f"🚀 开始处理账号: {username}, 使用代理: {proxy['server']}")
@@ -807,16 +807,23 @@ def main():
         cc_info['gh_username'] = username
         #cc_info['gh_password'] = account.get('password')
         cc_info['cc_proxy'] = proxy
-        cc_info['gh_session'] = gh_session
-        if isinstance(cookie, dict):
-            if cookie.get('cc_session') and cookie.get('cc_cookie'):
-                cc_info['cc_session'] = cookie.get('cc_session').strip()
-                cc_info['cc_cookie'] = cookie.get('cc_cookie').strip()
-            else:
-                cc_info['cc_session'] = []
-                cc_info['cc_cookie'] = []
+
+        if isinstance(gh_sessions, dict):
+            gh_session = gh_sessions.get(username,'').strip()
         else:
-            print(f"[WARN] cookie 类型错误: {type(cookie)}, value={cookie!r}")
+            print(f"⚠️ 没有缓存相应账号的 gh_session")
+            continue
+        
+        if isinstance(sessions, dict):
+            session = sessions.get(username,'').strip()
+            cc_info['cc_session'] = session.get('cc_session').strip()
+            cc_info['cc_cookie'] = session.get('cc_cookie').strip()
+        else:
+            print(f"⚠️ 没有缓存相应账号的 session")
+            cc_info['cc_session'] = []
+            cc_info['cc_cookie'] = []
+
+        cc_info['gh_session'] = gh_session
         
         print(cc_info)
         return
