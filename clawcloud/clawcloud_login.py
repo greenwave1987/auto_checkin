@@ -19,7 +19,7 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE_DIR)
 from engine.notify import TelegramNotifier
 try:
-    from engine.main import ConfigReader, SecretUpdater,print_dict_tree
+    from engine.main import ConfigReader, SecretUpdater,print_dict_tree,test_proxy
 except ImportError:
     class ConfigReader:
         def get_value(self, key): return os.environ.get(key)
@@ -77,6 +77,10 @@ class AutoLogin:
             self.cc_local = cc_local_val
         
         self.cc_proxy = config.get('cc_proxy', '').strip() if isinstance(config.get('cc_proxy', ''), str) else config.get('cc_proxy')
+        self.proxy_url=test_proxy(self.cc_proxy)
+        if not self.proxy_url:
+            self.cc_proxy = =None
+            
         self.notify = config.get('notify')
         # self.secret = SecretUpdater()
         self.shots = []
@@ -296,20 +300,14 @@ class AutoLogin:
     def get_balance_with_token(self):
         print(f"📊 [步骤 8] 正在查询余额...")
         proxies = None
-        if self.cc_proxy:
-            try:
-                p_url = self.cc_proxy
-                # ===== 新增：socks5 带认证 → gost =====
-                
-                proxies = {
-                    "http": f"{p_url['type']}://{p_url['username']}:{p_url['password']}@{p_url['server']}:{p_url['port']}",
-                    "https": f"{p_url['type']}://{p_url['username']}:{p_url['password']}@{p_url['server']}:{p_url['port']}"
-                }
-                
-                self.log(f"启用代理: {p_url['server'][:-3]}***")
-    
-            except Exception as e:
-                self.log(f"代理配置解析失败: {e}", "ERROR")
+        if self.proxy_url:
+            proxies = {
+                "http": self.proxy_url,
+                "https": self.proxy_url
+            }
+            
+            self.log(f"启用代理: {self.cc_proxy['server'][:-3]}***")
+
                 
         session=self.build_session(self.app_token)
         try:
