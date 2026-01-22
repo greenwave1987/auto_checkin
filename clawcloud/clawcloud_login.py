@@ -635,15 +635,22 @@ class AutoLogin:
 
     def check_and_process_domain(self, domain):
 
-        # 检查域名是否以.run.claw.cloud结尾 
-        if domain.endswith('.run.claw.cloud'): 
-            return "logged" 
-        # 检查域名是否以.run.claw.cloud/signin结尾 
-        if domain.endswith('.run.claw.cloud/signin'): 
+        # 去掉末尾斜杠
+        domain = domain.rstrip('/')
+    
+        # 检查是否为 signin 页面
+        if domain.endswith('.run.claw.cloud/signin'):
             return "signin"
-        # 检查域名是否以.run.claw.cloud结尾 
-        if "callback" in domain: 
+    
+        # 检查是否包含 callback（OAuth 重定向）
+        if "callback" in domain:
             return "redirect"
+    
+        # 检查是否是正常已登录的区域域名
+        if domain.endswith('.run.claw.cloud'):
+            return "logged"
+    
+        # 其他情况
         return "invalid"
     
     def run(self):
