@@ -17,7 +17,17 @@ except ImportError:
         def update(self, value): return False
 
 # ==================== 配置 ====================
-SIGNIN_URL = "https://console.run.claw.cloud/signin"
+# 代理配置 (留空则不使用)
+# 格式: socks5://user:pass@host:port 或 http://user:pass@host:port
+PROXY_DSN = os.environ.get("PROXY_DSN", "").strip()
+
+# 固定自己创建有APP的登录入口，若SIGNIN_URL = "https://console.run.claw.cloud/signin"在OAuth后会自动跳转到根据IP定位的区域,
+LOGIN_ENTRY_URL = "https://ap-northeast-1.run.claw.cloud/login"
+SIGNIN_URL = f"{LOGIN_ENTRY_URL}/signin"
+DEVICE_VERIFY_WAIT = 30  # Mobile验证 默认等 30 秒
+TWO_FACTOR_WAIT = int(os.environ.get("TWO_FACTOR_WAIT", "120"))  # 2FA验证 默认等 120 秒
+
+
 
 def main():
     config = ConfigReader()
