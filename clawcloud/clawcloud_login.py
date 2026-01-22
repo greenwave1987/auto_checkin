@@ -149,24 +149,15 @@ class AutoLogin:
             pass
         return None
     
-    def get_storage(self, page):
-        """提取 local_storage"""
+    def get_storage(self, context):
+        """提取 storage_state"""
         try:
-            local_storage = page.evaluate("""
-            () => {
-                const data = {};
-                for (let i = 0; i < localStorage.length; i++) {
-                    const k = localStorage.key(i);
-                    data[k] = localStorage.getItem(k);
-                }
-                return data;
-            }
-            """)
+            state = context.storage_state()
+            return state
+        except Exception as e:
+            self.log(f"获取 storage_state 失败: {e}", "WARN")
+            return None
 
-            return local_storage
-        except:
-            pass
-        return None
     
     def save_cookie(self, value):
         """保存新 Cookie"""
@@ -638,19 +629,17 @@ class AutoLogin:
             # 预加载localStorage数据，验证有效不再使用 gh_session
             storage_state = None
             if self.cc_local:
-                storage_state = json.loads(
-                    base64.b64decode(self.cc_local).decode()
-                )
-                context = browser.new_context(
-                    storage_state=storage_state,
-                    viewport={'width': 1920, 'height': 1080},
-                    user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
-                )
-            else:
-                context = browser.new_context(
-                    viewport={'width': 1920, 'height': 1080},
-                    user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
-                )
+                try:
+                    storage_state = json.loads(base64.b64decode(self.cc_local).decode("utf-8"))
+                    self.log("已加载 storage_state", "SUCCESS")
+                except Exception as e:
+                    self.log(f"加载 storage_state 失败: {e}", "WARN")
+            
+            context = browser.new_context(
+                storage_state=storage_state,
+                viewport={'width': 1920, 'height': 1080},
+                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
+            )
             
             page = context.new_page()
             page.add_init_script("""
@@ -770,15 +759,13 @@ class AutoLogin:
                 
                 # 7. 提取并保存新 Cookie
                 self.log("步骤6: 更新 local_storage", "STEP")
-                local_storage = self.get_storage(page)
-                if new:
-                    local_storage_json = json.dumps(local_storage, ensure_ascii=False)
-                    local_storage_b64 = base64.b64encode(
-                        local_storage_json.encode("utf-8")
-                    ).decode("utf-8")
-                    print(f"LOCALSTORAGE_B64={local_storage_b64}")
+                storage_state = self.get_storage(context)
+                if storage_state:
+                    storage_state_json = json.dumps(storage_state, ensure_ascii=False)
+                    storage_state_b64 = base64.b64encode(storage_state_json.encode("utf-8")).decode("utf-8")
+                    print(f"STORAGE_STATE_B64={storage_state_b64}")
                 else:
-                    self.log("未获取到新 local_storage", "WARN")
+                    self.log("未获取到 storage_state", "WARN")
                 
                 self.notify(True)
                 print("\n" + "="*50)
@@ -849,7 +836,7 @@ def main():
             continue
         
         if isinstance(cc_locals, dict):
-            cc_info['cc_local'] = cc_locals.get(username,{})
+            cc_info['cc_local'] = cc_locals.get(username,'')
         else:
             print(f"⚠️ cc_locals 格式错误！")
             cc_info['cc_local'] = []
