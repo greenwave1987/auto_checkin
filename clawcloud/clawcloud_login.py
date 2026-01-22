@@ -808,13 +808,16 @@ def main():
         #cc_info['gh_password'] = account.get('password')
         cc_info['cc_proxy'] = proxy
         cc_info['gh_session'] = gh_session
-        print(cookie)
-        if cookie and cookie.get('cc_session') and cookie.get('cc_cookie'):
-            cc_info['cc_session'] = cookie.get('cc_session').strip()
-            cc_info['cc_cookie'] = cookie.get('cc_cookie').strip()
+        if isinstance(cookie, dict):
+            if cookie.get('cc_session') and cookie.get('cc_cookie'):
+                cc_info['cc_session'] = cookie.get('cc_session').strip()
+                cc_info['cc_cookie'] = cookie.get('cc_cookie').strip()
+            else:
+                cc_info['cc_session'] = []
+                cc_info['cc_cookie'] = []
         else:
-            cc_info['cc_session'] = []
-            cc_info['cc_cookie'] = []
+            print(f"[WARN] cookie 类型错误: {type(cookie)}, value={cookie!r}")
+        
         print(cc_info)
         return
         
