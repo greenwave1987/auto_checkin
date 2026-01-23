@@ -39,21 +39,22 @@ jobs:
         run: |
           python -u leaflow/leaflow_checkin.py
 
-      - name: Sync History
+      - name: Commit Changes
         if: always()
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          # 仅同步 JSON 数据和这一张合并的趋势图
+          # 确保拉取最新远程变更，防止 push 冲突
+          git pull origin ${{ github.ref_name }}
+          # 强制添加这两个文件
           git add checkin_history.json combined_trend.png || true
-          git commit -m "chore: update combined history [skip ci]" || echo "No changes"
-          git push
+          git status
+          git commit -m "chore: auto update history and charts [skip ci]" || echo "No changes to commit"
+          git push origin ${{ github.ref_name }}
 
-      - name: Upload Artifacts
+      - name: Upload Screenshot on Failure
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: reports
-          path: |
-            combined_trend.png
-            checkin_history.json
+          name: screenshots
+          path: "*.png"
