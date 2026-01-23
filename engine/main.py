@@ -236,7 +236,7 @@ def session_from_cookies(cookies, headers=None, proxy_url=None):
                 domain=domain,
                 path=path
             )
-            print(f"🍪 [Session] 注入 cookie: {name}")
+            #print(f"🍪 [Session] 注入 cookie: {name}")
 
     # ---------- dict cookies ----------
     elif isinstance(cookies, dict):
