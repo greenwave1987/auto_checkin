@@ -47,7 +47,7 @@ class HistoryManager:
         uid = hashlib.md5(username.encode()).hexdigest()[:8]
         nums = re.findall(r"\d+\.?\d*", str(balance_info))
         
-        # 提取数据 (根据通用顺序: 余额, 已用, 奖励)
+        # 提取数据，确保索引安全
         curr_bal = float(nums[0]) if len(nums) > 0 else 0.0
         used_amt = float(nums[1]) if len(nums) > 1 else 0.0
         reward = float(nums[2]) if (success and len(nums) > 2) else 0.0
@@ -55,7 +55,9 @@ class HistoryManager:
         if uid not in self.history: self.history[uid] = []
         self.history[uid].append({
             "date": datetime.now().strftime('%m-%d'),
-            "balance": curr_bal, "used": used_amt, "reward": reward
+            "balance": curr_bal, 
+            "used": used_amt, 
+            "reward": reward
         })
         if len(self.history[uid]) > 30: self.history[uid] = self.history[uid][-30:]
         
@@ -66,11 +68,17 @@ class HistoryManager:
         if not self.history: return
         plt.figure(figsize=(12, 6))
         for uid, records in self.history.items():
-            dates = [r['date'] for r in records]
-            line, = plt.plot(dates, [r['balance'] for r in records], '-', label=f'ID:{uid}-Bal')
+            dates = [r.get('date', 'N/A') for r in records]
+            # 使用 .get(key, 0.0) 兼容旧数据，防止 KeyError
+            bal_vals = [r.get('balance', 0.0) for r in records]
+            used_vals = [r.get('used', 0.0) for r in records]
+            rew_vals = [r.get('reward', 0.0) for r in records]
+
+            line, = plt.plot(dates, bal_vals, '-', label=f'ID:{uid}-Bal')
             color = line.get_color()
-            plt.plot(dates, [r['used'] for r in records], '--', color=color, alpha=0.5)
-            plt.plot(dates, [r['reward'] for r in records], ':', color=color, alpha=0.8)
+            plt.plot(dates, used_vals, '--', color=color, alpha=0.5)
+            plt.plot(dates, rew_vals, ':', color=color, alpha=0.8)
+
         plt.title("Accounts Trend (Solid:Balance, Dashed:Used, Dotted:Reward)")
         plt.xticks(rotation=45)
         plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
