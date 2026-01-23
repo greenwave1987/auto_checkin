@@ -5,6 +5,12 @@
             "balance": 83.5,
             "used": 13.29,
             "reward": 0.0
+        },
+        {
+            "date": "01-23",
+            "balance": 83.5,
+            "used": 13.29,
+            "reward": 0.0
         }
     ],
     "9886a4bb": [
@@ -13,9 +19,21 @@
             "balance": 51.34,
             "used": 12.16,
             "reward": 0.0
+        },
+        {
+            "date": "01-23",
+            "balance": 51.34,
+            "used": 12.16,
+            "reward": 0.0
         }
     ],
     "2a42e55e": [
+        {
+            "date": "01-23",
+            "balance": 61.87,
+            "used": 0.0,
+            "reward": 0.0
+        },
         {
             "date": "01-23",
             "balance": 61.87,
