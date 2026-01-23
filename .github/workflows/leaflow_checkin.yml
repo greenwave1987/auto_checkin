@@ -29,7 +29,7 @@ jobs:
 
       - name: Install Deps
         run: |
-          pip install playwright requests pynacl requests[socks] cryptography matplotlib
+          pip install playwright requests pynacl requests[socks] cryptography matplotlib numpy
           playwright install chromium --with-deps
 
       - name: Run Task
@@ -44,10 +44,7 @@ jobs:
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          
-          # 关键：先拉取并自动暂存本地修改
           git pull --rebase --autostash origin ${{ github.ref_name }}
-          
           git add checkin_history.json combined_trend.png README.md || true
-          git commit -m "chore: update leaflow trend chart [skip ci]" || echo "No changes"
+          git commit -m "chore: update trend chart with offset [skip ci]" || echo "No changes"
           git push origin ${{ github.ref_name }}
