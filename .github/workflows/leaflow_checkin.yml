@@ -45,24 +45,9 @@ jobs:
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
           
-          # 1. 尝试拉取远程更新。
-          # --autostash 会自动把本地还没 commit 的改动(包括 add 过的)暂存，
-          # pull 完后再自动弹出来，完美解决 "uncommitted changes" 报错。
+          # 使用 autostash 处理本地未提交的修改，解决 KeyError 和拉取冲突
           git pull --rebase --autostash origin ${{ github.ref_name }}
           
-          # 2. 现在再添加文件到暂存区
           git add checkin_history.json combined_trend.png README.md || true
-          
-          # 3. 提交并推送
-          # [skip ci] 很重要，防止 Actions 递归触发
-          git commit -m "chore: update checkin history and charts [skip ci]" || echo "No changes to commit"
+          git commit -m "chore: update history, charts and readme [skip ci]" || echo "No changes"
           git push origin ${{ github.ref_name }}
-          
-      - name: Upload Artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: checkin-reports
-          path: |
-            combined_trend.png
-            checkin_history.json
