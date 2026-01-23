@@ -37,6 +37,7 @@ jobs:
           CONFIG_PASSWORD: ${{ secrets.CONFIG_PASSWORD }}
           LEAFLOW_COOKIES: ${{ secrets.LEAFLOW_COOKIES }}
         run: |
+          # 使用 -u 确保日志实时打印到后台
           python -u leaflow/leaflow_checkin.py
 
       - name: Sync Data and Charts
@@ -44,7 +45,10 @@ jobs:
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
+          
+          # 解决 index 包含未提交更改的报错
           git pull --rebase --autostash origin ${{ github.ref_name }}
+          
           git add checkin_history.json combined_trend.png README.md || true
-          git commit -m "chore: update trend chart with offset [skip ci]" || echo "No changes"
+          git commit -m "chore: full log restore and trend update [skip ci]" || echo "No changes"
           git push origin ${{ github.ref_name }}
