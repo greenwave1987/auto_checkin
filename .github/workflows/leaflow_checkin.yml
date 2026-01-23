@@ -44,8 +44,15 @@ jobs:
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git pull --rebase origin ${{ github.ref_name }}
+          
+          # 1. 先将本地修改暂存，防止 pull 失败
           git add checkin_history.json combined_trend.png README.md || true
+          
+          # 2. 拉取远程更新并合并 (使用 rebase 保持提交线整洁)
+          # 如果有冲突，暂存区的文件会尝试自动合并
+          git pull --rebase origin ${{ github.ref_name }}
+          
+          # 3. 提交并推送
           git commit -m "chore: update checkin history, charts and readme [skip ci]" || echo "No changes"
           git push origin ${{ github.ref_name }}
 
