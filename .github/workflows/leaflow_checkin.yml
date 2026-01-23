@@ -5,7 +5,6 @@ on:
   schedule:
     - cron: "5 0,12 * * *"
 
-# 增加写入权限，用于 push 记录文件
 permissions:
   contents: write
 
@@ -30,7 +29,6 @@ jobs:
 
       - name: Install Deps
         run: |
-          # 增加 matplotlib
           pip install playwright requests pynacl requests[socks] cryptography matplotlib
           playwright install chromium --with-deps
 
@@ -41,19 +39,21 @@ jobs:
         run: |
           python -u leaflow/leaflow_checkin.py
 
-      # --- 仅增加记录保存步骤 ---
       - name: Sync History
         if: always()
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git add checkin_history.json trend_*.png || true
-          git commit -m "chore: update checkin data [skip ci]" || echo "No changes"
+          # 仅同步 JSON 数据和这一张合并的趋势图
+          git add checkin_history.json combined_trend.png || true
+          git commit -m "chore: update combined history [skip ci]" || echo "No changes"
           git push
 
-      - name: Upload Screenshot on Failure
+      - name: Upload Artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: screenshots
-          path: "*.png"
+          name: reports
+          path: |
+            combined_trend.png
+            checkin_history.json
