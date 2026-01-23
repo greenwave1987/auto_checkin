@@ -1,4 +1,3 @@
-# leaflow/Leaflow_checkin.py
 import os
 import sys
 import subprocess
@@ -69,16 +68,23 @@ class HistoryManager:
             bal_vals = [r.get('balance', 0.0) for r in records]
             used_vals = [r.get('used', 0.0) for r in records]
             rew_vals = [r.get('reward', 0.0) for r in records]
-            line, = plt.plot(dates, bal_vals, '-', marker='o', label=f'ID:{uid}-Bal')
+            
+            # 使用不同的 marker，确保第一天也能看到三个点
+            line, = plt.plot(dates, bal_vals, linestyle='-', marker='o', label=f'ID:{uid}-Bal')
             color = line.get_color()
-            plt.plot(dates, used_vals, '--', color=color, alpha=0.5)
-            plt.plot(dates, rew_vals, ':', color=color, alpha=0.8)
+            plt.plot(dates, used_vals, linestyle='--', marker='x', color=color, alpha=0.5, label=f'ID:{uid}-Used')
+            plt.plot(dates, rew_vals, linestyle=':', marker='s', color=color, alpha=0.8, label=f'ID:{uid}-Reward')
+
         plt.title("Accounts Trend (Solid:Balance, Dashed:Used, Dotted:Reward)")
         plt.xlabel("Date")
         plt.ylabel("Amount")
         plt.grid(True, linestyle='--', alpha=0.5)
         plt.xticks(rotation=45)
-        plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize='small')
+        # 优化图例，防止重复
+        handles, labels = plt.gca().get_legend_handles_labels()
+        by_label = dict(zip(labels, handles))
+        plt.legend(by_label.values(), by_label.keys(), bbox_to_anchor=(1.05, 1), loc='upper left', fontsize='x-small')
+        
         plt.tight_layout()
         plt.savefig("combined_trend.png")
         plt.close()
@@ -105,16 +111,14 @@ def get_notifier():
     return _notifier
     
 def run_task_for_account(account, proxy, cookie=None):
-    note, username = "", account['username']
+    username = account['username']
     proxy_str = f"{proxy['username']}:{proxy['password']}@{proxy['server']}:{proxy['port']}"
-    print(f"\n{'='*40}\n👤 账号: {username}\n🌐 代理: {proxy['server']}:{proxy['port']}\n{'='*40}")
+    print(f"\n{'='*40}\n👤 账号: {username}\n{'='*40}")
     gost_proc, pw_bundle, final_cookie = None, None, cookie or ""
     try:
         gost_proc = subprocess.Popen(["./gost", "-L=:8080", f"-F=socks5://{proxy_str}"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         time.sleep(5)
         local_proxy = "http://127.0.0.1:8080"
-        res = requests.get("https://api.ipify.org", proxies={"http": local_proxy, "https": local_proxy}, timeout=15)
-        print(f"✅ 隧道就绪，出口 IP: {res.text.strip()}")
         pw_bundle = open_browser(proxy_url=local_proxy)
         pw, browser, ctx, page = pw_bundle
         if final_cookie:
@@ -128,11 +132,11 @@ def run_task_for_account(account, proxy, cookie=None):
         success, msg = perform_token_checkin(cookies=final_cookie, account_name=username, checkin_url="https://checkin.leaflow.net", main_site="https://leaflow.net", headers={"User-Agent": "Mozilla/5.0"}, proxy_url=local_proxy)
         balance_info = get_balance_info(page)
         history_mgr.record(username, balance_info, success)
-        print(f"📢 签到结果:{success} ,{msg},{balance_info}")
+        print(f"📢 结果: {success}, {balance_info}")
         return success, final_cookie, f"{msg},{balance_info}"
     except Exception as e:
-        print(f"❌ 账号 {username} 执行异常: {e}")
-        return False, None, f"❌ 执行异常: {e}"
+        print(f"❌ 异常: {e}")
+        return False, None, str(e)
     finally:
         if pw_bundle: pw_bundle[1].close(); pw_bundle[0].stop()
         if gost_proc: gost_proc.terminate(); gost_proc.wait()
@@ -144,17 +148,14 @@ def main():
     accounts, proxies = config.get_value("LF_INFO"), config.get_value("PROXY_INFO")
     secret = SecretUpdater("LEAFLOW_COOKIES", config_reader=config)
     cookies = secret.load() or {}
-    if not accounts: return
     for account, proxy in zip(accounts, proxies):
-        try:
-            ok, newcookie, msg = run_task_for_account(account, proxy, cookies.get(account['username'],''))
-            if ok: newcookies[account['username']] = newcookie
-            results.append(f"    {'✅' if ok else '⚠️'} {account['username']}")
-        except: pass
+        ok, n_cookie, msg = run_task_for_account(account, proxy, cookies.get(account['username'],''))
+        if ok: newcookies[account['username']] = n_cookie
+        results.append(f"{'✅' if ok else '❌'} {account['username']}")
     history_mgr.draw()
     history_mgr.update_readme()
     secret.update(newcookies)
-    get_notifier().send(title="Leaflow 自动签到汇总", content="\n".join(results))
+    get_notifier().send(title="Leaflow 签到汇总", content="\n".join(results))
 
 if __name__ == "__main__":
     main()
