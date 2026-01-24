@@ -231,13 +231,13 @@ class LeaflowTask:
                 )
                 
                 # --- 修复 BytesIO 发送问题 ---
-                if report["chart_stream"]:
+                if report["chart_buf"]:
                     # 定义临时路径
                     temp_chart_path = f"{SCREENSHOT_DIR}/chart_{report['username']}.png"
                     try:
                         # 将 BytesIO 写入本地文件
                         with open(temp_chart_path, "wb") as f:
-                            f.write(report["chart_stream"].getbuffer())
+                            f.write(report["chart_buf"].getbuffer())
                         
                         # 调用原有的发送方法（传入路径字符串）
                         self.notifier.send(
