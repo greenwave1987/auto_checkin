@@ -5,7 +5,7 @@ import random
 import base64
 import socket
 import subprocess
-import tempfile
+import json
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -82,7 +82,7 @@ class LeaflowTask:
         return {"server": server}
 
     # ---------- 浏览器 ----------
-    def open_browser(self, proxy, storage):
+    def open_browser(self, proxy, storage_b64):
         self.log("启动 Playwright 浏览器", "STEP")
         pw = sync_playwright().start()
 
@@ -106,21 +106,35 @@ class LeaflowTask:
                 launch_args["proxy"] = {"server": server}
                 self.log(f"启用代理: {mask_ip(proxy['server'])}", "INFO")
 
-        # 使用临时文件存储 state
-        with tempfile.NamedTemporaryFile(delete=False) as temp_storage:
-            temp_storage.write(storage.encode())
-            temp_storage.close()  # Close the file before passing it to playwright
-            self.log(f"使用临时存储文件: {temp_storage.name}", "INFO")
+        browser = pw.chromium.launch(**launch_args)
 
-            browser = pw.chromium.launch(**launch_args)
-            context = browser.new_context(
-                storage_state=temp_storage.name,  # 使用临时存储文件路径
-                viewport={"width": 1920, "height": 1080},
-                user_agent="Mozilla/5.0 Chrome/128.0.0.0"
-            )
+        context_args = {
+            "viewport": {"width": 1920, "height": 1080},
+            "user_agent": "Mozilla/5.0 Chrome/128.0.0.0"
+        }
 
-            page = context.new_page()
-            return pw, browser, page
+        if storage_b64:
+            try:
+                decoded = base64.b64decode(storage_b64).decode()
+                context_args["storage_state"] = json.loads(decoded)
+                self.log("已加载历史 session（base64）", "SUCCESS")
+            except Exception as e:
+                self.log(f"session 解码失败，忽略并重新登录: {e}", "WARN")
+
+        context = browser.new_context(**context_args)
+        page = context.new_page()
+        return pw, browser, page
+
+    # ---------- session 校验 ----------
+    def check_session_valid(self, page):
+        self.log(f"验证 session，有效性检测: {DASHBOARD_URL}", "STEP")
+        page.goto(DASHBOARD_URL, timeout=30000)
+        page.wait_for_load_state("networkidle")
+        if "login" in page.url.lower():
+            self.log("session 已失效", "WARN")
+            return False
+        self.log("session 有效", "SUCCESS")
+        return True
 
     # ---------- 截图 ----------
     def capture_and_notify(self, page, user, reason):
@@ -172,8 +186,8 @@ class LeaflowTask:
             pwd = account["password"]
 
             self.log(f"开始处理账号: {mask_email(user)}", "STEP")
-
             self.log(f"检测代理: {mask_ip(proxy['server'])}", "STEP")
+
             if not test_proxy(proxy):
                 self.log("代理不可用，回退 wz_proxy", "WARN")
                 proxy = self.config.get("wz_proxy")
@@ -183,9 +197,16 @@ class LeaflowTask:
             try:
                 pw, browser, page = self.open_browser(proxy, lf_locals.get(user))
 
-                if not lf_locals.get(user):
-                    self.log("未发现 session，执行登录", "WARN")
-                    new_sessions[user] = self.login_and_get_storage(page, user, pwd)
+                need_login = True
+                if lf_locals.get(user):
+                    need_login = not self.check_session_valid(page)
+
+                if need_login:
+                    storage = self.login_and_get_storage(page, user, pwd)
+                else:
+                    storage = page.context.storage_state()
+
+                new_sessions[user] = storage
 
                 self.log(f"打开余额页: {BALANCE_URL}", "STEP")
                 page.goto(BALANCE_URL)
@@ -210,7 +231,10 @@ class LeaflowTask:
 
         if new_sessions:
             self.log("📝 准备回写 GitHub Secret", "STEP")
-            encoded = {k: base64.b64encode(str(v).encode()).decode() for k, v in new_sessions.items()}
+            encoded = {
+                k: base64.b64encode(json.dumps(v).encode()).decode()
+                for k, v in new_sessions.items()
+            }
             self.secret.update(encoded)
             self.log("✅ Secret 回写成功", "SUCCESS")
 
