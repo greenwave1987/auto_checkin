@@ -28,7 +28,7 @@ jobs:
 
       - name: Install Python Dependencies
         run: |
-          pip install playwright requests pyotp pynacl requests[socks] cryptography
+          pip install playwright requests pyotp pynacl requests[socks] cryptography matplotlib
           playwright install chromium --with-deps
 
       - name: Run Leaflow Task
