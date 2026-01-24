@@ -97,8 +97,7 @@ def run_task_for_account(account, proxy, storage_data=None):
             if 'cookies' in final_storage:
                 ctx.add_cookies(final_storage['cookies'])
             
-            page.goto("https://leaflow.net", timeout=30000)
-        
+      
             if cookies_ok(page):
                 print(f"✨ storage 有效，无需登录")
                 note = f"✨ storage 有效，无需登录"
@@ -208,7 +207,7 @@ def main():
         except Exception as e:
             print(f"    ❌ 执行异常: {e}")
             results.append(f"    ❌ 执行异常: {e}")
-
+        return
     # 写入更新后的所有账号状态
     secret.update(new_storages)
     # 发送结果
