@@ -420,7 +420,7 @@ class LeaflowTask:
                     self.capture_and_notify(page, user, str(e))
                 except:
                     pass
-            break
+            #break
             
         if new_sessions:
             self.log("📝 准备回写 GitHub Secret", "STEP")
@@ -429,7 +429,7 @@ class LeaflowTask:
             self.log("✅ Secret 回写成功", "SUCCESS")
 
         self.log("🔔 开始发送通知", "STEP")
-        self.notifier.send(title="Leaflow 自动签到结果", content="\n".join(self.logs))
+        #self.notifier.send(title="Leaflow 自动签到结果", content="\n".join(self.logs))
 
 
 if __name__ == "__main__":
