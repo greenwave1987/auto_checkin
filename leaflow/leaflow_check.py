@@ -7,7 +7,6 @@ import socket
 import subprocess
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
-# ==================== 路径 ====================
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE_DIR)
 
@@ -18,6 +17,24 @@ LOGIN_URL = "https://leaflow.net/login"
 DASHBOARD_URL = "https://leaflow.net/dashboard"
 BALANCE_URL = "https://leaflow.net/balance"
 SCREENSHOT_DIR = "/tmp/leaflow_fail"
+
+
+# ==================== 工具函数 ====================
+def mask_email(email: str):
+    if "@" not in email:
+        return "***"
+    name, domain = email.split("@", 1)
+    return f"{name[:2]}***{name[-2:]}@{domain}"
+
+
+def mask_ip(ip: str):
+    if not ip:
+        return "***"
+    return f"***{ip}"
+
+
+def mask_password(pwd: str):
+    return "*" * 6 + f"({len(pwd)})"
 
 
 # ==================== 核心类 ====================
@@ -37,7 +54,7 @@ class LeaflowTask:
         print(line, flush=True)
         self.logs.append(line)
 
-    # ---------- 启动 Gost ----------
+    # ---------- Gost ----------
     def start_gost_proxy(self, proxy):
         def free_port():
             s = socket.socket()
@@ -50,20 +67,24 @@ class LeaflowTask:
         server = f"http://127.0.0.1:{port}"
         remote = f"socks5://{proxy['username']}:{proxy['password']}@{proxy['server']}:{proxy['port']}"
 
-        cmd = ["./gost", "-L", f":{port}", "-F", remote]
-        self.log(f"启动 Gost: {' '.join(cmd)}", "STEP")
+        self.log(
+            f"启动 Gost: ./gost -L :{port} -F ***{proxy['server']}:{proxy['port']}",
+            "STEP"
+        )
 
         self.gost_proc = subprocess.Popen(
-            cmd,
+            ["./gost", "-L", f":{port}", "-F", remote],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL
         )
         time.sleep(2)
         return {"server": server}
 
-    # ---------- 启动浏览器 ----------
-    def open_browser(self, proxy=None, storage=None):
+    # ---------- 浏览器 ----------
+    def open_browser(self, proxy, storage):
+        self.log("启动 Playwright 浏览器", "STEP")
         pw = sync_playwright().start()
+
         launch_args = {
             "headless": True,
             "args": [
@@ -75,118 +96,101 @@ class LeaflowTask:
         }
 
         if proxy:
-            try:
-                if proxy.get("type") == "socks5" and proxy.get("username"):
-                    gost = self.start_gost_proxy(proxy)
-                    launch_args["proxy"] = {"server": gost["server"]}
-                    self.log(f"使用 Gost 本地代理: {gost['server']}", "SUCCESS")
-                else:
-                    launch_args["proxy"] = {
-                        "server": f"{proxy['type']}://{proxy['server']}:{proxy['port']}"
-                    }
-                    self.log(f"启用代理: {launch_args['proxy']['server']}", "INFO")
-            except Exception as e:
-                self.log(f"代理配置失败: {e}", "ERROR")
+            if proxy.get("type") == "socks5" and proxy.get("username"):
+                gost = self.start_gost_proxy(proxy)
+                launch_args["proxy"] = {"server": gost["server"]}
+                self.log(f"使用 Gost 本地代理: {gost['server']}", "SUCCESS")
+            else:
+                server = f"{proxy['type']}://{proxy['server']}:{proxy['port']}"
+                launch_args["proxy"] = {"server": server}
+                self.log(f"启用代理: {mask_ip(proxy['server'])}", "INFO")
 
         browser = pw.chromium.launch(**launch_args)
         context = browser.new_context(
             storage_state=storage,
             viewport={"width": 1920, "height": 1080},
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                       "(KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+            user_agent="Mozilla/5.0 Chrome/128.0.0.0"
         )
 
-        context.add_init_script("""
-            Object.defineProperty(navigator,'webdriver',{get:()=>undefined});
-            Object.defineProperty(navigator,'plugins',{get:()=>[1,2,3,4,5]});
-            Object.defineProperty(navigator,'languages',{get:()=>['en-US','en']});
-            window.chrome={runtime:{}};
-        """)
+        page = context.new_page()
+        return pw, browser, page
 
-        return pw, browser, context, context.new_page()
-
-    # ---------- 截图并发送 TG ----------
-    def capture_and_notify(self, page, username, reason):
-        ts = time.strftime("%Y%m%d_%H%M%S")
-        path = f"{SCREENSHOT_DIR}/{username}_{ts}.png"
-        try:
-            page.screenshot(path=path, full_page=True)
-            self.log(f"登录失败截图已保存: {path}", "WARN")
-            self.notifier.send_photo(
-                photo_path=path,
-                caption=f"❌ Leaflow 登录失败\n账号: {username}\n原因: {reason}"
-            )
-        except Exception as e:
-            self.log(f"截图或发送失败: {e}", "ERROR")
-
-    # ---------- session 校验 ----------
-    def cookies_ok(self, page):
-        page.goto(DASHBOARD_URL, timeout=30000)
-        page.wait_for_load_state("networkidle")
-        return "login" not in page.url.lower()
+    # ---------- 截图 ----------
+    def capture_and_notify(self, page, user, reason):
+        path = f"{SCREENSHOT_DIR}/{user}_{int(time.time())}.png"
+        page.screenshot(path=path, full_page=True)
+        self.notifier.send_photo(
+            photo_path=path,
+            caption=f"❌ Leaflow 登录失败\n账号: {mask_email(user)}\n原因: {reason}"
+        )
 
     # ---------- 登录 ----------
-    def login_and_get_storage(self, page, username, password):
+    def login_and_get_storage(self, page, user, pwd):
+        self.log(f"打开登录页: {LOGIN_URL}", "STEP")
         page.goto(LOGIN_URL)
-        page.fill("#account", username)
-        page.fill("#password", password)
+
+        self.log(f"输入账号: {mask_email(user)}", "INFO")
+        page.fill("#account", user)
+
+        self.log(f"输入密码: {mask_password(pwd)}", "INFO")
+        page.fill("#password", pwd)
 
         try:
-            el = page.get_by_role("checkbox", name="保持登录状态").first
-            el.wait_for(state="visible", timeout=3000)
-            el.click(force=True)
-        except PlaywrightTimeoutError:
-            pass
+            self.log("点击「保持登录状态」", "STEP")
+            page.get_by_role("checkbox", name="保持登录状态").click(force=True)
+        except:
+            self.log("未找到保持登录复选框", "WARN")
 
+        self.log("点击登录按钮", "STEP")
         page.locator('button[type="submit"]').click()
         page.wait_for_load_state("networkidle", timeout=60000)
-        time.sleep(2)
 
         if "login" in page.url.lower():
             raise RuntimeError("登录失败")
 
+        self.log("登录成功，提取 session", "SUCCESS")
         return page.context.storage_state()
-
-    # ---------- 余额 ----------
-    def get_balance(self, page):
-        page.goto(BALANCE_URL)
-        page.wait_for_load_state("networkidle")
-        bal = page.locator('p[title="点击显示完整格式"]').text_content().strip()
-        spent = page.locator('p.text-3xl.font-bold:not([title])').text_content().strip()
-        self.log(f"🏦 余额: {bal} | 已消费: {spent}", "INFO")
 
     # ---------- 主流程 ----------
     def run(self):
         self.log("Leaflow 多账号任务启动", "STEP")
+
         accounts = self.config.get_value("LF_INFO") or []
         proxies = self.config.get_value("PROXY_INFO") or []
         lf_locals = self.secret.load() or {}
         new_sessions = {}
 
         for account, proxy in zip(accounts, proxies):
-            username = account["username"]
-            password = account["password"]
+            user = account["username"]
+            pwd = account["password"]
 
-            # 代理检测
-            proxy_ok = test_proxy(proxy)
-            if not proxy_ok:
+            self.log(f"开始处理账号: {mask_email(user)}", "STEP")
+
+            self.log(f"检测代理: {mask_ip(proxy['server'])}", "STEP")
+            if not test_proxy(proxy):
+                self.log("代理不可用，回退 wz_proxy", "WARN")
                 proxy = self.config.get("wz_proxy")
                 test_proxy(proxy)
 
             pw = browser = None
             try:
-                storage = lf_locals.get(username)
-                pw, browser, ctx, page = self.open_browser(proxy, storage)
+                pw, browser, page = self.open_browser(proxy, lf_locals.get(user))
 
-                if not storage or not self.cookies_ok(page):
-                    try:
-                        storage = self.login_and_get_storage(page, username, password)
-                        new_sessions[username] = storage
-                    except Exception as e:
-                        self.capture_and_notify(page, username, str(e))
-                        continue
+                if not lf_locals.get(user):
+                    self.log("未发现 session，执行登录", "WARN")
+                    new_sessions[user] = self.login_and_get_storage(page, user, pwd)
 
-                self.get_balance(page)
+                self.log(f"打开余额页: {BALANCE_URL}", "STEP")
+                page.goto(BALANCE_URL)
+                page.wait_for_load_state("networkidle")
+
+                bal = page.locator('p[title]').text_content().strip()
+                spent = page.locator('p.text-3xl.font-bold:not([title])').text_content().strip()
+                self.log(f"🏦 余额: {bal} | 已消费: {spent}", "INFO")
+
+            except Exception as e:
+                self.log(f"{mask_email(user)} 登录异常: {e}", "ERROR")
+                self.capture_and_notify(page, user, str(e))
 
             finally:
                 if browser:
@@ -198,13 +202,13 @@ class LeaflowTask:
                     self.gost_proc = None
 
         if new_sessions:
+            self.log("📝 准备回写 GitHub Secret", "STEP")
             encoded = {k: base64.b64encode(str(v).encode()).decode() for k, v in new_sessions.items()}
             self.secret.update(encoded)
+            self.log("✅ Secret 回写成功", "SUCCESS")
 
-        self.notifier.send(
-            title="Leaflow 自动任务完成",
-            content="\n".join(self.logs)
-        )
+        self.log("🔔 开始发送通知", "STEP")
+        self.notifier.send("Leaflow 自动登录维护", "\n".join(self.logs))
 
 
 if __name__ == "__main__":
