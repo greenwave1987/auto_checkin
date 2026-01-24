@@ -30,7 +30,7 @@ jobs:
       - name: Run Task
         env:
           CONFIG_PASSWORD: ${{ secrets.CONFIG_PASSWORD }}
-          LEAFLOW_STORAGE: ${{ secrets.LEAFLOW_STORAGE }}
+          LEAFLOW_LOCALS: ${{ secrets.LEAFLOW_LOCALS }}
           
           # 如果你有通知需求，可以加上 TG 变量
         run: |
