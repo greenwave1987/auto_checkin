@@ -202,7 +202,7 @@ class LeaflowTask:
         """
         try:
             data = page.evaluate(api_script)
-            
+            self.log(data, "INFO")
             return data
         except Exception as e:
             self.log(f"API 数据获取失败: {e}", "WARN")
