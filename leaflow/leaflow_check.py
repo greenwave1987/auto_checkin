@@ -332,7 +332,8 @@ class LeaflowTask:
                     self.capture_and_notify(page, user, str(e))
                 except:
                     pass
-
+            break
+            
         if new_sessions:
             self.log("📝 准备回写 GitHub Secret", "STEP")
             encoded = {k: encode_storage(v) for k, v in new_sessions.items()}
