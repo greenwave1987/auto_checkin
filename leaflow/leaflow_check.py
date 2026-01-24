@@ -3,8 +3,18 @@ import random
 import base64
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
-from engine.main import ConfigReader, SecretUpdater
+# ==================== 基准数据对接 ====================
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, BASE_DIR)
 from engine.notify import TelegramNotifier
+try:
+    from engine.main import ConfigReader, SecretUpdater,print_dict_tree,test_proxy
+except ImportError:
+    class ConfigReader:
+        def get_value(self, key): return os.environ.get(key)
+    class SecretUpdater:
+        def __init__(self, name=None, config_reader=None): pass
+        def update(self, value): return False
 
 LOGIN_URL = "https://leaflow.net/login"
 DASHBOARD_URL = "https://leaflow.net/dashboard"
