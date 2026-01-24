@@ -48,7 +48,7 @@ jobs:
 
 
         run: |
-          python -u scripts/leaflow_check.py
+          python -u leaflow/leaflow_check.py
 
       - name: Upload Screenshots on Failure
         if: failure()
