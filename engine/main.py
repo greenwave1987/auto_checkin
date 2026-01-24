@@ -8,6 +8,9 @@ import json
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from hashlib import sha256
 from pathlib import Path
+from datetime import datetime, timedelta, timezone
+
+
 """
 # ==================================================
 # 解密函数并读取信息
@@ -552,3 +555,20 @@ def test_proxy(proxy_info, timeout=5):
     except Exception as e:
         print(f"❌ 代理不可用: {proxy_url}, 错误: {e}")
         return None
+# 转换到东八区 (北京时间)
+def to_beijing_time(utc_str):
+    if not utc_str or "无记录" in utc_str:
+        return "无记录"
+    # 解析 ISO 格式字符串 (例如: 2026-01-24T16:50:18.000000Z)
+    # 兼容处理：替换 Z 为 +00:00 方便 datetime 解析
+    utc_dt = datetime.fromisoformat(utc_str.replace('Z', '+00:00'))
+    
+    # 转换到东八区 (北京时间)
+    beijing_dt = utc_dt.astimezone(timezone(timedelta(hours=8)))
+    
+    # 返回格式化后的字符串
+    return beijing_dt.strftime("%Y-%m-%d %H:%M:%S")
+
+# 示例分析你刚才的数据：
+# 输入: 2026-01-24T16:50:18.000000Z
+# 输出: 2026-01-25 00:50:18 (北京时间)
