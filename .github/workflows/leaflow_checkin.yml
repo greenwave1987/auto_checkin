@@ -1,13 +1,17 @@
-name: leaflow 登录签到
+name: Leaflow 自动签到
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:   # 手动触发
   schedule:
-    - cron: "5 0,12 * * *"
+    - cron: "15 1,13 */1 * *"  # 每天 UTC 1:15 和 13:15，可改为你的时间
 
 jobs:
   checkin:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write  # 必须开启以便更新 Secret
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -22,23 +26,34 @@ jobs:
           curl -L https://github.com/ginuerzh/gost/releases/download/v2.11.5/gost-linux-amd64-2.11.5.gz | gunzip > gost
           chmod +x gost
 
-      - name: Install Deps
+      - name: Install Python Dependencies
         run: |
-          pip install playwright requests pynacl requests[socks] cryptography
+          pip install playwright requests pyotp pynacl requests[socks] cryptography
           playwright install chromium --with-deps
 
-      - name: Run Task
+      - name: Run Leaflow Task
         env:
+          # 配置解密密钥
           CONFIG_PASSWORD: ${{ secrets.CONFIG_PASSWORD }}
-          LEAFLOW_LOCALS: ${{ secrets.LEAFLOW_LOCALS }}
-          
-          # 如果你有通知需求，可以加上 TG 变量
-        run: |
-          python -u leaflow/leaflow_check.py
 
-      - name: Upload Screenshot on Failure
-        if: always()
+          # 账号信息与代理信息
+          LF_INFO: ${{ secrets.LF_INFO }}
+          PROXY_INFO: ${{ secrets.PROXY_INFO }}
+
+          # 多账号 session storage
+          LEAFLOW_LOCALS: ${{ secrets.LEAFLOW_LOCALS }}
+
+          # GitHub 信息，SecretUpdater 需要
+          GITHUB_REPOSITORY: ${{ github.repository }}
+
+
+        run: |
+          python -u scripts/leaflow_check.py
+
+      - name: Upload Screenshots on Failure
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: screenshots
+          name: leaflow-debug-screenshots
           path: "*.png"
+          retention-days: 3
