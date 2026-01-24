@@ -11,7 +11,7 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE_DIR)
 
 from engine.notify import TelegramNotifier
-from engine.main import ConfigReader, SecretUpdater
+from engine.main import ConfigReader, SecretUpdater, test_proxy
 
 LOGIN_URL = "https://leaflow.net/login"
 DASHBOARD_URL = "https://leaflow.net/dashboard"
@@ -25,6 +25,7 @@ class LeaflowTask:
         self.logs = []
         self.notifier = TelegramNotifier(self.config)
         self.secret = SecretUpdater("LEAFLOW_LOCALS", config_reader=self.config)
+        self.lf_proxy = None  # 默认代理
 
     # ---------- 日志 ----------
     def log(self, msg, level="INFO"):
@@ -39,12 +40,27 @@ class LeaflowTask:
         print(line, flush=True)
         self.logs.append(line)
 
+    # ---------- 检测代理 ----------
+    def check_proxy(self, proxy):
+        if not proxy:
+            return None
+        proxy_url = f"socks5://{proxy['username']}:{proxy['password']}@{proxy['server']}:{proxy['port']}"
+        if test_proxy(proxy_url):
+            self.log(f"代理可用: {proxy_url}", "SUCCESS")
+            return proxy_url
+        else:
+            self.log(f"代理不可用: {proxy_url}", "WARN")
+            wz_proxy = self.config.get("wz_proxy")
+            if wz_proxy:
+                self.log("使用备用代理 wz_proxy", "INFO")
+                return wz_proxy
+            return None
+
     # ---------- 启动浏览器 ----------
     def open_browser(self, proxy_url=None, storage=None):
         self.log("启动 Playwright 浏览器", "STEP")
 
         pw = sync_playwright().start()
-
         launch_args = {
             "headless": True,
             "args": [
@@ -62,7 +78,6 @@ class LeaflowTask:
             self.log("未使用代理", "WARN")
 
         browser = pw.chromium.launch(**launch_args)
-
         context = browser.new_context(
             storage_state=storage,
             viewport={"width": 1920, "height": 1080},
@@ -73,7 +88,6 @@ class LeaflowTask:
             ),
         )
 
-        # ---- 反检测注入 ----
         context.add_init_script("""
             Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
             Object.defineProperty(navigator, 'plugins', { get: () => [1,2,3,4,5] });
@@ -110,15 +124,11 @@ class LeaflowTask:
         page.goto(LOGIN_URL, timeout=30000)
         page.wait_for_selector("#account")
 
-        # 输入账号
         page.fill("#account", username)
         time.sleep(random.uniform(0.3, 0.8))
-
-        # 输入密码
         page.fill("#password", password)
         time.sleep(random.uniform(0.5, 1.2))
 
-        # 勾选保持登录
         try:
             el = page.get_by_role("checkbox", name="保持登录状态").first
             el.wait_for(state="visible", timeout=5000)
@@ -130,7 +140,6 @@ class LeaflowTask:
         except PlaywrightTimeoutError:
             self.log("未找到保持登录复选框", "WARN")
 
-        # 点击登录
         page.locator('button[type="submit"]').click()
         page.wait_for_load_state("networkidle", timeout=60000)
         time.sleep(3)
@@ -149,7 +158,6 @@ class LeaflowTask:
 
         balance = page.locator('p[title="点击显示完整格式"]').text_content().strip()
         spent = page.locator('p.text-3xl.font-bold:not([title])').text_content().strip()
-
         msg = f"🏦余额: {balance} | 已消费: {spent}"
         self.log(msg, "INFO")
         return msg
@@ -161,7 +169,6 @@ class LeaflowTask:
         accounts = self.config.get_value("LF_INFO")
         proxies = self.config.get_value("PROXY_INFO")
         lf_locals = self.secret.load() or {}
-
         new_sessions = {}
 
         for idx, account in enumerate(accounts):
@@ -169,9 +176,7 @@ class LeaflowTask:
             password = account["password"]
 
             proxy = proxies[idx] if proxies and idx < len(proxies) else None
-            proxy_url = None
-            if proxy:
-                proxy_url = f"socks5://{proxy['username']}:{proxy['password']}@{proxy['server']}:{proxy['port']}"
+            proxy_url = self.check_proxy(proxy)
 
             self.log(f"处理账号 {username}", "STEP")
 
@@ -192,13 +197,12 @@ class LeaflowTask:
 
             except Exception as e:
                 self.log(f"{username} 异常: {e}", "ERROR")
-
             finally:
                 if browser:
                     browser.close()
                 if pw:
                     pw.stop()
-            return
+
         # ---------- 回写 session ----------
         if new_sessions:
             self.log("更新 LEAFLOW_LOCALS", "STEP")
