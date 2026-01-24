@@ -34,7 +34,7 @@ jobs:
           
           # 如果你有通知需求，可以加上 TG 变量
         run: |
-          python -u leaflow/leaflow_checkin.py
+          python -u leaflow/leaflow_check.py
 
       - name: Upload Screenshot on Failure
         if: always()
