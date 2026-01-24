@@ -250,7 +250,7 @@ class LeaflowTask:
                         self.gost_proc = None
                 except Exception:
                     pass
-
+            break
         if new_sessions:
             self.log("📝 准备回写 GitHub Secret", "STEP")
             encoded = {k: base64.b64encode(str(v).encode()).decode() for k, v in new_sessions.items()}
