@@ -208,36 +208,41 @@ class LeaflowTask:
             self.log(f"API 数据获取失败: {e}", "WARN")
             return None
         
+
     # ---------- 签到 ----------
     def do_checkin(self, page):
         # 1. 先通过 API 获取数据
-        info = self.get_balance_data(page)
+        raw_info = self.get_balance_data(page)
         
-        if info:
-            self.log(f"当前余额: {info['balance']}", "INFO")
-            if info['is_checked_today']:
-                self.log("✅ API 确认今日已签到，跳过点击", "SUCCESS")
-
-                # 2. 调用独立的处理函数
-                report = self.process_leaflow_api(info)
+        if raw_info:
+            # 调用解析函数转换数据
+            report = self.process_leaflow_api(raw_info)
+            
+            # 判断逻辑改用 report 里的结果
+            if report['is_checked_today']:
+                self.log(f"✅ 今日已签到 (用户: {report['username']}, 余额: {report['balance']})", "SUCCESS")
                 
-                # 3. 构造通知文本
-                status_emoji = "✅" if report["is_checked_today"] else "❌"
+                # 构造通知文本
                 msg = (
-                    f"📊 **Leaflow 状态报告**\n"
+                    f"📊 **Leaflow 资产报告**\n"
                     f"👤 用户: `{report['username']}`\n"
                     f"💰 余额: `{report['balance']}`\n"
                     f"📉 已用: `{report['consumed']}`\n"
-                    f"🕒 签到: `{report['last_checkin_time']}`\n"
-                    f"📅 今日: {status_emoji}"
+                    f"🕒 签到: `{report['last_checkin_time']}` (北京时间)\n"
+                    f"📅 今日状态: 已签到 ✅"
                 )
                 
-                # 4. 发送
+                # 发送带图通知
                 if report["chart_buf"]:
-                    self.notifier.send( title=f"Leaflow 签到报告\n",content=msg,image_path=report["chart_buf"])
+                    self.notifier.send(
+                        title=f"Leaflow 签到报告",
+                        content=msg,
+                        image_path=report["chart_buf"] # 确保 notifier 支持 BytesIO
+                    )
                 return
-        # 2. 如果 API 显示未签到，再执行点击操作
-        self.log("API 显示未签到，准备执行点击签到...", "STEP")
+
+        # 2. 如果未签到，继续执行点击操作...
+        self.log("准备执行点击签到操作...", "STEP")
         self.log(f"打开签到页: {CHECKIN_URL}", "STEP")
         for attempt in range(3):
             try:
@@ -276,12 +281,12 @@ class LeaflowTask:
     
         except PlaywrightTimeoutError:
             self.log("⚠️ 点击签到按钮超时，可能页面未完全渲染", "WARN")
-    # --- A. 基础数据解析 ---
+    # ---------- 数据处理与图表生成 ----------
     def process_leaflow_api(self, json_data):
         """
         解析 Leaflow API 数据并生成统计报表
         """
-        # 1. 安全提取各级数据
+        # 1. 安全提取各级数据，防止 KeyError
         props = json_data.get("props", {})
         user_info = props.get("auth", {}).get("user", {})
         records = props.get("records", {}).get("data", [])
@@ -289,64 +294,70 @@ class LeaflowTask:
         # --- 工具：UTC转北京时间对象 ---
         def to_bj_dt(utc_str):
             if not utc_str: return None
-            # 处理 ISO 格式: 2026-01-24T16:50:18.000000Z
-            dt = datetime.fromisoformat(utc_str.replace('Z', '+00:00'))
-            return dt.astimezone(timezone(timedelta(hours=8)))
-    
+            # 兼容处理: 2026-01-24T16:50:18.000000Z
+            try:
+                dt = datetime.fromisoformat(utc_str.replace('Z', '+00:00'))
+                return dt.astimezone(timezone(timedelta(hours=8)))
+            except:
+                return None
+
         # 2. 初始化结果结构
         res = {
             "username": user_info.get("name", "Unknown"),
             "balance": props.get("balance", "0.00"),
             "consumed": props.get("totalConsumed", "0.00"),
-            "last_checkin_str": "无记录",
+            "last_checkin_time": "无记录",
             "is_checked_today": False,
-            "history_map": {},    # 用于绘图的数据
-            "chart_stream": None  # 图片流
+            "daily_history": {},  # 用于绘图
+            "chart_buf": None     # 图片流
         }
-    
+
         # 3. 处理签到记录
         now_bj = datetime.now(timezone(timedelta(hours=8)))
-        today_date = now_bj.strftime("%Y-%m-%d")
-    
+        today_str = now_bj.strftime("%Y-%m-%d")
+
         if records:
-            # 获取最近一次记录的时间
+            # 记录最后一次签到时间
             last_dt = to_bj_dt(records[0].get("created_at"))
             if last_dt:
-                res["last_checkin_str"] = last_dt.strftime("%Y-%m-%d %H:%M:%S")
-    
-            # 统计历史（处理每天多笔记录的情况）
+                res["last_checkin_time"] = last_dt.strftime("%Y-%m-%d %H:%M:%S")
+
+            # 遍历历史记录进行统计 (按北京时间)
             for r in reversed(records):
-                if "奖励" in r.get("remark", "") or "签到" in r.get("remark", ""):
+                remark = r.get("remark", "")
+                if "奖励" in remark or "签到" in remark:
                     bj_dt = to_bj_dt(r.get("created_at"))
                     if bj_dt:
-                        d_str = bj_dt.strftime("%Y-%m-%d")
+                        date_key = bj_dt.strftime("%Y-%m-%d")
                         amount = float(r.get("amount", 0))
-                        res["history_map"][d_str] = res["history_map"].get(d_str, 0) + amount
+                        
+                        # 汇总每天的金额
+                        res["daily_history"][date_key] = res["daily_history"].get(date_key, 0) + amount
                         
                         # 判定今日是否已签到
-                        if d_str == today_date:
+                        if date_key == today_str:
                             res["is_checked_today"] = True
-    
-        # 4. 绘图 (Matplotlib)
-        if res["history_map"]:
+
+        # 4. 绘图逻辑
+        if res["daily_history"]:
             plt.figure(figsize=(10, 5))
-            dates = list(res["history_map"].keys())[-12:] # 取最近12天
-            amounts = [res["history_map"][d] for d in dates]
-            
-            plt.plot(dates, amounts, marker='o', color='#10a37f', linewidth=2, label="Bonus")
+            # 仅取最近12天日期展示
+            dates = list(res["daily_history"].keys())[-12:]
+            amounts = [res["daily_history"][d] for d in dates]
+
+            plt.plot(dates, amounts, marker='o', color='#10a37f', linewidth=2)
             plt.fill_between(dates, amounts, color='#10a37f', alpha=0.1)
-            plt.title(f"Reward Trend: {res['username']}")
+            plt.title(f"Check-in Rewards: {res['username']}", fontsize=12)
             plt.xticks(rotation=30)
-            plt.grid(True, linestyle=':', alpha=0.5)
+            plt.grid(True, linestyle=':', alpha=0.6)
             plt.tight_layout()
-    
-            # 转换成 BytesIO 图片流
+
             buf = io.BytesIO()
             plt.savefig(buf, format='png')
             buf.seek(0)
             plt.close()
-            res["chart_stream"] = buf
-    
+            res["chart_buf"] = buf
+
         return res
 
     # ---------- 主流程 ----------
