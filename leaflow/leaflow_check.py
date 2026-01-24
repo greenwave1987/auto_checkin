@@ -196,8 +196,8 @@ class LeaflowTask:
         # 点击签到
         self.log("点击「立即签到」按钮", "STEP")
         try:
-            btn.first.click(timeout=10000)
-            time.sleep(2)
+            btn.first.click(timeout=120000)
+            time.sleep(10)
     
             # 点击后再次确认是否签到成功
             checked_div = page.locator('div.mt-2.mb-1.text-muted.small', has_text="今日已签到")
