@@ -1,8 +1,8 @@
 import os
 import sys
 import time
-import random
 import base64
+import json
 import socket
 import subprocess
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
@@ -29,13 +29,23 @@ def mask_email(email: str):
 
 
 def mask_ip(ip: str):
-    if not ip:
-        return "***"
-    return f"***{ip}"
+    return f"***{ip}" if ip else "***"
 
 
 def mask_password(pwd: str):
     return "*" * 6 + f"({len(pwd)})"
+
+
+def decode_storage(b64_str):
+    try:
+        raw = base64.b64decode(b64_str).decode()
+        return json.loads(raw)
+    except Exception:
+        return None
+
+
+def encode_storage(storage):
+    return base64.b64encode(json.dumps(storage).encode()).decode()
 
 
 # ==================== 核心类 ====================
@@ -55,10 +65,7 @@ class LeaflowTask:
         print(line, flush=True)
         self.logs.append(line)
 
-    def tg_notify(self, msg):
-        self.notifier.send("Leaflow 自动登录维护", msg)
-
-    # ---------- Gost ----------
+ # ---------- Gost ----------
     def start_gost_proxy(self, proxy):
         def free_port():
             s = socket.socket()
@@ -84,7 +91,7 @@ class LeaflowTask:
         time.sleep(2)
         return {"server": server}
 
-    # ---------- 浏览器 ----------
+   # ---------- 浏览器 ----------
     def open_browser(self, proxy, storage):
         self.log("启动 Playwright 浏览器", "STEP")
         pw = sync_playwright().start()
@@ -123,13 +130,17 @@ class LeaflowTask:
     def capture_and_notify(self, page, user, reason):
         path = f"{SCREENSHOT_DIR}/{user}_{int(time.time())}.png"
         try:
-            page.screenshot(path=path, full_page=True)
-        except Exception as e:
-            self.log(f"⚠️ 截图失败: {e}", "WARN")
-        self.tg_notify(f"❌ Leaflow 登录失败\n账号: {mask_email(user)}\n原因: {reason}")
+            page.screenshot(path=path, full_page=True, timeout=30000)  # 30秒
+        except PlaywrightTimeoutError:
+            self.log("⚠️ 截图超时，跳过截图", "WARN")
+        self.notifier.send_photo(
+            photo_path=path,
+            caption=f"❌ Leaflow 登录失败\n账号: {mask_email(user)}\n原因: {reason}"
+        )
+
 
     # ---------- 登录 ----------
-    def login_and_get_storage(self, page, user, pwd):
+    def do_login(self, page, user, pwd):
         self.log(f"打开登录页: {LOGIN_URL}", "STEP")
         page.goto(LOGIN_URL)
 
@@ -142,7 +153,7 @@ class LeaflowTask:
         try:
             self.log("点击「保持登录状态」", "STEP")
             page.get_by_role("checkbox", name="保持登录状态").click(force=True)
-        except:
+        except Exception:
             self.log("未找到保持登录复选框", "WARN")
 
         self.log("点击登录按钮", "STEP")
@@ -152,12 +163,24 @@ class LeaflowTask:
         if "login" in page.url.lower():
             raise RuntimeError("登录失败")
 
-        self.log("登录成功，提取 session", "SUCCESS")
-        return page.context.storage_state()
+        self.log("登录成功", "SUCCESS")
+
+    # ---------- 验证 storage ----------
+    def ensure_login(self, page, user, pwd):
+        page.goto(DASHBOARD_URL)
+        page.wait_for_load_state("networkidle")
+
+        if "login" in page.url.lower():
+            self.log("storage 已失效，重新登录", "WARN")
+            self.do_login(page, user, pwd)
+            return True
+
+        self.log("storage 有效，跳过登录", "SUCCESS")
+        return False
 
     # ---------- 签到 ----------
     def do_checkin(self, page):
-        self.log(f"🔹 打开签到页: {CHECKIN_URL}", "STEP")
+        self.log(f"打开签到页: {CHECKIN_URL}", "STEP")
         for attempt in range(3):
             try:
                 page.goto(CHECKIN_URL, wait_until="load", timeout=120000)
@@ -167,24 +190,35 @@ class LeaflowTask:
                 time.sleep(2)
         else:
             raise RuntimeError("访问签到页失败")
-
-        # 等待签到按钮
+    
+        # 先检查是否已经签到
+        checked_div = page.locator('div.mt-2.mb-1.text-muted.small', has_text="今日已签到")
+        if checked_div.count() > 0:
+            self.log("✅ 今日已签到，跳过点击", "SUCCESS")
+            return
+    
+        # 查找立即签到按钮
+        btn = page.locator('button.checkin-btn')
+        if btn.count() == 0:
+            self.log("⚠️ 未发现签到按钮，可能页面未完全加载或已签到", "WARN")
+            return
+    
+        # 点击签到
+        self.log("点击「立即签到」按钮", "STEP")
         try:
-            checkin_btn = page.locator('button[name="checkin"]')
-            if checkin_btn.is_visible():
-                self.log("🔹 点击立即签到按钮", "STEP")
-                checkin_btn.click()
-                page.wait_for_timeout(60000)  # 等待刷新
-        except Exception as e:
-            self.log(f"⚠️ 未找到签到按钮或点击失败: {e}", "WARN")
+            btn.first.click(timeout=60000)
+            time.sleep(2)
+    
+            # 点击后再次确认是否签到成功
+            checked_div = page.locator('div.mt-2.mb-1.text-muted.small', has_text="今日已签到")
+            if checked_div.count() > 0:
+                self.log("✅ 签到成功", "SUCCESS")
+            else:
+                self.log("⚠️ 点击签到按钮后未检测到签到状态", "WARN")
+    
+        except PlaywrightTimeoutError:
+            self.log("⚠️ 点击签到按钮超时，可能页面未完全渲染", "WARN")
 
-        # 检查是否已签到
-        try:
-            done_text = page.locator('div.mt-2.mb-1.text-muted.small')
-            if "今日已签到" in done_text.text_content():
-                self.log("✅ 今日已签到", "SUCCESS")
-        except Exception:
-            self.log("⚠️ 无法确认签到状态", "WARN")
 
     # ---------- 主流程 ----------
     def run(self):
@@ -193,6 +227,7 @@ class LeaflowTask:
         accounts = self.config.get_value("LF_INFO") or []
         proxies = self.config.get_value("PROXY_INFO") or []
         lf_locals = self.secret.load() or {}
+
         new_sessions = {}
 
         for account, proxy in zip(accounts, proxies):
@@ -200,65 +235,52 @@ class LeaflowTask:
             pwd = account["password"]
 
             self.log(f"开始处理账号: {mask_email(user)}", "STEP")
-
             self.log(f"检测代理: {mask_ip(proxy['server'])}", "STEP")
-            if not test_proxy(proxy):
-                self.log("代理不可用，回退 wz_proxy", "WARN")
-                proxy = self.config.get("wz_proxy")
-                test_proxy(proxy)
+            test_proxy(proxy)
 
-            pw = browser = page = None
+            storage = None
+            if user in lf_locals:
+                storage = decode_storage(lf_locals[user])
+
+            pw = browser = None
             try:
-                pw, browser, page = self.open_browser(proxy, lf_locals.get(user))
+                pw, browser, page = self.open_browser(proxy, storage)
 
-                if not lf_locals.get(user):
-                    self.log("未发现 storage，执行登录", "WARN")
-                    new_sessions[user] = self.login_and_get_storage(page, user, pwd)
-                else:
-                    self.log("✅ storage 有效，跳过登录", "INFO")
-
-                # 打开余额页
-                self.log(f"🔹 打开余额页: {BALANCE_URL}", "STEP")
-                page.goto(BALANCE_URL)
-                page.wait_for_load_state("networkidle")
-                try:
-                    bal = page.locator('p[title]').text_content().strip()
-                    spent = page.locator('p.text-3xl.font-bold:not([title])').text_content().strip()
-                    self.log(f"🏦 余额: {bal} | 已消费: {spent}", "INFO")
-                except Exception:
-                    self.log("⚠️ 无法读取余额信息", "WARN")
-
-                # 执行签到
+                refreshed = self.ensure_login(page, user, pwd)
                 self.do_checkin(page)
 
-                # 登录或验证成功后更新 storage
-                if user not in new_sessions:
+                if refreshed or not storage:
+                    self.log("更新 storage", "STEP")
                     new_sessions[user] = page.context.storage_state()
 
             except Exception as e:
-                self.log(f"❌ {user} 登录异常: {e}", "ERROR")
-                self.capture_and_notify(page, user, str(e))
+                self.log(f"{mask_email(user)} 登录异常: {e}", "ERROR")
+                if page:
+                    self.capture_and_notify(page, user, str(e))
 
             finally:
-                try:
-                    if browser:
+                if browser:
+                    try:
                         browser.close()
-                    if pw:
+                    except Exception:
+                        pass
+                if pw:
+                    try:
                         pw.stop()
-                    if self.gost_proc:
-                        self.gost_proc.terminate()
-                        self.gost_proc = None
-                except Exception:
-                    pass
-            break
+                    except Exception:
+                        pass
+                if self.gost_proc:
+                    self.gost_proc.terminate()
+                    self.gost_proc = None
+
         if new_sessions:
             self.log("📝 准备回写 GitHub Secret", "STEP")
-            encoded = {k: base64.b64encode(str(v).encode()).decode() for k, v in new_sessions.items()}
+            encoded = {k: encode_storage(v) for k, v in new_sessions.items()}
             self.secret.update(encoded)
             self.log("✅ Secret 回写成功", "SUCCESS")
 
         self.log("🔔 开始发送通知", "STEP")
-        self.notifier.send("Leaflow 自动登录维护", "\n".join(self.logs))
+        self.notifier.send("Leaflow 自动签到结果", "\n".join(self.logs))
 
 
 if __name__ == "__main__":
