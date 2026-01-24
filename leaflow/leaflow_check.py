@@ -226,7 +226,7 @@ class LeaflowTask:
                     f"👤 用户: `{report['username']}`\n"
                     f"💰 余额: `{report['balance']}`\n"
                     f"📉 已用: `{report['consumed']}`\n"
-                    f"🕒 签到: `{report['last_checkin_str']}`\n"
+                    f"🕒 签到: `{report['last_checkin_time']}`\n"
                     f"📅 今日: {status_emoji}"
                 )
                 
