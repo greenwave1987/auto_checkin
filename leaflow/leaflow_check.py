@@ -137,7 +137,7 @@ def main():
                 browser.close()
             if pw:
                 pw.stop()
-
+        return
     # 保存更新后的 session
     if new_cookies:
         # 编码为 base64 保存到 LEAFLOW_LOCALS
