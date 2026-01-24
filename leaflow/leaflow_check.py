@@ -234,7 +234,8 @@ class LeaflowTask:
                 
                 # 4. 发送
                 if report["chart_buf"]:
-    
+                    self.notifier.send( title=f"Leaflow 签到报告\n",content=msg,image_path=report["chart_buf"])
+                return
         # 2. 如果 API 显示未签到，再执行点击操作
         self.log("API 显示未签到，准备执行点击签到...", "STEP")
         self.log(f"打开签到页: {CHECKIN_URL}", "STEP")
@@ -344,9 +345,9 @@ class LeaflowTask:
     
             buf = io.BytesIO()
             plt.savefig(buf, format='png')
-            buf.seek(0)
+            buf.seek(0) # 指针回到开头
             plt.close()
-            res["chart_buf"] = buf
+            res["photo_stream"] = buf
     
         return res
 
