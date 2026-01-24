@@ -145,4 +145,4 @@ class LeaflowCheck:
 
 
 if __name__ == "__main__":
-    LeaflowTask().run()
+    LeaflowCheck().run()
