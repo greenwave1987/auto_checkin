@@ -123,11 +123,15 @@ class LeaflowTask:
     # ---------- 截图 ----------
     def capture_and_notify(self, page, user, reason):
         path = f"{SCREENSHOT_DIR}/{user}_{int(time.time())}.png"
-        page.screenshot(path=path, full_page=True)
+        try:
+            page.screenshot(path=path, full_page=True, timeout=30000)  # 30秒
+        except PlaywrightTimeoutError:
+            self.log("⚠️ 截图超时，跳过截图", "WARN")
         self.notifier.send_photo(
             photo_path=path,
             caption=f"❌ Leaflow 登录失败\n账号: {mask_email(user)}\n原因: {reason}"
         )
+
 
     # ---------- 登录 ----------
     def do_login(self, page, user, pwd):
@@ -171,18 +175,40 @@ class LeaflowTask:
     # ---------- 签到 ----------
     def do_checkin(self, page):
         self.log(f"打开签到页: {CHECKIN_URL}", "STEP")
-        page.goto(CHECKIN_URL)
-        page.wait_for_load_state("networkidle")
-
+        try:
+            page.goto(CHECKIN_URL, wait_until="load", timeout=120000)  # 60秒
+            page.wait_for_load_state("networkidle", timeout=120000)
+        except PlaywrightTimeoutError:
+            self.log("⚠️ 签到页加载超时，继续尝试操作页面", "WARN")
+    
+        # 先检查是否已经签到
+        checked_div = page.locator('div.mt-2.mb-1.text-muted.small', has_text="今日已签到")
+        if checked_div.count() > 0:
+            self.log("✅ 今日已签到，跳过点击", "SUCCESS")
+            return
+    
+        # 查找立即签到按钮
         btn = page.locator('button.checkin-btn')
         if btn.count() == 0:
-            self.log("未发现签到按钮，可能已签到", "WARN")
+            self.log("⚠️ 未发现签到按钮，可能页面未完全加载或已签到", "WARN")
             return
-
+    
+        # 点击签到
         self.log("点击「立即签到」按钮", "STEP")
-        btn.first.click()
-        time.sleep(2)
-        self.log("签到完成", "SUCCESS")
+        try:
+            btn.first.click(timeout=10000)
+            time.sleep(2)
+    
+            # 点击后再次确认是否签到成功
+            checked_div = page.locator('div.mt-2.mb-1.text-muted.small', has_text="今日已签到")
+            if checked_div.count() > 0:
+                self.log("✅ 签到成功", "SUCCESS")
+            else:
+                self.log("⚠️ 点击签到按钮后未检测到签到状态", "WARN")
+    
+        except PlaywrightTimeoutError:
+            self.log("⚠️ 点击签到按钮超时，可能页面未完全渲染", "WARN")
+
 
     # ---------- 主流程 ----------
     def run(self):
