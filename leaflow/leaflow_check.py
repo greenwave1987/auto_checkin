@@ -236,7 +236,7 @@ class LeaflowTask:
                 if self.gost_proc:
                     self.gost_proc.terminate()
                     self.gost_proc = None
-
+            break
         if new_sessions:
             self.log("📝 准备回写 GitHub Secret", "STEP")
             encoded = {k: encode_storage(v) for k, v in new_sessions.items()}
