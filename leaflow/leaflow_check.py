@@ -215,34 +215,48 @@ class LeaflowTask:
         raw_info = self.get_balance_data(page)
         
         if raw_info:
-            # 调用解析函数转换数据
             report = self.process_leaflow_api(raw_info)
             
-            # 判断逻辑改用 report 里的结果
             if report['is_checked_today']:
                 self.log(f"✅ 今日已签到 (用户: {report['username']}, 余额: {report['balance']})", "SUCCESS")
                 
-                # 构造通知文本
+                status_emoji = "✅" if report["is_checked_today"] else "❌"
                 msg = (
                     f"📊 **Leaflow 资产报告**\n"
                     f"👤 用户: `{report['username']}`\n"
                     f"💰 余额: `{report['balance']}`\n"
                     f"📉 已用: `{report['consumed']}`\n"
-                    f"🕒 签到: `{report['last_checkin_time']}` (北京时间)\n"
-                    f"📅 今日状态: 已签到 ✅"
+                    f"🕒 签到: `{report['last_checkin_str']}`\n"
+                    f"📅 今日: {status_emoji}"
                 )
                 
-                # 发送带图通知
-                if report["chart_buf"]:
-                    self.notifier.send(
-                        title=f"Leaflow 签到报告",
-                        content=msg,
-                        image_path=report["chart_buf"] # 确保 notifier 支持 BytesIO
-                    )
+                # --- 修复 BytesIO 发送问题 ---
+                if report["chart_stream"]:
+                    # 定义临时路径
+                    temp_chart_path = f"{SCREENSHOT_DIR}/chart_{report['username']}.png"
+                    try:
+                        # 将 BytesIO 写入本地文件
+                        with open(temp_chart_path, "wb") as f:
+                            f.write(report["chart_stream"].getbuffer())
+                        
+                        # 调用原有的发送方法（传入路径字符串）
+                        self.notifier.send(
+                            title=f"Leaflow 签到报告",
+                            content=msg,
+                            image_path=temp_chart_path
+                        )
+                        # 发送后清理临时文件
+                        if os.path.exists(temp_chart_path):
+                            os.remove(temp_chart_path)
+                    except Exception as e:
+                        self.log(f"图片保存或发送失败: {e}", "WARN")
+                        self.notifier.send(title="Leaflow 签到报告", content=msg)
+                else:
+                    self.notifier.send(title="Leaflow 签到报告", content=msg)
                 return
 
-        # 2. 如果未签到，继续执行点击操作...
-        self.log("准备执行点击签到操作...", "STEP")
+        # 2. 如果未签到，执行点击逻辑...
+        self.log("API 显示未签到，准备执行点击签到...", "STEP")
         self.log(f"打开签到页: {CHECKIN_URL}", "STEP")
         for attempt in range(3):
             try:
