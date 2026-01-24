@@ -123,8 +123,26 @@ class LeaflowCheck:
                 self.tg_notify(f"❌ Leaflow 登录失败\n账号：{user}\n错误：{e}")
 
             finally:
-                try:
+                if browser:
                     browser.close()
+                if pw:
                     pw.stop()
-                except Exception:
-                    pass
+                if self.gost_proc:
+                    self.gost_proc.terminate()
+                    self.gost_proc = None
+
+        if new_sessions:
+            self.log("📝 准备回写 GitHub Secret", "STEP")
+            encoded = {
+                k: base64.b64encode(json.dumps(v).encode()).decode()
+                for k, v in new_sessions.items()
+            }
+            self.secret.update(encoded)
+            self.log("✅ Secret 回写成功", "SUCCESS")
+
+        self.log("🔔 开始发送通知", "STEP")
+        self.notifier.send("Leaflow 自动登录维护", "\n".join(self.logs))
+
+
+if __name__ == "__main__":
+    LeaflowTask().run()
