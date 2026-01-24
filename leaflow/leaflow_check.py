@@ -1,6 +1,9 @@
 import os
+import io
 import sys
 import time
+import matplotlib.pyplot as plt
+from datetime import datetime, timedelta, timezone
 import base64
 import json
 import socket
@@ -11,7 +14,7 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE_DIR)
 
 from engine.notify import TelegramNotifier
-from engine.main import ConfigReader, SecretUpdater, test_proxy
+from engine.main import ConfigReader, SecretUpdater, test_proxy,to_beijing_time
 
 LOGIN_URL = "https://leaflow.net/login"
 DASHBOARD_URL = "https://leaflow.net/dashboard"
@@ -46,6 +49,8 @@ def decode_storage(b64_str):
 
 def encode_storage(storage):
     return base64.b64encode(json.dumps(storage).encode()).decode()
+
+
 
 
 # ==================== 核心类 ====================
@@ -228,6 +233,27 @@ class LeaflowTask:
             self.log(f"当前余额: {info['balance']}", "INFO")
             if info['is_checked']:
                 self.log("✅ API 确认今日已签到，跳过点击", "SUCCESS")
+
+                # 2. 调用独立的处理函数
+                stats, chart_buf = self.process_account_data(json_data, user)
+            
+                # 3. 构造通知内容
+                report_msg = (
+                    f"📊 **Leaflow 资产明细 (北京时间)**\n"
+                    f"👤 账号: `{mask_email(user)}`\n"
+                    f"💰 当前余额: `{stats['balance']}`\n"
+                    f"📉 累计消费: `{stats['consumed']}`\n"
+                    f"🕒 最后签到: `{stats['last_checkin_bj']}`"
+                )
+            
+                # 4. 发送带图通知 (确保修复了 send_photo 的 bug)
+                if chart_buf:
+                    self.notifier.send(title=f"Leaflow 报告\n",content=report_msg,image_path=chart_buf)
+                    
+                else:
+                    self.notifier.send(title=f"Leaflow 报告\n",content=report_msg)
+
+                
                 return
     
         # 2. 如果 API 显示未签到，再执行点击操作
@@ -270,7 +296,68 @@ class LeaflowTask:
     
         except PlaywrightTimeoutError:
             self.log("⚠️ 点击签到按钮超时，可能页面未完全渲染", "WARN")
-
+    # --- A. 基础数据解析 ---
+    def process_account_data(self, json_data, user_email):
+        """
+        独立的数据处理函数：解析JSON、转换时间、生成奖励曲线
+        """
+        props = json_data.get("props", {})
+        records = props.get("records", {}).get("data", [])
+        
+        # --- A. 基础数据解析 ---
+        stats = {
+            "balance": props.get("balance", "0.00"),
+            "consumed": props.get("totalConsumed", "0.00"),
+            "user_name": props.get("auth", {}).get("user", {}).get("name", "Unknown"),
+            "last_checkin_bj": "无记录"
+        }
+    
+        # --- B. 时间转换函数 (内部工具) ---
+        def to_bj_time(utc_str):
+            if not utc_str: return None
+            # 解析 2026-01-24T16:50:18.000000Z 格式
+            dt = datetime.fromisoformat(utc_str.replace('Z', '+00:00'))
+            return dt.astimezone(timezone(timedelta(hours=8)))
+    
+        # --- C. 提取每日签到奖金 (按北京时间日期聚合) ---
+        daily_rewards = {}
+        if records:
+            # 获取最后一次签到的北京时间字符串
+            last_dt = to_bj_time(records[0].get("created_at"))
+            if last_dt:
+                stats["last_checkin_bj"] = last_dt.strftime("%Y-%m-%d %H:%M:%S")
+    
+            for r in reversed(records):
+                if "签到" in r.get("remark", ""):
+                    bj_dt = to_bj_time(r.get("created_at"))
+                    if bj_dt:
+                        date_str = bj_dt.strftime("%m-%d") # 横坐标简写日期
+                        amount = float(r.get("amount", 0))
+                        daily_rewards[date_str] = daily_rewards.get(date_str, 0) + amount
+    
+        # --- D. 生成趋势图曲线 ---
+        chart_buf = None
+        if daily_rewards:
+            plt.figure(figsize=(10, 5))
+            dates = list(daily_rewards.keys())
+            amounts = list(daily_rewards.values())
+            
+            # 绘图样式优化
+            plt.plot(dates, amounts, marker='o', color='#10a37f', linewidth=2, label='Daily Reward')
+            plt.fill_between(dates, amounts, color='#10a37f', alpha=0.1)
+            
+            plt.title(f"Check-in Rewards Trend ({stats['user_name']})", fontsize=12)
+            plt.ylabel("Amount", fontsize=10)
+            plt.grid(True, linestyle='--', alpha=0.5)
+            plt.tight_layout()
+    
+            # 将图片保存到内存
+            chart_buf = io.BytesIO()
+            plt.savefig(chart_buf, format='png')
+            chart_buf.seek(0)
+            plt.close()
+    
+        return stats, chart_buf
 
     # ---------- 主流程 ----------
     def run(self):
