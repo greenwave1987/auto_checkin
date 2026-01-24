@@ -149,17 +149,15 @@ class LeaflowTask:
             password = account["password"]
 
             # 代理检测
-            lf_proxy = self.config.get('lf_proxy','').strip() if isinstance(self.config.get('lf_proxy',''), str) else self.config.get('lf_proxy')
-            proxy_url = test_proxy(lf_proxy)
+            proxy_url = test_proxy(proxy)
             if not proxy_url:
-                lf_proxy = self.config.get('wz_proxy')
-                proxy_url = test_proxy(lf_proxy)
+                self.proxy_url = test_proxy(self.config.get('wz_proxy'))
 
-            self.log(f"处理账号 {username} 使用代理: {proxy_url}", "STEP")
+            self.log(f"处理账号 {username} 使用代理: {self.proxy_url['server']}", "STEP")
             pw = browser = None
             try:
                 storage = lf_locals.get(username)
-                pw, browser, ctx, page = self.open_browser(proxy_url, storage)
+                pw, browser, ctx, page = self.open_browser(self.proxy_url, storage)
 
                 if not storage or not self.cookies_ok(page):
                     storage = self.login_and_get_storage(page, username, password)
