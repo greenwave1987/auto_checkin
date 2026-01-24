@@ -15,7 +15,7 @@ sys.path.insert(0, BASE_DIR)
 
 from engine.notify import TelegramNotifier
 from engine.main import ConfigReader, SecretUpdater, test_proxy,to_beijing_time
-
+plt.switch_backend('Agg') # 必须在其他 plt 操作之前执行
 LOGIN_URL = "https://leaflow.net/login"
 DASHBOARD_URL = "https://leaflow.net/dashboard"
 BALANCE_URL = "https://leaflow.net/balance"
