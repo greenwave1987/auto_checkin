@@ -5,6 +5,7 @@ import random
 import base64
 import socket
 import subprocess
+import tempfile
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -105,15 +106,21 @@ class LeaflowTask:
                 launch_args["proxy"] = {"server": server}
                 self.log(f"启用代理: {mask_ip(proxy['server'])}", "INFO")
 
-        browser = pw.chromium.launch(**launch_args)
-        context = browser.new_context(
-            storage_state=storage,
-            viewport={"width": 1920, "height": 1080},
-            user_agent="Mozilla/5.0 Chrome/128.0.0.0"
-        )
+        # 使用临时文件存储 state
+        with tempfile.NamedTemporaryFile(delete=False) as temp_storage:
+            temp_storage.write(storage.encode())
+            temp_storage.close()  # Close the file before passing it to playwright
+            self.log(f"使用临时存储文件: {temp_storage.name}", "INFO")
 
-        page = context.new_page()
-        return pw, browser, page
+            browser = pw.chromium.launch(**launch_args)
+            context = browser.new_context(
+                storage_state=temp_storage.name,  # 使用临时存储文件路径
+                viewport={"width": 1920, "height": 1080},
+                user_agent="Mozilla/5.0 Chrome/128.0.0.0"
+            )
+
+            page = context.new_page()
+            return pw, browser, page
 
     # ---------- 截图 ----------
     def capture_and_notify(self, page, user, reason):
