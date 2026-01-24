@@ -178,9 +178,60 @@ class LeaflowTask:
 
         self.log("storage 有效，跳过登录", "SUCCESS")
         return False
-
+    # ---------- 获取金额信息 ----------  
+    def get_balance_data(self, page):
+        self.log("正在通过 API 获取账户余额信息...", "STEP")
+        # 注入 fetch 脚本
+        api_script = """
+        async () => {
+            const response = await fetch("https://leaflow.net/balance", {
+                "headers": {
+                    "x-inertia": "true",
+                    "x-inertia-version": "1da8f358bacd543adbf104c91fa91267",
+                    "x-requested-with": "XMLHttpRequest"
+                },
+                "method": "GET"
+            });
+            return await response.json();
+        }
+        """
+        try:
+            data = page.evaluate(api_script)
+            props = data.get("props", {})
+            
+            # 提取余额
+            balance = props.get("balance", "0.00")
+            
+            # 提取最后一条记录判断是否签到
+            records = props.get("records", {}).get("data", [])
+            is_checked = False
+            if records:
+                last_remark = records[0].get("remark", "")
+                last_time = records[0].get("created_at", "")
+                # 如果第一条记录是签到奖励，且时间是今天（UTC），则视为已签到
+                if "每日签到奖励" in last_remark:
+                    # 简单判断日期是否为今天（根据你返回的数据是 2026-01-24）
+                    if time.strftime("%Y-%m-%d") in last_time:
+                        is_checked = True
+            
+            return {"balance": balance, "is_checked": is_checked}
+        except Exception as e:
+            self.log(f"API 数据获取失败: {e}", "WARN")
+            return None
+        
     # ---------- 签到 ----------
     def do_checkin(self, page):
+        # 1. 先通过 API 获取数据
+        info = self.get_balance_data(page)
+        
+        if info:
+            self.log(f"当前余额: {info['balance']}", "INFO")
+            if info['is_checked']:
+                self.log("✅ API 确认今日已签到，跳过点击", "SUCCESS")
+                return
+    
+        # 2. 如果 API 显示未签到，再执行点击操作
+        self.log("API 显示未签到，准备执行点击签到...", "STEP")
         self.log(f"打开签到页: {CHECKIN_URL}", "STEP")
         for attempt in range(3):
             try:
