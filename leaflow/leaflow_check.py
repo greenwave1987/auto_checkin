@@ -279,8 +279,8 @@ class LeaflowTask:
                 # 可以在这里增加一层保护，防止 notifier 本身报错导致崩溃
                 try:
                     self.capture_and_notify(page, user, str(e))
-            except:
-                pass
+                except:
+                    pass
 
         if new_sessions:
             self.log("📝 准备回写 GitHub Secret", "STEP")
