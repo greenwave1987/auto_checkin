@@ -133,10 +133,11 @@ class LeaflowTask:
             page.screenshot(path=path, full_page=True, timeout=30000)  # 30秒
         except PlaywrightTimeoutError:
             self.log("⚠️ 截图超时，跳过截图", "WARN")
-        self.notifier.send_photo(
-            photo_path=path,
-            caption=f"❌ Leaflow 登录失败\n账号: {mask_email(user)}\n原因: {reason}"
+        self.notifier.send(
+            
+            title=f"❌ Leaflow 登录失败\n",content=f"账号: {mask_email(user)}\n原因: {reason}",image_path=path
         )
+
 
 
     # ---------- 登录 ----------
@@ -183,7 +184,7 @@ class LeaflowTask:
         self.log(f"打开签到页: {CHECKIN_URL}", "STEP")
         for attempt in range(3):
             try:
-                page.goto(CHECKIN_URL, wait_until="load", timeout=120000)
+                page.goto(CHECKIN_URL, wait_until="domcontentloaded", timeout=120000)
                 break
             except PlaywrightTimeoutError:
                 self.log(f"⚠️ 第 {attempt+1} 次访问签到页失败，重试中...", "WARN")
@@ -231,47 +232,55 @@ class LeaflowTask:
         new_sessions = {}
 
         for account, proxy in zip(accounts, proxies):
-            user = account["username"]
-            pwd = account["password"]
-
-            self.log(f"开始处理账号: {mask_email(user)}", "STEP")
-            self.log(f"检测代理: {mask_ip(proxy['server'])}", "STEP")
-            test_proxy(proxy)
-
-            storage = None
-            if user in lf_locals:
-                storage = decode_storage(lf_locals[user])
-
-            pw = browser = None
             try:
-                pw, browser, page = self.open_browser(proxy, storage)
-
-                refreshed = self.ensure_login(page, user, pwd)
-                self.do_checkin(page)
-
-                if refreshed or not storage:
-                    self.log("更新 storage", "STEP")
-                    new_sessions[user] = page.context.storage_state()
-
+                user = account["username"]
+                pwd = account["password"]
+    
+                self.log(f"开始处理账号: {mask_email(user)}", "STEP")
+                self.log(f"检测代理: {mask_ip(proxy['server'])}", "STEP")
+                test_proxy(proxy)
+    
+                storage = None
+                if user in lf_locals:
+                    storage = decode_storage(lf_locals[user])
+    
+                pw = browser = None
+                try:
+                    pw, browser, page = self.open_browser(proxy, storage)
+    
+                    refreshed = self.ensure_login(page, user, pwd)
+                    self.do_checkin(page)
+    
+                    if refreshed or not storage:
+                        self.log("更新 storage", "STEP")
+                        new_sessions[user] = page.context.storage_state()
+    
+                except Exception as e:
+                    self.log(f"{mask_email(user)} 登录异常: {e}", "ERROR")
+                    if page:
+                        self.capture_and_notify(page, user, str(e))
+    
+                finally:
+                    if browser:
+                        try:
+                            browser.close()
+                        except Exception:
+                            pass
+                    if pw:
+                        try:
+                            pw.stop()
+                        except Exception:
+                            pass
+                    if self.gost_proc:
+                        self.gost_proc.terminate()
+                        self.gost_proc = None
             except Exception as e:
-                self.log(f"{mask_email(user)} 登录异常: {e}", "ERROR")
-                if page:
+                self.log(f"处理账号 {user} 时发生未预期错误: {e}", "ERROR")
+                # 可以在这里增加一层保护，防止 notifier 本身报错导致崩溃
+                try:
                     self.capture_and_notify(page, user, str(e))
-
-            finally:
-                if browser:
-                    try:
-                        browser.close()
-                    except Exception:
-                        pass
-                if pw:
-                    try:
-                        pw.stop()
-                    except Exception:
-                        pass
-                if self.gost_proc:
-                    self.gost_proc.terminate()
-                    self.gost_proc = None
+            except:
+                pass
 
         if new_sessions:
             self.log("📝 准备回写 GitHub Secret", "STEP")
@@ -280,7 +289,7 @@ class LeaflowTask:
             self.log("✅ Secret 回写成功", "SUCCESS")
 
         self.log("🔔 开始发送通知", "STEP")
-        self.notifier.send("Leaflow 自动签到结果", "\n".join(self.logs))
+        self.notifier.send(title="Leaflow 自动签到结果", content="\n".join(self.logs))
 
 
 if __name__ == "__main__":
