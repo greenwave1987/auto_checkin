@@ -198,7 +198,7 @@ class LeaflowTask:
                     browser.close()
                 if pw:
                     pw.stop()
-
+            return
         # ---------- 回写 session ----------
         if new_sessions:
             self.log("更新 LEAFLOW_LOCALS", "STEP")
