@@ -279,75 +279,73 @@ class LeaflowTask:
     # --- A. 基础数据解析 ---
     def process_leaflow_api(self, json_data):
         """
-        解析 Leaflow API 返回的 JSON 数据
-        返回字典：包含用户名、金额统计、签到状态及趋势图流
+        解析 Leaflow API 数据并生成统计报表
         """
+        # 1. 安全提取各级数据
         props = json_data.get("props", {})
         user_info = props.get("auth", {}).get("user", {})
         records = props.get("records", {}).get("data", [])
-    
-        # --- 1. 定义内部工具：UTC 转 北京时间 ---
+        
+        # --- 工具：UTC转北京时间对象 ---
         def to_bj_dt(utc_str):
             if not utc_str: return None
-            # 处理 2026-01-24T16:50:18.000000Z
+            # 处理 ISO 格式: 2026-01-24T16:50:18.000000Z
             dt = datetime.fromisoformat(utc_str.replace('Z', '+00:00'))
             return dt.astimezone(timezone(timedelta(hours=8)))
     
-        # --- 2. 核心字段提取 ---
+        # 2. 初始化结果结构
         res = {
             "username": user_info.get("name", "Unknown"),
             "balance": props.get("balance", "0.00"),
             "consumed": props.get("totalConsumed", "0.00"),
-            "last_checkin_time": "无记录",
+            "last_checkin_str": "无记录",
             "is_checked_today": False,
-            "daily_history": {}, # 每天签到记录统计
-            "chart_buf": None    # 图片流
+            "history_map": {},    # 用于绘图的数据
+            "chart_stream": None  # 图片流
         }
     
-        # --- 3. 解析签到记录 (按北京时间) ---
+        # 3. 处理签到记录
         now_bj = datetime.now(timezone(timedelta(hours=8)))
-        today_str = now_bj.strftime("%Y-%m-%d")
+        today_date = now_bj.strftime("%Y-%m-%d")
     
         if records:
-            # 记录最后一次签到时间
+            # 获取最近一次记录的时间
             last_dt = to_bj_dt(records[0].get("created_at"))
             if last_dt:
-                res["last_checkin_time"] = last_dt.strftime("%Y-%m-%d %H:%M:%S")
+                res["last_checkin_str"] = last_dt.strftime("%Y-%m-%d %H:%M:%S")
     
-            # 遍历历史记录进行统计
+            # 统计历史（处理每天多笔记录的情况）
             for r in reversed(records):
-                if "签到" in r.get("remark", ""):
+                if "奖励" in r.get("remark", "") or "签到" in r.get("remark", ""):
                     bj_dt = to_bj_dt(r.get("created_at"))
                     if bj_dt:
-                        date_key = bj_dt.strftime("%Y-%m-%d")
+                        d_str = bj_dt.strftime("%Y-%m-%d")
                         amount = float(r.get("amount", 0))
+                        res["history_map"][d_str] = res["history_map"].get(d_str, 0) + amount
                         
-                        # 汇总每天的金额
-                        res["daily_history"][date_key] = res["daily_history"].get(date_key, 0) + amount
-                        
-                        # 判断今日是否已签到
-                        if date_key == today_str:
+                        # 判定今日是否已签到
+                        if d_str == today_date:
                             res["is_checked_today"] = True
     
-        # --- 4. 绘图逻辑 ---
-        if res["daily_history"]:
+        # 4. 绘图 (Matplotlib)
+        if res["history_map"]:
             plt.figure(figsize=(10, 5))
-            # 仅取最近10条日期展示，避免横轴拥挤
-            dates = list(res["daily_history"].keys())[-10:]
-            amounts = [res["daily_history"][d] for d in dates]
-    
-            plt.plot(dates, amounts, marker='o', color='#10a37f', linewidth=2)
+            dates = list(res["history_map"].keys())[-12:] # 取最近12天
+            amounts = [res["history_map"][d] for d in dates]
+            
+            plt.plot(dates, amounts, marker='o', color='#10a37f', linewidth=2, label="Bonus")
             plt.fill_between(dates, amounts, color='#10a37f', alpha=0.1)
-            plt.title(f"Check-in Rewards: {res['username']}", fontsize=12)
+            plt.title(f"Reward Trend: {res['username']}")
             plt.xticks(rotation=30)
-            plt.grid(True, linestyle=':', alpha=0.6)
+            plt.grid(True, linestyle=':', alpha=0.5)
             plt.tight_layout()
     
+            # 转换成 BytesIO 图片流
             buf = io.BytesIO()
             plt.savefig(buf, format='png')
-            buf.seek(0) # 指针回到开头
+            buf.seek(0)
             plt.close()
-            res["photo_stream"] = buf
+            res["chart_stream"] = buf
     
         return res
 
