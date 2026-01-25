@@ -137,7 +137,7 @@ class LeaflowTask:
         try:
             page.screenshot(path=path, full_page=True, timeout=30000)  # 30秒
         except PlaywrightTimeoutError:
-            self.log("⚠️ 截图超时，跳过截图", "WARN")
+            self.log("截图超时，跳过截图", "WARN")
         self.notifier.send(
             
             title=f"❌ Leaflow 登录失败\n",content=f"账号: {mask_email(user)}\n原因: {reason}",image_path=path
@@ -215,7 +215,7 @@ class LeaflowTask:
             report = self.process_leaflow_api(raw_info)
             
             if report['is_checked_today']:
-                self.log(f"✅ 今日已签到 (用户: {report['username']}, 余额: {report['balance']})", "SUCCESS")
+                self.log(f"今日已签到 (用户: {report['username']}, 余额: {report['balance']})", "SUCCESS")
                 
                 status_emoji = "✅" if report["is_checked_today"] else "❌"
                 msg = (
@@ -270,7 +270,7 @@ class LeaflowTask:
                 page.goto(CHECKIN_URL, wait_until="domcontentloaded", timeout=120000)
                 break
             except PlaywrightTimeoutError:
-                self.log(f"⚠️ 第 {attempt+1} 次访问签到页失败，重试中...", "WARN")
+                self.log(f"第 {attempt+1} 次访问签到页失败，重试中...", "WARN")
                 time.sleep(2)
         else:
             raise RuntimeError("访问签到页失败")
@@ -284,7 +284,7 @@ class LeaflowTask:
         # 查找立即签到按钮
         btn = page.locator('button.checkin-btn')
         if btn.count() == 0:
-            self.log("⚠️ 未发现签到按钮，可能页面未完全加载或已签到", "WARN")
+            self.log("未发现签到按钮，可能页面未完全加载或已签到", "WARN")
             return
     
         # 点击签到
@@ -298,10 +298,10 @@ class LeaflowTask:
             if checked_div.count() > 0:
                 self.log("签到成功", "SUCCESS")
             else:
-                self.log("⚠️ 点击签到按钮后未检测到签到状态", "WARN")
+                self.log("点击签到按钮后未检测到签到状态", "WARN")
     
         except PlaywrightTimeoutError:
-            self.log("⚠️ 点击签到按钮超时，可能页面未完全渲染", "WARN")
+            self.log("点击签到按钮超时，可能页面未完全渲染", "WARN")
     # ---------- 数据处理与图表生成 ----------
     def process_leaflow_api(self, json_data):
         """
@@ -437,12 +437,12 @@ class LeaflowTask:
             #break
             
         if new_sessions:
-            self.log("📝 准备回写 GitHub Secret", "STEP")
+            self.log("准备回写 GitHub Secret", "STEP")
             encoded = {k: encode_storage(v) for k, v in new_sessions.items()}
             self.secret.update(encoded)
-            self.log("✅ Secret 回写成功", "SUCCESS")
+            self.log("Secret 回写成功", "SUCCESS")
 
-        self.log("🔔 开始发送通知", "STEP")
+        self.log("开始发送通知", "STEP")
         #self.notifier.send(title="Leaflow 自动签到结果", content="\n".join(self.logs))
 
 
