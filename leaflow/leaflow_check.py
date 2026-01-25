@@ -259,7 +259,7 @@ class LeaflowTask:
     # ---------- 签到 ----------
     def do_checkin(self, page):
         # 1. 先通过 API 获取数据判断是否签到
-        if self.get_checkin_info(page)：
+        if self.get_checkin_info(page):
             return
               
         # 2. 如果未签到，执行点击逻辑...
