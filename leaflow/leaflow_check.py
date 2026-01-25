@@ -315,8 +315,8 @@ class LeaflowTask:
         # 2. 初始化结果结构f"{props.get("totalConsumed", "0.00"):.2f}"
         res = {
             "username": user_info.get("name", "Unknown"),
-            "balance": f'{props.get("balance", "0.00"):.2f}',
-            "consumed": f'{props.get("totalConsumed", "0.00"):.2f}',
+            "balance": f'{float(props.get("balance", 0)):.2f}',
+            "consumed": f'{float(props.get("totalConsumed", 0)):.2f}',
             "last_checkin_time": "无记录",
             "last_checkin_amount": "无记录",
             "is_checked_today": False,
@@ -341,8 +341,8 @@ class LeaflowTask:
                     bj_dt = to_beijing_time(r.get("created_at"))
                     if bj_dt:
                         date_key = bj_dt.strftime("%Y-%m-%d")
-                        amount = float(r.get("amount", 0))
-                        
+                        amount = f'{ float(r.get("amount", 0)):.2f}'
+  
                         # 汇总每天的金额
                         res["daily_history"][date_key] = res["daily_history"].get(date_key, 0) + amount
                         
