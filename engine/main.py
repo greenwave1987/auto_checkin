@@ -559,16 +559,17 @@ def test_proxy(proxy_info, timeout=5):
 def to_beijing_time(utc_str):
     if not utc_str or "无记录" in utc_str:
         return "无记录"
-    # 解析 ISO 格式字符串 (例如: 2026-01-24T16:50:18.000000Z)
-    # 兼容处理：替换 Z 为 +00:00 方便 datetime 解析
-    utc_dt = datetime.fromisoformat(utc_str.replace('Z', '+00:00'))
-    
-    # 转换到东八区 (北京时间)
-    beijing_dt = utc_dt.astimezone(timezone(timedelta(hours=8)))
-    
-    # 返回格式化后的字符串
-    return beijing_dt.strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        # 解析 ISO 格式字符串 (例如: 2026-01-24T16:50:18.000000Z)
+        # 兼容处理：替换 Z 为 +00:00 方便 datetime 解析
+        utc_dt = datetime.fromisoformat(utc_str.replace('Z', '+00:00'))
+        
+        # 转换到东八区 (北京时间)
+        return utc_dt.astimezone(timezone(timedelta(hours=8)))
 
+    except:
+        return None
 # 示例分析你刚才的数据：
 # 输入: 2026-01-24T16:50:18.000000Z
 # 输出: 2026-01-25 00:50:18 (北京时间)
+
