@@ -207,13 +207,10 @@ class LeaflowTask:
         except Exception as e:
             self.log(f"API 数据获取失败: {e}", "WARN")
             return None
-        
-
     # ---------- 签到 ----------
-    def do_checkin(self, page):
+    def get_checkin_info(self, page):
         # 1. 先通过 API 获取数据
         raw_info = self.get_balance_data(page)
-        
         if raw_info:
             report = self.process_leaflow_api(raw_info)
             
@@ -254,8 +251,17 @@ class LeaflowTask:
                         self.notifier.send(title="Leaflow 签到报告", content=msg)
                 else:
                     self.notifier.send(title="Leaflow 签到报告", content=msg)
-                return
+                #已签到，返回True
+                return True
+            else:
+                self.log(f"今日还未签到!", "WARN")
 
+    # ---------- 签到 ----------
+    def do_checkin(self, page):
+        # 1. 先通过 API 获取数据判断是否签到
+        if self.get_checkin_info(page)：
+            return
+              
         # 2. 如果未签到，执行点击逻辑...
         self.log("API 显示未签到，准备执行点击签到...", "STEP")
         self.log(f"打开签到页: {CHECKIN_URL}", "STEP")
