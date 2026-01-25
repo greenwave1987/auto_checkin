@@ -344,7 +344,7 @@ class LeaflowTask:
                         amount = f'{ float(r.get("amount", 0)):.2f}'
   
                         # 汇总每天的金额
-                        res["daily_history"][date_key] = res["daily_history"].get(date_key, 0) + amount
+                        res["daily_history"][date_key] = amount
                         
                         # 判定今日是否已签到
                         if date_key == today_str:
