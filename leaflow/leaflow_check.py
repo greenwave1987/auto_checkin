@@ -223,10 +223,10 @@ class LeaflowTask:
                 status_emoji = "✅" if report["is_checked_today"] else "❌"
                 msg = (
                     f"📊 **Leaflow 资产报告**\n"
-                    f"👤 用户: `{report['username']}`\n"
-                    f"💰 余额: `{report['balance']}`\n"
-                    f"📉 已用: `{report['consumed']}`\n"
-                    f"🕒 签到: `{report['last_checkin_time']}`\n"
+                    f"👤 用户: {report['username']}\n"
+                    f"💰 余额: {report['balance']}\n"
+                    f"📉 已用: {report['consumed']}\n"
+                    f"🕒 签到: {report['last_checkin_time']}\n"
                     f"📅 今日: {status_emoji}"
                 )
                 
