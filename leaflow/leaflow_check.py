@@ -227,6 +227,7 @@ class LeaflowTask:
                     f"💰 余额: {report['balance']}\n"
                     f"📉 已用: {report['consumed']}\n"
                     f"🕒 签到: {report['last_checkin_time']}\n"
+                    f"💴 奖励: {report['last_checkin_amount']}\n"
                     f"📅 今日: {status_emoji}"
                 )
                 
@@ -304,16 +305,6 @@ class LeaflowTask:
         props = json_data.get("props", {})
         user_info = props.get("auth", {}).get("user", {})
         records = props.get("records", {}).get("data", [])
-        
-        # --- 工具：UTC转北京时间对象 ---
-        def to_bj_dt(utc_str):
-            if not utc_str: return None
-            # 兼容处理: 2026-01-24T16:50:18.000000Z
-            try:
-                dt = datetime.fromisoformat(utc_str.replace('Z', '+00:00'))
-                return dt.astimezone(timezone(timedelta(hours=8)))
-            except:
-                return None
 
         # 2. 初始化结果结构
         res = {
@@ -321,6 +312,7 @@ class LeaflowTask:
             "balance": round(props.get("balance", "0.00"), 2),
             "consumed": round(props.get("totalConsumed", "0.00"), 2),
             "last_checkin_time": "无记录",
+            "last_checkin_amount": "无记录",
             "is_checked_today": False,
             "daily_history": {},  # 用于绘图
             "chart_buf": None     # 图片流
@@ -332,7 +324,7 @@ class LeaflowTask:
 
         if records:
             # 记录最后一次签到时间
-            last_dt = to_bj_dt(records[0].get("created_at"))
+            last_dt = to_beijing_time(records[0].get("created_at"))
             if last_dt:
                 res["last_checkin_time"] = last_dt.strftime("%Y-%m-%d %H:%M:%S")
 
@@ -340,7 +332,7 @@ class LeaflowTask:
             for r in reversed(records):
                 remark = r.get("remark", "")
                 if "奖励" in remark or "签到" in remark:
-                    bj_dt = to_bj_dt(r.get("created_at"))
+                    bj_dt = to_beijing_time(r.get("created_at"))
                     if bj_dt:
                         date_key = bj_dt.strftime("%Y-%m-%d")
                         amount = float(r.get("amount", 0))
@@ -351,7 +343,7 @@ class LeaflowTask:
                         # 判定今日是否已签到
                         if date_key == today_str:
                             res["is_checked_today"] = True
-
+            res["last_checkin_time"] = res["daily_history"].get(today_str, 0)
         # 4. 绘图逻辑
         if res["daily_history"]:
             plt.figure(figsize=(10, 5))
