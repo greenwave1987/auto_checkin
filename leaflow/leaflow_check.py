@@ -315,8 +315,8 @@ class LeaflowTask:
         # 2. 初始化结果结构f"{props.get("totalConsumed", "0.00"):.2f}"
         res = {
             "username": user_info.get("name", "Unknown"),
-            "balance": f"{props.get("balance", "0.00"):.2f}",
-            "consumed": f"{props.get("totalConsumed", "0.00"):.2f}",
+            "balance": f'{props.get("balance", "0.00"):.2f}',
+            "consumed": f'{props.get("totalConsumed", "0.00"):.2f}',
             "last_checkin_time": "无记录",
             "last_checkin_amount": "无记录",
             "is_checked_today": False,
