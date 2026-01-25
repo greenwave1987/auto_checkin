@@ -341,15 +341,17 @@ class LeaflowTask:
                     bj_dt = to_beijing_time(r.get("created_at"))
                     if bj_dt:
                         date_key = bj_dt.strftime("%Y-%m-%d")
-                        amount = f'{ float(r.get("amount", 0)):.2f}'
+                        amount = float(r.get("amount", 0))
+                        
   
                         # 汇总每天的金额
-                        res["daily_history"][date_key] = amount
+                        res["daily_history"][date_key] = res["daily_history"].get(date_key, 0) + amount
                         
                         # 判定今日是否已签到
                         if date_key == today_str:
                             res["is_checked_today"] = True
-            res["last_checkin_time"] = res["daily_history"].get(today_str, 0)
+            res["last_checkin_amount"] = f'{ float(res["daily_history"].get(today_str, 0)):.2f}'
+            
         # 4. 绘图逻辑
         if res["daily_history"]:
             plt.figure(figsize=(10, 5))
