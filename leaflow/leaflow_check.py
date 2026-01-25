@@ -312,11 +312,11 @@ class LeaflowTask:
         user_info = props.get("auth", {}).get("user", {})
         records = props.get("records", {}).get("data", [])
 
-        # 2. 初始化结果结构
+        # 2. 初始化结果结构f"{props.get("totalConsumed", "0.00"):.2f}"
         res = {
             "username": user_info.get("name", "Unknown"),
-            "balance": round(props.get("balance", "0.00"), 2),
-            "consumed": round(props.get("totalConsumed", "0.00"), 2),
+            "balance": f"{props.get("balance", "0.00"):.2f}",
+            "consumed": f"{props.get("totalConsumed", "0.00"):.2f}",
             "last_checkin_time": "无记录",
             "last_checkin_amount": "无记录",
             "is_checked_today": False,
