@@ -271,7 +271,7 @@ class LeaflowTask:
         # 先检查是否已经签到
         checked_div = page.locator('div.mt-2.mb-1.text-muted.small', has_text="今日已签到")
         if checked_div.count() > 0:
-            self.log("✅ 今日已签到，跳过点击", "SUCCESS")
+            self.log("今日已签到，跳过点击", "SUCCESS")
             return
     
         # 查找立即签到按钮
@@ -289,7 +289,7 @@ class LeaflowTask:
             # 点击后再次确认是否签到成功
             checked_div = page.locator('div.mt-2.mb-1.text-muted.small', has_text="今日已签到")
             if checked_div.count() > 0:
-                self.log("✅ 签到成功", "SUCCESS")
+                self.log("签到成功", "SUCCESS")
             else:
                 self.log("⚠️ 点击签到按钮后未检测到签到状态", "WARN")
     
@@ -318,8 +318,8 @@ class LeaflowTask:
         # 2. 初始化结果结构
         res = {
             "username": user_info.get("name", "Unknown"),
-            "balance": props.get("balance", "0.00"),
-            "consumed": props.get("totalConsumed", "0.00"),
+            "balance": round(props.get("balance", "0.00"), 2),
+            "consumed": round(props.get("totalConsumed", "0.00"), 2),
             "last_checkin_time": "无记录",
             "is_checked_today": False,
             "daily_history": {},  # 用于绘图
