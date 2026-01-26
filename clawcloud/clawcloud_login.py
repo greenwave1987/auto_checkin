@@ -1099,7 +1099,7 @@ def main():
         #cc_info['gh_password'] = account.get('password')
         cc_info['cc_proxy'] = proxy
         cc_info['notify'] = notify
-        cc_info['wz_proxy'] = proxies[4]
+        cc_info['wz_proxy'] = proxies[-1]
 
         if isinstance(gh_sessions, dict):
             gh_session = gh_sessions.get(username,'')
