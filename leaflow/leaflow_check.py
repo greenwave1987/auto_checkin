@@ -313,6 +313,8 @@ class LeaflowTask:
                 else:
                     self.capture_and_notify(page, self.user, f"签到最终失败: {str(e)}")
                     raise RuntimeError("签到流程重试耗尽")
+            if self.get_checkin_info(page):
+                break
     # ---------- 签到 ----------  
     def jdo_checkin(self, page):
         # 1. 先通过 API 获取数据判断是否签到
