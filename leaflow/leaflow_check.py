@@ -213,8 +213,9 @@ class LeaflowTask:
         raw_info = self.get_balance_data(page)
         if raw_info:
             report = self.process_leaflow_api(raw_info)
-            
+            self.user=report['username']
             if report['is_checked_today']:
+                
                 self.log(f"今日已签到 (用户: {report['username']}, 余额: {report['balance']})", "SUCCESS")
                 
                 status_emoji = "✅" if report["is_checked_today"] else "❌"
@@ -275,18 +276,24 @@ class LeaflowTask:
                 self.log(f"第 {attempt+1} 次访问签到页失败，重试中...", "WARN")
                 time.sleep(2)
         else:
+            if page:
+                self.capture_and_notify(page, self.user, "访问签到页失败")
             raise RuntimeError("访问签到页失败")
     
         # 先检查是否已经签到
         checked_div = page.locator('div.mt-2.mb-1.text-muted.small', has_text="今日已签到")
         if checked_div.count() > 0:
             self.log("今日已签到，跳过点击", "SUCCESS")
+            if page:
+                self.capture_and_notify(page, self.user, "今日已签到!")
             return
     
         # 查找立即签到按钮
         btn = page.locator('button.checkin-btn')
         if btn.count() == 0:
             self.log("未发现签到按钮，可能页面未完全加载或已签到", "WARN")
+            if page:
+                self.capture_and_notify(page, self.user, "未发现签到按钮，可能页面未完全加载或已签到!")
             return
     
         # 点击签到
@@ -301,9 +308,13 @@ class LeaflowTask:
                 self.log("签到成功", "SUCCESS")
             else:
                 self.log("点击签到按钮后未检测到签到状态", "WARN")
+                if page:
+                    self.capture_and_notify(page, self.user, "点击签到按钮后未检测到签到状态")
     
         except PlaywrightTimeoutError:
             self.log("点击签到按钮超时，可能页面未完全渲染", "WARN")
+            if page:
+                self.capture_and_notify(page, self.user, 点击签到按钮超时，可能页面未完全渲染")
     # ---------- 数据处理与图表生成 ----------
     def process_leaflow_api(self, json_data):
         """
