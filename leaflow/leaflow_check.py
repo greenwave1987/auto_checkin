@@ -258,64 +258,61 @@ class LeaflowTask:
                 self.log(f"今日还未签到!", "WARN")
 
 
-    # ---------- 签到 (增强保险版) ----------
+    # ---------- 签到 (终极稳健版) ----------
     def do_checkin(self, page):
-        # 1. 先通过 API 获取数据判断是否签到
         if self.get_checkin_info(page):
             return
               
-        # 2. 如果未签到，执行点击逻辑...
         self.log("API 显示未签到，准备执行点击签到...", "STEP")
         
-        # 定义签到按钮的选择器
         checkin_btn_selector = 'button.checkin-btn'
         success_text_selector = 'div.mt-2.mb-1.text-muted.small:has-text("今日已签到")'
         
-        for attempt in range(3):  # 增加到3次重试
+        for attempt in range(3):
             try:
                 self.log(f"第 {attempt+1} 次尝试访问签到页: {CHECKIN_URL}", "STEP")
                 
-                # 增加等待直到网络接近空闲
-                page.goto(CHECKIN_URL, wait_until="networkidle", timeout=90000)
+                # 优化点 1: 使用 domcontentloaded 减少因加载某个图片/广告导致的 90s 超时
+                page.goto(CHECKIN_URL, wait_until="domcontentloaded", timeout=60000)
                 
-                # 第一次等待：给页面 JS 渲染时间
-                self.log("等待页面元素渲染...", "INFO")
-                try:
-                    # 动态等待按钮出现，而不是死等20秒
-                    page.wait_for_selector(checkin_btn_selector, state="visible", timeout=30000)
-                except:
-                    self.log("未直接发现按钮，尝试滚动页面并等待...", "WARN")
-                    page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                    time.sleep(5)
-
-                # 检查是否其实已经签到了（防止API延迟）
+                # 检查是否已签到（防止 API 缓存导致的误判）
+                # 等待 5 秒给 JS 执行时间
+                time.sleep(5)
                 if page.locator(success_text_selector).count() > 0:
-                    self.log("页面显示今日已签到，跳过点击", "SUCCESS")
+                    self.log("页面检测到今日已签到", "SUCCESS")
+                    if page:
+                        self.capture_and_notify(page, self.user, "今日已签到!")
+                    
                     return
 
-                # 查找并点击
-                btn = page.locator(checkin_btn_selector).first
-                if btn.is_visible():
-                    self.log("发现签到按钮，准备点击", "SUCCESS")
-                    btn.click(timeout=30000)
+                # 优化点 2: 显式等待按钮可见
+                self.log("等待签到按钮出现...", "INFO")
+                btn = page.wait_for_selector(checkin_btn_selector, state="visible", timeout=30000)
+                
+                if btn:
+                    self.log("发现签到按钮，执行点击", "SUCCESS")
+                    # 优化点 3: 增加点击前的小延迟，模拟真人操作
+                    time.sleep(2)
+                    btn.click()
                     
-                    # 点击后等待确认信息
-                    page.wait_for_selector(success_text_selector, state="visible", timeout=20000)
-                    self.log("点击成功，检测到已签到状态", "SUCCESS")
-                    return
-                else:
-                    raise RuntimeError("按钮不可见")
+                    # 优化点 4: 循环检查签到状态（最多等 15 秒）
+                    for _ in range(15):
+                        if page.locator(success_text_selector).count() > 0:
+                            self.log("签到确认成功", "SUCCESS")
+                            return
+                        time.sleep(1)
+                    if page:
+                        self.capture_and_notify(page, self.user, "点击了按钮但状态未更新!")
+                    raise RuntimeError("点击了按钮但状态未更新")
 
             except Exception as e:
-                self.log(f"第 {attempt+1} 次尝试失败: {str(e)}", "WARN")
+                self.log(f"第 {attempt+1} 次尝试异常: {str(e)}", "WARN")
                 if attempt < 2:
-                    self.log("等待 10 秒后进行下一次重试...", "INFO")
+                    # 失败后刷新页面或等待重试
                     time.sleep(10)
                 else:
-                    # 最后一次失败，截图
-                    if page:
-                        self.capture_and_notify(page, self.user, f"连续3次访问签到页异常: {str(e)}")
-                    raise RuntimeError("签到页访问或操作最终失败")
+                    self.capture_and_notify(page, self.user, f"签到最终失败: {str(e)}")
+                    raise RuntimeError("签到流程重试耗尽")
     # ---------- 签到 ----------  
     def jdo_checkin(self, page):
         # 1. 先通过 API 获取数据判断是否签到
