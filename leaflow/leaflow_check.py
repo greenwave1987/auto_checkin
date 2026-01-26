@@ -315,7 +315,7 @@ class LeaflowTask:
         except PlaywrightTimeoutError:
             self.log("点击签到按钮超时，可能页面未完全渲染", "WARN")
             if page:
-                self.capture_and_notify(page, self.user, 点击签到按钮超时，可能页面未完全渲染")
+                self.capture_and_notify(page, self.user, "点击签到按钮超时，可能页面未完全渲染")
     # ---------- 数据处理与图表生成 ----------
     def process_leaflow_api(self, json_data):
         """
