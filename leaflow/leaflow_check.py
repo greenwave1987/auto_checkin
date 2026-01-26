@@ -289,6 +289,7 @@ class LeaflowTask:
             return
     
         # 查找立即签到按钮
+        time.sleep(20)
         btn = page.locator('button.checkin-btn')
         if btn.count() == 0:
             self.log("未发现签到按钮，可能页面未完全加载或已签到", "WARN")
