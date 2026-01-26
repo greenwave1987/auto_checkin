@@ -264,10 +264,12 @@ class LeaflowTask:
               
         # 2. 如果未签到，执行点击逻辑...
         self.log("API 显示未签到，准备执行点击签到...", "STEP")
-        self.log(f"打开签到页: {CHECKIN_URL}", "STEP")
+        
         for attempt in range(3):
             try:
+                self.log(f"第 {attempt+1} 次打开签到页: {CHECKIN_URL}", "STEP")
                 page.goto(CHECKIN_URL, wait_until="domcontentloaded", timeout=120000)
+                time.sleep(20)
                 break
             except PlaywrightTimeoutError:
                 self.log(f"第 {attempt+1} 次访问签到页失败，重试中...", "WARN")
