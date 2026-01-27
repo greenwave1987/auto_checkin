@@ -30,6 +30,9 @@ def mask_email(email: str):
     name, domain = email.split("@", 1)
     return f"{name[:2]}***{name[-2:]}@{domain}"
 
+def mask_name(name: str):
+    return f"{name[:2]}***{name[-2:]}"
+
 
 def mask_ip(ip: str):
     return f"***{ip}" if ip else "***"
@@ -216,12 +219,12 @@ class LeaflowTask:
             self.user=report['username']
             if report['is_checked_today']:
                 
-                self.log(f"今日已签到 (用户: {report['username']}, 余额: {report['balance']})", "SUCCESS")
+                self.log(f"今日已签到 (用户: {mask_name(report['username'])}, 余额: {report['balance']})", "SUCCESS")
                 
                 status_emoji = "✅" if report["is_checked_today"] else "❌"
                 msg = (
                     f"📊 **Leaflow 资产报告**\n"
-                    f"👤 用户: {report['username']}\n"
+                    f"👤 用户: {mask_name(report['username'])}\n"
                     f"💰 余额: {report['balance']}\n"
                     f"📉 已用: {report['consumed']}\n"
                     f"🕒 签到: {report['last_checkin_time']}\n"
@@ -435,7 +438,7 @@ class LeaflowTask:
 
             plt.plot(dates, amounts, marker='o', color='#10a37f', linewidth=2)
             plt.fill_between(dates, amounts, color='#10a37f', alpha=0.1)
-            plt.title(f"Check-in Rewards: {res['username']}", fontsize=12)
+            plt.title(f"Check-in Rewards: {mask_name(res['username'])}", fontsize=12)
             plt.xticks(rotation=30)
             plt.grid(True, linestyle=':', alpha=0.6)
             plt.tight_layout()
