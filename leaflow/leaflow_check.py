@@ -286,6 +286,7 @@ class LeaflowTask:
                     if page:
                         self.capture_and_notify(page, self.user, "今日已签到!")
                     
+                    self.get_checkin_info(page)
                     return
 
                 # 优化点 2: 显式等待按钮可见
