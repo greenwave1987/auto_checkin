@@ -458,6 +458,7 @@ class LeaflowTask:
 
         for account, proxy in zip(accounts, proxies):
             try:
+                print("\n" + "="*50)
                 user = account["username"]
                 pwd = account["password"]
     
