@@ -299,10 +299,13 @@ class LeaflowTask:
                     for _ in range(15):
                         if page.locator(success_text_selector).count() > 0:
                             self.log("签到确认成功", "SUCCESS")
-                            return
-                        time.sleep(1)
+                            break
+                        time.sleep(5)
+                    
                     if page:
-                        self.capture_and_notify(page, self.user, "点击了按钮但状态未更新!")
+                        self.capture_and_notify(page, self.user, "签到状态!")
+                    if self.get_checkin_info(page):
+                        return
                     raise RuntimeError("点击了按钮但状态未更新")
 
             except Exception as e:
@@ -313,8 +316,7 @@ class LeaflowTask:
                 else:
                     self.capture_and_notify(page, self.user, f"签到最终失败: {str(e)}")
                     raise RuntimeError("签到流程重试耗尽")
-            if self.get_checkin_info(page):
-                break
+
     # ---------- 签到 ----------  
     def jdo_checkin(self, page):
         # 1. 先通过 API 获取数据判断是否签到
