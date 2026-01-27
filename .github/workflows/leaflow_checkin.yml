@@ -3,7 +3,7 @@ name: Leaflow 自动签到
 on:
   workflow_dispatch:   # 手动触发
   schedule:
-    - cron: "15 23,11 */1 * *"  # 每天 UTC 1:15 和 13:15，可改为你的时间
+    - cron: "15 23,11 */1 * *"  # 每天 UTC 23:15 and 11:15，可改为你的时间
 
 jobs:
   checkin:
