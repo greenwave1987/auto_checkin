@@ -469,6 +469,8 @@ class LeaflowTask:
                 print("\n" + "="*50)
                 user = account["username"]
                 pwd = account["password"]
+
+                proxy=proxies[-1]
     
                 self.log(f"开始处理账号: {mask_email(user)}", "STEP")
                 self.log(f"检测代理: {mask_ip(proxy['server'])}", "STEP")
