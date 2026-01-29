@@ -188,6 +188,8 @@ class LeaflowTask:
         return False
     # ---------- 获取金额信息 ----------  
     def get_balance_data(self, page):
+        page.goto(DASHBOARD_URL)
+        page.wait_for_load_state("networkidle")
         self.log("正在通过 API 获取账户余额信息...", "STEP")
         # 注入 fetch 脚本
         api_script = """
