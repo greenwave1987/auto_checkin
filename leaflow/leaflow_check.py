@@ -271,7 +271,7 @@ class LeaflowTask:
         checkin_btn_selector = 'button.checkin-btn'
         success_text_selector = 'div.mt-2.mb-1.text-muted.small:has-text("今日已签到")'
         
-        for attempt in range(20):
+        for attempt in range(15):
             try:
                 self.log(f"第 {attempt+1} 次尝试访问签到页: {CHECKIN_URL}", "STEP")
                 
@@ -280,7 +280,7 @@ class LeaflowTask:
                 
                 # 检查是否已签到（防止 API 缓存导致的误判）
                 # 等待 5 秒给 JS 执行时间
-                time.sleep(5)
+                time.sleep(15)
                 if page.locator(success_text_selector).count() > 0:
                     self.log("页面检测到今日已签到", "SUCCESS")
                     if page:
@@ -296,7 +296,7 @@ class LeaflowTask:
                 if btn:
                     self.log("发现签到按钮，执行点击", "SUCCESS")
                     # 优化点 3: 增加点击前的小延迟，模拟真人操作
-                    time.sleep(2)
+                    time.sleep(5)
                     btn.click()
                     
                     # 优化点 4: 循环检查签到状态（最多等 15 秒）
@@ -304,7 +304,7 @@ class LeaflowTask:
                         if page.locator(success_text_selector).count() > 0:
                             self.log("签到确认成功", "SUCCESS")
                             break
-                        time.sleep(5)
+                        time.sleep(15)
                     
                     if page:
                         self.capture_and_notify(page, self.user, "签到状态!")
@@ -314,7 +314,7 @@ class LeaflowTask:
 
             except Exception as e:
                 self.log(f"第 {attempt+1} 次尝试异常: {str(e)}", "WARN")
-                if attempt < 2:
+                if attempt < 14:
                     # 失败后刷新页面或等待重试
                     time.sleep(10)
                 else:
@@ -330,7 +330,7 @@ class LeaflowTask:
         # 2. 如果未签到，执行点击逻辑...
         self.log("API 显示未签到，准备执行点击签到...", "STEP")
         
-        for attempt in range(3):
+        for attempt in range(15):
             try:
                 self.log(f"第 {attempt+1} 次打开签到页: {CHECKIN_URL}", "STEP")
                 page.goto(CHECKIN_URL, wait_until="domcontentloaded", timeout=120000)
