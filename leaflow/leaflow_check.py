@@ -271,7 +271,7 @@ class LeaflowTask:
         checkin_btn_selector = 'button.checkin-btn'
         success_text_selector = 'div.mt-2.mb-1.text-muted.small:has-text("今日已签到")'
         
-        for attempt in range(3):
+        for attempt in range(20):
             try:
                 self.log(f"第 {attempt+1} 次尝试访问签到页: {CHECKIN_URL}", "STEP")
                 
