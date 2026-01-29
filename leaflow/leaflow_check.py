@@ -143,7 +143,7 @@ class LeaflowTask:
             self.log("截图超时，跳过截图", "WARN")
         self.notifier.send(
             
-            title=f"❌ Leaflow 登录失败\n",content=f"账号: {mask_email(user)}\n原因: {reason}",image_path=path
+            title=f"ℹ️ Leaflow 登录\n",content=f"账号: {mask_name(user)}\n原因: {reason}",image_path=path
         )
 
 
