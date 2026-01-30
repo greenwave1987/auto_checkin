@@ -459,7 +459,7 @@ class LeaflowTask:
         self.log("Leaflow 多账号任务启动", "STEP")
 
         accounts = self.config.get_value("LF_INFO") or []
-        proxies = self.config.get_value("PROXY_INFO") or []
+        proxies = self.config.get_value("WZ_INFO") or []
         lf_locals = self.secret.load() or {}
 
         new_sessions = {}
@@ -470,7 +470,7 @@ class LeaflowTask:
                 user = account["username"]
                 pwd = account["password"]
 
-                proxy=proxies[-1]
+                #proxy=proxies[-1]
     
                 self.log(f"开始处理账号: {mask_email(user)}", "STEP")
                 self.log(f"检测代理: {mask_ip(proxy['server'])}", "STEP")
