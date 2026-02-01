@@ -331,7 +331,7 @@ class AutoLogin:
                     return result
                 if res_data.get("code") == 401:
 
-                    result = f"⚠️  code:{res_data.get("code")} ,message:{res_data["message"]} "
+                    result = f"⚠️  code:{res_data.get('code')} ,message:{res_data.get('message')} "
                     print(result)
                     return result
                 print(f"  ⏳ [等待重试] 响应: {res_data.get('message')}")
