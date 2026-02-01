@@ -889,8 +889,8 @@ class AutoLogin:
                 datetime.datetime.utcfromtimestamp(lastLogin / 1000)
                 + datetime.timedelta(hours=8)
             ).replace(second=0, microsecond=0)
-            if diff_ms >= 20 * DAY_MS:
-                self.log(f"上次登录{dt},已过20天，重新登录！", "WARN")
+            if diff_ms >= 10 * DAY_MS:
+                self.log(f"上次登录{dt},已过10天，重新登录！", "WARN")
             else:
                 self.log(f"上次登录{dt},查询余额！", "INFO")
                 msg=f"上次登录{dt}\n    余额："
