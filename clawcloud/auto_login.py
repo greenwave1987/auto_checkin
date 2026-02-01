@@ -21,7 +21,7 @@ from playwright.sync_api import sync_playwright
 # ==================== 配置 ====================
 # 代理配置 (留空则不使用)
 # 格式: socks5://user:pass@host:port 或 http://user:pass@host:port
-PROXY_DSN = os.environ.get("PROXY_DSN", "").strip()
+PROXY_DSN = ""#os.environ.get("PROXY_DSN", "").strip()
 
 # 固定登录入口，OAuth后会自动跳转到实际区域
 LOGIN_ENTRY_URL = "https://us-west-1.run.claw.cloud/login"
