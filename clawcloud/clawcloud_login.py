@@ -329,6 +329,11 @@ class AutoLogin:
                     result = f"💵  {total:.2f} - 📉  {used:.2f} = 🔋 {total-used:.2f} $"
                     print(result)
                     return result
+                if res_data.get("code") == 401:
+
+                    result = f"⚠️  code:{res_data.get("code")} ,message:{res_data["message"]} "
+                    print(result)
+                    return result
                 print(f"  ⏳ [等待重试] 响应: {res_data.get('message')}")
                 time.sleep(5)
             
@@ -892,6 +897,7 @@ class AutoLogin:
             ).replace(second=0, microsecond=0)
             if diff_ms >= 10 * DAY_MS:
                 self.log(f"上次登录{dt},已过10天，重新登录！", "WARN")
+                msg= f"上次登录{dt},已过10天，重新登录！"
             else:
                 self.log(f"上次登录{dt},查询余额！", "INFO")
                 msg=f"上次登录{dt}\n    余额："
