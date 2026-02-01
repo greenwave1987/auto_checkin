@@ -322,6 +322,7 @@ class AutoLogin:
                 res = session.get(api_url, proxies=proxies, timeout=60)
                 res.raise_for_status()
                 res_data = res.json()
+                print(res_data)
                 if res_data.get("code") == 200:
                     plan = res_data["data"]["creditsUsage"]["currentPlan"]
                     total, used = plan["total"] / 1000000, plan["used"] / 1000000
