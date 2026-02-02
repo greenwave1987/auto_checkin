@@ -900,7 +900,7 @@ class AutoLogin:
                 self.log(f"上次登录{dt},已过10天，重新登录！", "WARN")
                 msg+= f"上次登录{dt},已过10天，重新登录！"
             else:
-                self.log(f"上次登录{dt},查询余额！", "INFO")
+                self.log(f"上次登录{dt}！", "INFO")
                 msg+=f"上次登录{dt}\n "
                 #msg+=self.get_balance_with_token()#七天有效期，失效无法查询
                 return True, None,msg
