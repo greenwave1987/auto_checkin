@@ -317,7 +317,8 @@ class AutoLogin:
         session=self.build_session(self.app_token)
         try:
             api_url = f"https://{self.host}/api/accountcenter/creditsUsage"
-            #https://ap-northeast-1.run.claw.cloud/api/accountcenter/creditsUsage
+            print(api_url)
+            api_url = f"https://ap-northeast-1.run.claw.cloud/api/accountcenter/creditsUsage"
             for retry in range(2):
                 res = session.get(api_url, proxies=proxies, timeout=60)
                 res.raise_for_status()
