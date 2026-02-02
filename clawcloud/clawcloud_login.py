@@ -49,7 +49,23 @@ def get_notifier():
     if _notifier is None:
         _notifier = TelegramNotifier(config)
     return _notifier
+# ==================== 工具函数 ====================
+def mask_email(email: str):
+    if "@" not in email:
+        return "***"
+    name, domain = email.split("@", 1)
+    return f"{name[:2]}***{name[-2:]}@{domain}"
 
+def mask_name(name: str):
+    return f"{name[:2]}***{name[-2:]}"
+
+
+def mask_ip(ip: str):
+    return f"***{ip}" if ip else "***"
+
+
+def mask_password(pwd: str):
+    return "*" * 6 + f"({len(pwd)})"
 
 class AutoLogin:
     """自动登录，因 GH_SESSIION 每日更新，不考虑登录github，直接注入GH_SESSIION"""
@@ -1101,8 +1117,8 @@ def main():
     for account, proxy  in zip(accounts, proxies):
         username=account['username']
 
-        print(f"\n🚀 开始处理账号: {username}\n  🌐 使用代理: {proxy['server'][:-4]}***\n")
-        results.append(f"🚀 账号：{username}\n    🌐 使用代理: {proxy['server'][:-4]}***\n")
+        print(f"\n🚀 开始处理账号: {mask_name(username)}\n  🌐 使用代理: {proxy['server'][:-4]}***\n")
+        results.append(f"🚀 账号：{mask_name(username)}\n    🌐 使用代理: {proxy['server'][:-4]}***\n")
         cc_info={}
         cc_info['gh_username'] = username
         #cc_info['gh_password'] = account.get('password')
