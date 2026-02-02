@@ -317,7 +317,7 @@ class AutoLogin:
         session=self.build_session(self.app_token)
         try:
             api_url = f"https://{self.host}/api/accountcenter/creditsUsage"
-            
+            #https://ap-northeast-1.run.claw.cloud/api/accountcenter/creditsUsage
             for retry in range(2):
                 res = session.get(api_url, proxies=proxies, timeout=60)
                 res.raise_for_status()
@@ -897,10 +897,10 @@ class AutoLogin:
             ).replace(second=0, microsecond=0)
             if diff_ms >= 10 * DAY_MS:
                 self.log(f"上次登录{dt},已过10天，重新登录！", "WARN")
-                msg= f"上次登录{dt},已过10天，重新登录！"
+                msg+= f"上次登录{dt},已过10天，重新登录！"
             else:
                 self.log(f"上次登录{dt},查询余额！", "INFO")
-                msg=f"上次登录{dt}\n    余额："
+                msg+=f"上次登录{dt}\n    余额："
                 msg+=self.get_balance_with_token()
                 return True, None,msg
                 
@@ -1020,25 +1020,26 @@ class AutoLogin:
                 if not self.detected_region:
                     self.detect_region(current_url)
                 self.shot(page, "找不到 GitHub 按钮")
-                # 3. 查询余额和登录信息
-                self.log("步骤3: 查询余额和登录信息", "STEP")
-                msg+=self.get_balance_with_token()
+
                 
-                # 4. 提取并保存新 local_storage
-                self.log("步骤4: 更新 local_storage", "STEP")
+                # 3. 提取并保存新 local_storage
+                self.log("步骤3: 更新 local_storage", "STEP")
                 storage_state = self.get_storage(context)
                 if storage_state:
                     #print_dict_tree(storage_state)
                     storage_state_json = json.dumps(storage_state, ensure_ascii=False)
-                    
+                    self.cc_local=storage_state_json
                     storage_state_b64 = base64.b64encode(storage_state_json.encode("utf-8")).decode("utf-8")
-                    print(f"STORAGE_STATE_B64={storage_state_b64}")
+                    #print(f"STORAGE_STATE_B64={storage_state_b64}")
                     ok=True
                     new_local=storage_state_b64
                 else:
                     self.log("未获取到 storage_state", "WARN")
                 
-                msg= "✅ 成功！"
+                # 4. 查询余额和登录信息
+                self.log("步骤4: 查询余额和登录信息", "STEP")
+                msg+=self.get_balance_with_token()
+                #msg+= "✅ 成功！"
                 print("\n" + "="*50)
                 print("✅ 成功！")
                 if self.detected_region:
