@@ -852,7 +852,7 @@ class AutoLogin:
         print("🚀 ClawCloud 自动登录")
         print("="*50 + "\n")
         ok, new_local,msg = False,  None, f"🚀 ClawCloud 自动登录\n"
-        self.log(f"用户名: {self.gh_username}")
+        self.log(f"用户名: {mask_name(self.gh_username)}")
         self.log(f"Session: {'有' if self.gh_session else '无'}")
         #self.log(f"密码: {'有' if self.password else '无'}")
         self.log(f"登录入口: {LOGIN_ENTRY_URL}")
