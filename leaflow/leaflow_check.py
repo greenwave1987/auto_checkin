@@ -138,7 +138,7 @@ class LeaflowTask:
     def capture_and_notify(self, page, user, reason):
         path = f"{SCREENSHOT_DIR}/{user}_{int(time.time())}.png"
         try:
-            page.screenshot(path=path, full_page=True, timeout=30000)  # 30秒
+            page.screenshot(path=path, full_page=True, timeout=60000)  # 30秒
         except PlaywrightTimeoutError:
             self.log("截图超时，跳过截图", "WARN")
         self.notifier.send(
@@ -293,7 +293,7 @@ class LeaflowTask:
 
                 # 优化点 2: 显式等待按钮可见
                 self.log("等待签到按钮出现...", "INFO")
-                btn = page.wait_for_selector(checkin_btn_selector, state="visible", timeout=30000)
+                btn = page.wait_for_selector(checkin_btn_selector, state="visible", timeout=60000)
                 
                 if btn:
                     self.log("发现签到按钮，执行点击", "SUCCESS")
