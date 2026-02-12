@@ -205,7 +205,7 @@ class LeaflowTask:
                 try:
                     resp = page.evaluate("""
                         async () => {
-                            const r = await fetch("/api/user/points");
+                            const r = await fetch("/api/workspaces/current/all");
                             return r.status;
                         }
                     """)
