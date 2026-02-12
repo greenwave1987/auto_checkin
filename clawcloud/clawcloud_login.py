@@ -1101,7 +1101,7 @@ def main():
     # 初始化 SecretUpdater，会自动根据当前仓库用户名获取 token
     secret = SecretUpdater("CLAWCLOUD_LOCALS", config_reader=config)
     # 读取
-    cc_locals = secret.load() or {}
+    cc_locals = secret.load() or None
     
 
     if not accounts:
