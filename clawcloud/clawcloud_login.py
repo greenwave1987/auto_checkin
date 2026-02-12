@@ -897,29 +897,34 @@ class AutoLogin:
 
                 except Exception as e:
                     self.log(f"代理配置解析失败: {e}", "ERROR")
+            
+            
 
             """
             与当前时间比较，是否相差 >= 20 天
             ts_ms: 毫秒时间戳
             """
-            lastLogin=int(self.lastLogin)
-            now_ms = int(time.time() * 1000)
-            diff_ms = abs(now_ms - lastLogin)
-        
-            DAY_MS = 24 * 60 * 60 * 1000
-            dt = (
-                datetime.datetime.utcfromtimestamp(lastLogin / 1000)
-                + datetime.timedelta(hours=8)
-            ).replace(second=0, microsecond=0)
-            if diff_ms >= 7 * DAY_MS:
-                self.log(f"上次登录{dt},已过7天，重新登录！", "WARN")
-                msg+= f"上次登录{dt},已过7天，重新登录！"
+            if self.lastLogin:
+                    
+                lastLogin=int(self.lastLogin)
+                now_ms = int(time.time() * 1000)
+                diff_ms = abs(now_ms - lastLogin)
+            
+                DAY_MS = 24 * 60 * 60 * 1000
+                dt = (
+                    datetime.datetime.utcfromtimestamp(lastLogin / 1000)
+                    + datetime.timedelta(hours=8)
+                ).replace(second=0, microsecond=0)
+                if diff_ms >= 7 * DAY_MS:
+                    self.log(f"上次登录{dt},已过7天，重新登录！", "WARN")
+                    msg+= f"上次登录{dt},已过7天，重新登录！"
+                else:
+                    self.log(f"上次登录{dt}！", "INFO")
+                    msg+=f"上次登录{dt}\n "
+                    msg+=self.get_balance_with_token()#七天有效期，失效无法查询
+                    return True, None,msg
             else:
-                self.log(f"上次登录{dt}！", "INFO")
-                msg+=f"上次登录{dt}\n "
-                msg+=self.get_balance_with_token()#七天有效期，失效无法查询
-                return True, None,msg
-                
+                self.log("无历史登录记录，直接登录", "WARN")
                 
             
             browser = p.chromium.launch(**launch_args)
