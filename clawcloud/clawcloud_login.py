@@ -853,7 +853,7 @@ class AutoLogin:
     
     def run(self):
 
-        ok, new_local,msg = False,  None, f"🚀 ClawCloud 自动登录\n"
+        ok, new_local,msg = False,  None, ""
         self.log(f"用户名: {mask_name(self.gh_username)}")
         self.log(f"Session: {'有' if self.gh_session else '无'}")
         #self.log(f"密码: {'有' if self.password else '无'}")
@@ -1180,13 +1180,13 @@ def main():
     
             if ok:
                 print(f"    ✅ 执行成功")
-                results.append(f"    ✅ {msg}")
+                results.append(f"    ✅ {msg}\n")
                 if new_local:
                     print(f"    ✅ 保存新 new_local")
                     cc_locals[username]=new_local
             else:
                 print(f"    ⚠️ 执行失败，不保存 cookie")
-                results.append(f"    ⚠️ 执行失败:{msg}")
+                results.append(f"    ⚠️ 执行失败:{msg}\n")
     
         except Exception as e:
             print(f"    ❌ 执行异常: {e}")
