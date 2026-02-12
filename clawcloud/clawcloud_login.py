@@ -320,6 +320,7 @@ class AutoLogin:
 
     def get_balance_with_token(self):
         print(f"📊 [步骤 8] 正在查询余额...")
+        
         proxies = None
         if self.proxy_url:
             proxies = {
@@ -912,9 +913,9 @@ class AutoLogin:
                 datetime.datetime.utcfromtimestamp(lastLogin / 1000)
                 + datetime.timedelta(hours=8)
             ).replace(second=0, microsecond=0)
-            if diff_ms >= 10 * DAY_MS:
-                self.log(f"上次登录{dt},已过10天，重新登录！", "WARN")
-                msg+= f"上次登录{dt},已过10天，重新登录！"
+            if diff_ms >= 6 * DAY_MS:
+                self.log(f"上次登录{dt},已过6天，重新登录！", "WARN")
+                msg+= f"上次登录{dt},已过6天，重新登录！"
             else:
                 self.log(f"上次登录{dt}！", "INFO")
                 msg+=f"上次登录{dt}\n "
@@ -1055,6 +1056,7 @@ class AutoLogin:
                 
                 # 4. 查询余额和登录信息
                 self.log("步骤4: 查询余额和登录信息", "STEP")
+                self.auth_token,self.app_token,self.lastLogin=self.get_local_token()
                 msg+=self.get_balance_with_token()
                 #msg+= "✅ 成功！"
                 print("\n" + "="*50)
