@@ -174,139 +174,139 @@ class LeaflowTask:
 
         self.log("登录成功", "SUCCESS")
 
-# ---------- 验证 storage ----------
-def ensure_login(self, page, user, pwd, max_retry=10):
-    """
-    验证 storage 是否有效
-    失败自动重试
-    返回:
-        True  -> 执行了重新登录
-        False -> storage 有效
-    """
-
-    for attempt in range(1, max_retry + 1):
-        try:
-            self.log(f"验证登录状态 (第 {attempt}/{max_retry} 次)", "INFO")
-
-            page.goto(DASHBOARD_URL, timeout=60000)
-            page.wait_for_load_state("domcontentloaded", timeout=30000)
-
-            # 给页面一点时间跳转
-            page.wait_for_timeout(2000)
-
-            current_url = page.url.lower()
-
-            if "login" in current_url:
-                self.log("storage 已失效，重新登录", "WARN")
-                self.do_login(page, user, pwd)
-                return True
-
-            # 可选：额外验证接口（更稳）
+    # ---------- 验证 storage ----------
+    def ensure_login(self, page, user, pwd, max_retry=10):
+        """
+        验证 storage 是否有效
+        失败自动重试
+        返回:
+            True  -> 执行了重新登录
+            False -> storage 有效
+        """
+    
+        for attempt in range(1, max_retry + 1):
             try:
-                resp = page.evaluate("""
-                    async () => {
-                        const r = await fetch("/api/user/points");
-                        return r.status;
-                    }
-                """)
-                if resp != 200:
-                    raise Exception(f"接口状态异常: {resp}")
-            except:
-                self.log("接口验证失败，尝试重新登录", "WARN")
-                self.do_login(page, user, pwd)
-                return True
-
-            self.log("storage 有效，跳过登录", "SUCCESS")
-            return False
-
-        except Exception as e:
-            self.log(f"验证异常: {str(e)}", "ERROR")
-
-            if attempt < max_retry:
-                self.log("等待后重试...", "WARN")
-                page.wait_for_timeout(3000)
-                continue
-            else:
-                self.log("多次失败，强制重新登录", "ERROR")
-                self.do_login(page, user, pwd)
-                return True
-
-    # ---------- 获取金额信息 ----------
-def get_balance_data(self, page, max_retry=3):
-    """
-    通过 API 获取账户余额信息
-    自动重试 + 状态校验
-    """
-
-    api_script = """
-    async () => {
-        try {
-            const response = await fetch("https://leaflow.net/balance", {
-                headers: {
-                    "x-inertia": "true",
-                    "x-inertia-version": "1da8f358bacd543adbf104c91fa91267",
-                    "x-requested-with": "XMLHttpRequest"
-                },
-                method: "GET"
-            });
-
-            return {
-                status: response.status,
-                ok: response.ok,
-                data: response.ok ? await response.json() : null
-            };
-
-        } catch (err) {
-            return {
-                status: -1,
-                ok: false,
-                error: err.toString()
-            };
+                self.log(f"验证登录状态 (第 {attempt}/{max_retry} 次)", "INFO")
+    
+                page.goto(DASHBOARD_URL, timeout=60000)
+                page.wait_for_load_state("domcontentloaded", timeout=30000)
+    
+                # 给页面一点时间跳转
+                page.wait_for_timeout(2000)
+    
+                current_url = page.url.lower()
+    
+                if "login" in current_url:
+                    self.log("storage 已失效，重新登录", "WARN")
+                    self.do_login(page, user, pwd)
+                    return True
+    
+                # 可选：额外验证接口（更稳）
+                try:
+                    resp = page.evaluate("""
+                        async () => {
+                            const r = await fetch("/api/user/points");
+                            return r.status;
+                        }
+                    """)
+                    if resp != 200:
+                        raise Exception(f"接口状态异常: {resp}")
+                except:
+                    self.log("接口验证失败，尝试重新登录", "WARN")
+                    self.do_login(page, user, pwd)
+                    return True
+    
+                self.log("storage 有效，跳过登录", "SUCCESS")
+                return False
+    
+            except Exception as e:
+                self.log(f"验证异常: {str(e)}", "ERROR")
+    
+                if attempt < max_retry:
+                    self.log("等待后重试...", "WARN")
+                    page.wait_for_timeout(3000)
+                    continue
+                else:
+                    self.log("多次失败，强制重新登录", "ERROR")
+                    self.do_login(page, user, pwd)
+                    return True
+    
+        # ---------- 获取金额信息 ----------
+    def get_balance_data(self, page, max_retry=3):
+        """
+        通过 API 获取账户余额信息
+        自动重试 + 状态校验
+        """
+    
+        api_script = """
+        async () => {
+            try {
+                const response = await fetch("https://leaflow.net/balance", {
+                    headers: {
+                        "x-inertia": "true",
+                        "x-inertia-version": "1da8f358bacd543adbf104c91fa91267",
+                        "x-requested-with": "XMLHttpRequest"
+                    },
+                    method: "GET"
+                });
+    
+                return {
+                    status: response.status,
+                    ok: response.ok,
+                    data: response.ok ? await response.json() : null
+                };
+    
+            } catch (err) {
+                return {
+                    status: -1,
+                    ok: false,
+                    error: err.toString()
+                };
+            }
         }
-    }
-    """
-
-    for attempt in range(1, max_retry + 1):
-        try:
-            self.log(f"获取余额信息 (第 {attempt}/{max_retry} 次)", "STEP")
-
-            page.goto(DASHBOARD_URL, timeout=60000)
-            page.wait_for_load_state("domcontentloaded", timeout=30000)
-            page.wait_for_timeout(2000)
-
-            result = page.evaluate(api_script)
-
-            # JS执行异常
-            if result is None:
-                raise Exception("返回数据为空")
-
-            # 网络错误
-            if result.get("status") == -1:
-                raise Exception(result.get("error"))
-
-            # 未登录
-            if result.get("status") in [401, 403]:
-                self.log("检测到登录失效", "WARN")
-                return "LOGIN_EXPIRED"
-
-            # 成功
-            if result.get("ok"):
-                self.log("余额信息获取成功", "SUCCESS")
-                return result.get("data")
-
-            # 其他异常状态
-            raise Exception(f"HTTP {result.get('status')}")
-
-        except Exception as e:
-            self.log(f"获取失败: {str(e)}", "WARN")
-
-            if attempt < max_retry:
-                self.log("等待后重试...", "INFO")
-                page.wait_for_timeout(3000)
-                continue
-            else:
-                self.log("多次失败，放弃获取余额", "ERROR")
-                return None
+        """
+    
+        for attempt in range(1, max_retry + 1):
+            try:
+                self.log(f"获取余额信息 (第 {attempt}/{max_retry} 次)", "STEP")
+    
+                page.goto(DASHBOARD_URL, timeout=60000)
+                page.wait_for_load_state("domcontentloaded", timeout=30000)
+                page.wait_for_timeout(2000)
+    
+                result = page.evaluate(api_script)
+    
+                # JS执行异常
+                if result is None:
+                    raise Exception("返回数据为空")
+    
+                # 网络错误
+                if result.get("status") == -1:
+                    raise Exception(result.get("error"))
+    
+                # 未登录
+                if result.get("status") in [401, 403]:
+                    self.log("检测到登录失效", "WARN")
+                    return "LOGIN_EXPIRED"
+    
+                # 成功
+                if result.get("ok"):
+                    self.log("余额信息获取成功", "SUCCESS")
+                    return result.get("data")
+    
+                # 其他异常状态
+                raise Exception(f"HTTP {result.get('status')}")
+    
+            except Exception as e:
+                self.log(f"获取失败: {str(e)}", "WARN")
+    
+                if attempt < max_retry:
+                    self.log("等待后重试...", "INFO")
+                    page.wait_for_timeout(3000)
+                    continue
+                else:
+                    self.log("多次失败，放弃获取余额", "ERROR")
+                    return None
 
     # ---------- 签到 ----------
     def get_checkin_info(self, page):
