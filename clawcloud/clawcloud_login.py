@@ -928,14 +928,14 @@ class AutoLogin:
                 
             
             browser = p.chromium.launch(**launch_args)
-            
-            
+            n=0
+            self.log(n=n+1, "WARN")
             context = browser.new_context(
                 storage_state=self.cc_local,
                 viewport={'width': 1920, 'height': 1080},
                 user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
             )
-            
+            self.log(n=n+1, "WARN")
             page = context.new_page()
             page.add_init_script("""
                 // 基础反检测
@@ -964,9 +964,11 @@ class AutoLogin:
                     originalQuery(parameters)
                 );
             """)
+            self.log(n=n+1, "WARN")
             try:
                 # 预加载 加载gh_session
                 if self.gh_session:
+                    self.log(n=n+1, "WARN")
                     try:
                         context.add_cookies([
                             {'name': 'user_session', 'value': self.gh_session, 'domain': 'github.com', 'path': '/'},
