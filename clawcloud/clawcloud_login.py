@@ -213,18 +213,21 @@ class AutoLogin:
         根据 origin 获取对应的 localStorage
         """
         if not isinstance(self.cc_local, dict):
+            self.log(f"❌ get_local_storage_by_origin: self.cc_local格式不对 {self.cc_local}", "ERROR")
             return []
     
         origins = self.cc_local.get("origins", [])
         if not isinstance(origins, list):
+            self.log(f"❌ get_local_storage_by_origin: origins格式不对 {origins}", "ERROR")
             return []
     
         for o in origins:
             if not isinstance(o, dict):
+                self.log(f"❌ get_local_storage_by_origin: origin格式不对 {o}", "ERROR")
                 continue
             if self.host in o.get("origin"):
                 return o.get("localStorage", [])
-    
+        self.log(f"❌ get_local_storage_by_origin: []", "ERROR")
         return []
     def get_local_token(self):
         local_storage=self.get_local_storage_by_origin()
