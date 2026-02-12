@@ -175,7 +175,7 @@ class LeaflowTask:
         self.log("登录成功", "SUCCESS")
 
     # ---------- 验证 storage ----------
-    def ensure_login(self, page, user, pwd, max_retry=10):
+    def ensure_login(self, page, user, pwd, max_retry=5):
         """
         验证 storage 是否有效
         失败自动重试
@@ -189,10 +189,10 @@ class LeaflowTask:
                 self.log(f"验证登录状态 (第 {attempt}/{max_retry} 次)", "INFO")
     
                 page.goto(DASHBOARD_URL, timeout=60000)
-                page.wait_for_load_state("domcontentloaded", timeout=30000)
+                page.wait_for_load_state("domcontentloaded", timeout=60000)
     
                 # 给页面一点时间跳转
-                page.wait_for_timeout(2000)
+                page.wait_for_timeout(60000)
     
                 current_url = page.url.lower()
     
@@ -232,7 +232,7 @@ class LeaflowTask:
                     return True
     
         # ---------- 获取金额信息 ----------
-    def get_balance_data(self, page, max_retry=3):
+    def get_balance_data(self, page, max_retry=5):
         """
         通过 API 获取账户余额信息
         自动重试 + 状态校验
