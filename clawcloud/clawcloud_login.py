@@ -1115,7 +1115,7 @@ def main():
     # 初始化 SecretUpdater，会自动根据当前仓库用户名获取 token
     secret = SecretUpdater("CLAWCLOUD_LOCALS", config_reader=config)
     # 读取
-    cc_locals = secret.load() or {}
+    cc_locals = secret.load() 
     
 
     if not accounts:
@@ -1166,7 +1166,8 @@ def main():
                 except Exception as e:
                     print(f"❌ 加载 storage_state 失败: {e}")
         else:
-            print(f"⚠️ cc_locals 格式错误！")
+            print(f"⚠️ cc_locals 格式错误！{cc_locals}")
+            cc_locals={}
             cc_info['cc_local'] = []
 
         try:
