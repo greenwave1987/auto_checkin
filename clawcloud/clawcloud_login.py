@@ -231,7 +231,7 @@ class AutoLogin:
         # 从localStorage中提取token
         auth_token = None
         app_token = None
-        lastLogin=None
+        lastLogin=0
         for ls in local_storage:
             if ls.get('name')=='lastLoginUpdateTime':
                 lastLogin = ls['value']
@@ -849,9 +849,7 @@ class AutoLogin:
         return "invalid"
     
     def run(self):
-        print("\n" + "="*50)
-        print("🚀 ClawCloud 自动登录")
-        print("="*50 + "\n")
+
         ok, new_local,msg = False,  None, f"🚀 ClawCloud 自动登录\n"
         self.log(f"用户名: {mask_name(self.gh_username)}")
         self.log(f"Session: {'有' if self.gh_session else '无'}")
@@ -1118,8 +1116,10 @@ def main():
     # 使用 zip 实现一一对应
     for account, proxy  in zip(accounts, proxies):
         username=account['username']
-
+        print("\n" + "="*50)
         print(f"\n🚀 开始处理账号: {mask_name(username)}\n  🌐 使用代理: {proxy['server'][:-4]}***\n")
+        print("="*50 + "\n")
+        
         results.append(f"🚀 账号：{mask_name(username)}\n    🌐 使用代理: {proxy['server'][:-4]}***\n")
         cc_info={}
         cc_info['gh_username'] = username
