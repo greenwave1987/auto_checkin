@@ -335,11 +335,12 @@ class AutoLogin:
 
                 
         session=self.build_session(self.app_token)
-        try:
-            api_url = f"https://{self.host}/api/accountcenter/creditsUsage"
-            print(api_url)
-            api_url = f"https://ap-northeast-1.run.claw.cloud/api/accountcenter/creditsUsage"
-            for retry in range(2):
+        
+        api_url = f"https://{self.host}/api/accountcenter/creditsUsage"
+        print(api_url)
+        api_url = f"https://ap-northeast-1.run.claw.cloud/api/accountcenter/creditsUsage"
+        for retry in range(2):
+            try:
                 res = session.get(api_url, proxies=proxies, timeout=60)
                 res.raise_for_status()
                 res_data = res.json()
@@ -358,8 +359,8 @@ class AutoLogin:
                 print(f"  ⏳ [等待重试] 响应: {res_data.get('message')}")
                 time.sleep(5)
             
-        except Exception as e:
-            print(f"⚠️ [提取异常] {e}")
+            except Exception as e:
+                print(f"⚠️ [提取异常] {e}")
         return None
 
     
