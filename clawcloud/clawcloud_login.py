@@ -66,7 +66,39 @@ def mask_ip(ip: str):
 
 def mask_password(pwd: str):
     return "*" * 6 + f"({len(pwd)})"
+def slim_storage_state(state):
+    """
+    精简 storage_state，只保留核心登录凭据，防止超过 GitHub 64KB 限制
+    """
+    if not isinstance(state, dict):
+        return state
 
+    # 1. 精简 Cookies：只保留 .claw.cloud 的
+    if "cookies" in state:
+        state["cookies"] = [
+            c for c in state["cookies"] 
+            if "claw.cloud" in c.get("domain", "")
+        ]
+
+    # 2. 精简 Origins：只保留核心 key，剔除没用的 UI 状态
+    if "origins" in state:
+        new_origins = []
+        # 核心关注的 localStorage 键名
+        essential_keys = ["session", "lastLoginUpdateTime", "i18nextLng"]
+        
+        for o in state["origins"]:
+            storage = o.get("localStorage", [])
+            # 过滤掉那些几百行长的无用缓存数据
+            slim_storage = [
+                item for item in storage 
+                if item.get("name") in essential_keys
+            ]
+            o["localStorage"] = slim_storage
+            new_origins.append(o)
+        
+        state["origins"] = new_origins
+
+    return state
 class AutoLogin:
     """自动登录，因 GH_SESSIION 每日更新，不考虑登录github，直接注入GH_SESSIION"""
     
@@ -1090,7 +1122,16 @@ class AutoLogin:
                     #print_dict_tree(storage_state)
                     storage_state_json = json.dumps(storage_state, ensure_ascii=False)
                     self.cc_local=storage_state_json
-                    storage_state_b64 = base64.b64encode(storage_state_json.encode("utf-8")).decode("utf-8")
+
+                    self.log("开始为数据瘦身...")
+                    # 对数据进行过滤，剔除垃圾信息
+                    slimmest_local = slim_storage_state(storage_state_json)
+                    
+                    # 转换为 JSON 字符串前可以检查下大小
+                    final_json = json.dumps(slimmest_local)
+                    self.log(f"瘦身完成，最终数据大小: {len(final_json) / 1024:.2f} KB")
+    
+                    storage_state_b64 = base64.b64encode(slimmest_local.encode("utf-8")).decode("utf-8")
                     #print(f"STORAGE_STATE_B64={storage_state_b64}")
                     ok=True
                     new_local=storage_state_b64
