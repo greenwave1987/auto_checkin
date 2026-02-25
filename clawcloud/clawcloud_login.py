@@ -210,6 +210,33 @@ class AutoLogin:
         ]
     def get_local_storage_by_origin(self):
         """
+        根据当前 host 动态匹配对应的 localStorage 数据
+        """
+        if not isinstance(self.cc_local, dict):
+            # 增加容错：如果 cc_local 是 JSON 字符串则解析
+            if isinstance(self.cc_local, str) and self.cc_local.strip().startswith('{'):
+                try:
+                    self.cc_local = json.loads(self.cc_local)
+                except:
+                    return []
+            else:
+                return []
+    
+        origins = self.cc_local.get("origins", [])
+        if not isinstance(origins, list):
+            return []
+    
+        for o in origins:
+            origin_url = o.get("origin", "")
+            # 核心逻辑改进：检查当前 self.host 是否在该 origin 字符串中
+            # 比如 host 是 'ap-northeast-1.run.claw.cloud'，匹配 'https://ap-northeast-1.run.claw.cloud'
+            if self.host in origin_url:
+                self.log(f"✅ 成功匹配存储域: {origin_url}", "SUCCESS")
+                return o.get("localStorage", [])
+                
+        return []
+    def jjjget_local_storage_by_origin(self):
+        """
         根据 origin 获取对应的 localStorage
         """
         if not isinstance(self.cc_local, dict):
