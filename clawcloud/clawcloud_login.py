@@ -1262,6 +1262,7 @@ def main():
             results.append(f"    ❌ 执行异常: {e}")
         #break
     # 写入
+    self.log(f"cc_locals数据大小: {len(cc_locals) / 1024:.2f} KB")
     secret.update(cc_locals)
     # 发送结果
     notify.send(
