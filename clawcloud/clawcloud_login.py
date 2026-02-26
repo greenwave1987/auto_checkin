@@ -1262,7 +1262,8 @@ def main():
             results.append(f"    ❌ 执行异常: {e}")
         #break
     # 写入
-    print(f"cc_locals数据大小: {len(cc_locals) / 1024:.2f} KB")
+    # 转换为 JSON 字符串前可以检查下大小
+    print(f"cc_locals数据大小: {len(json.dumps(cc_locals)) / 1024:.2f} KB")
     secret.update(cc_locals)
     # 发送结果
     notify.send(
