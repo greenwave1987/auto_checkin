@@ -1040,10 +1040,10 @@ class AutoLogin:
                             if self.click(page, "GitHub 登录按钮"):
                             
                                 try:
-                                    page.wait_for_url("**github.com**", timeout=15000)
+                                    page.wait_for_url("**github.com**", timeout=30000)
                                     self.log("✅ 已跳转 GitHub OAuth", "SUCCESS")
                                 except:
-                                    self.log("⚠️ 未检测到 GitHub 跳转，等待3秒", "WARN")
+                                    self.log(f"⚠️ {page.url}未检测到 GitHub 跳转，等待3秒", "WARN")
                                     page.wait_for_timeout(3000)
                             if not self.click(page, desc="GitHub 登录按钮"):
                                 shot = self.shot(page, "找不到 GitHub 按钮")
