@@ -3,7 +3,7 @@ name: tailscale keys维护
 on:
   workflow_dispatch:  # 手动触发
   schedule:
-    - cron: "55 1,13 */6 * *" # 每天北京时间 9:15 和 21:15 运行
+    - cron: "55 1 * */2 *" # 每天北京时间 9:15 和 21:15 运行
 
 jobs:
   checkin:
@@ -32,26 +32,26 @@ jobs:
           pip install playwright requests pyotp pynacl requests[socks] cryptography
           playwright install chromium --with-deps
 
-      - name: Run ClawCloud Task
+      - name: Run TailScale Task
         env:
           # 1. 核心解密密钥
           CONFIG_PASSWORD: ${{ secrets.CONFIG_PASSWORD }}
           
           # 2. 从 Secrets 获取的动态变量 (脚本会读取并全量回写)
           GH_SESSION: ${{ secrets.GH_SESSION }}
-          CLAWCLOUD_LOCALS: ${{ secrets.CLAWCLOUD_LOCALS }}
+          TAILSCALE_AUTH_KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
           
           # 3. GitHub 权限令牌 (SecretUpdater 必要)
           GITHUB_REPOSITORY: ${{ github.repository }}
 
         run: |
           # 确保脚本路径正确，例如放在 scripts 目录下
-          python -u clawcloud/clawcloud_login.py
+          python -u tailscale/tailscale.py
 
       - name: Upload Screenshot on Failure
         if: failure()  # 仅在失败时上传截图，节省空间
         uses: actions/upload-artifact@v4
         with:
-          name: clawcloud-debug-screenshots
+          name: tailscale-debug-screenshots
           path: "*.png"
           retention-days: 3
