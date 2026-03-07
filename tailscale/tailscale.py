@@ -1065,9 +1065,10 @@ class AutoLogin:
                                         self.log(f"[2.{i}.{j}]: github登录过期，{page.url}", "ERROR")
                                         self.shot(page, "找不到 GitHub 按钮")
                                         return False,  None, f"github登录过期！"   
-                    except:
+                    except Exception as e:
+
                         if i <10:
-                            self.log(f"[1.{i}]: 未打开登录页，重试", "WARN")
+                            self.log(f"[1.{i}]: {e}，重试", "WARN")
                             time.sleep(random.uniform(10, 15))
                         else:
                             self.log(f"[1.{i}]: 访问 {page.url} 失败！", "ERROR")
