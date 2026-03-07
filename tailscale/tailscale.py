@@ -160,8 +160,11 @@ class AutoLogin:
 
     def click(self, page, desc=""):
         """
-        专用于 Chakra UI / SPA / iframe 登录按钮
+        专用于 Tailscale GitHub 登录按钮 / Chakra UI / SPA / iframe 登录按钮点击
         """
+        import time, random
+        from playwright.sync_api import PlaywrightTimeoutError
+    
         self.log(f"🔍 尝试查找并点击: {desc}", "INFO")
     
         # 1️⃣ 等页面真正稳定（比 networkidle 更可靠）
@@ -171,40 +174,64 @@ class AutoLogin:
         except:
             pass
     
-        # 2️⃣ 收集主页面 + 所有 iframe
-        frames = [page.main_frame]
-        frames += page.frames
+        # 2️⃣ 收集所有 frame（page.frames 已包含 main_frame）
+        frames = page.frames
     
+        # 3️⃣ 最稳的 selector 列表
         selectors = [
-            # Chakra Button（最稳）
+            # Tailscale GitHub 登录按钮（最稳）
+            'button[name="submitbtn"]',
+            
+            # Tailscale class button
+            'button.button-sso',
+            
+            # Chakra UI 按钮
             'button.chakra-button',
     
-            # 带 GitHub svg 的按钮（极稳）
+            # 含 GitHub svg 的按钮
             'button:has(svg)',
     
+            # 根据文本匹配 GitHub
+            'button:has-text("GitHub")',
+    
             # XPath 兜底
-            '//button[.//text()[contains(., "GitHub")]]',
-            '//button[.//*[name()="svg"]]',
+            'xpath=//button[contains(.,"GitHub")]',
+            'xpath=//button[.//*[name()="svg"]]',
         ]
     
+        # 4️⃣ 遍历 frames 和 selector
         for frame in frames:
+    
+            self.log(f"🧭 检查 frame: {frame.url}", "DEBUG")
+    
             for sel in selectors:
                 try:
-                    el = frame.locator(sel).first
+                    locator = frame.locator(sel)
     
+                    if locator.count() == 0:
+                        continue
+    
+                    el = locator.first
                     el.wait_for(state="visible", timeout=5000)
     
-                    # 模拟人类
+                    # 模拟人类操作
                     time.sleep(random.uniform(0.5, 1.2))
+                    el.scroll_into_view_if_needed()
                     el.hover()
                     time.sleep(random.uniform(0.2, 0.4))
-                    el.click(force=True)
     
-                    self.log(f"已点击: {desc}", "SUCCESS")
+                    try:
+                        el.click(timeout=5000)
+                    except:
+                        # 兜底强制点击
+                        el.click(force=True)
+    
+                    self.log(f"✅ 已点击: {desc} | selector: {sel}", "SUCCESS")
                     return True
     
                 except PlaywrightTimeoutError:
-                    self.log(f"• 尝试点击失败: {sel}", "DEBUG")
+                    self.log(f"• selector 超时: {sel}", "DEBUG")
+    
                 except Exception as e:
                     self.log(f"• 点击异常: {sel} -> {e}", "DEBUG")
     
