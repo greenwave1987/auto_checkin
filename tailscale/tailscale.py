@@ -163,7 +163,6 @@ class AutoLogin:
         专用于 Tailscale GitHub 登录按钮 / Chakra UI / SPA / iframe 登录按钮点击
         """
         import time, random
-        from playwright.sync_api import PlaywrightTimeoutError
     
         self.log(f"🔍 尝试查找并点击: {desc}", "INFO")
     
