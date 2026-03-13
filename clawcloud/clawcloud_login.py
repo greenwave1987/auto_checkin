@@ -368,7 +368,7 @@ class AutoLogin:
             s.headers.update({
                     "authority": self.host,
                     "accept": "application/json, text/plain, */*",
-                    "authorization": token, # 纯 Token 模式
+                    "authorization": "Bearer "+token, # 纯 Token 模式
                     "referer": f"https://{self.host}/",
                     "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
             })
