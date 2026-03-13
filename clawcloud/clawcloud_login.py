@@ -396,7 +396,6 @@ class AutoLogin:
         session=self.build_session(self.app_token)
         
         api_url = f"https://{self.host}/api/accountcenter/creditsUsage"
-        print(api_url)
         api_url = f"https://ap-northeast-1.run.claw.cloud/api/accountcenter/creditsUsage"
         api_url = "https://account-center.ap-northeast-1.run.claw.cloud/api/plan/creditsUsage"
         for retry in range(2):
