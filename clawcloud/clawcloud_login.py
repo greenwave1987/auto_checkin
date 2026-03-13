@@ -398,6 +398,7 @@ class AutoLogin:
         api_url = f"https://{self.host}/api/accountcenter/creditsUsage"
         print(api_url)
         api_url = f"https://ap-northeast-1.run.claw.cloud/api/accountcenter/creditsUsage"
+        api_url = "https://account-center.ap-northeast-1.run.claw.cloud/api/plan/creditsUsage"
         for retry in range(2):
             try:
                 res = session.get(api_url, proxies=proxies, timeout=60)
@@ -405,7 +406,7 @@ class AutoLogin:
                 res_data = res.json()
                 print(res_data)
                 if res_data.get("code") == 200:
-                    plan = res_data["data"]["creditsUsage"]["currentPlan"]
+                    plan = res_data["data"]["currentPlan"]
                     total, used = plan["total"] / 1000000, plan["used"] / 1000000
                     result = f"💵  {total:.2f} - 📉  {used:.2f} = 🔋 {total-used:.2f} $"
                     print(result)
