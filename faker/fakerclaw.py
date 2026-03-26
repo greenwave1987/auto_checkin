@@ -124,10 +124,10 @@ class AutoLogin:
             # storage_state 本身是 dict，无需 strip
             self.fk_local = fk_local_val
         
-        self.cc_proxy = config.get('cc_proxy', '').strip() if isinstance(config.get('cc_proxy', ''), str) else config.get('cc_proxy')
-        self.proxy_url=test_proxy(self.cc_proxy)
+        self.fk_proxy = config.get('fk_proxy', '').strip() if isinstance(config.get('fk_proxy', ''), str) else config.get('fk_proxy')
+        self.proxy_url=test_proxy(self.fk_proxy)
         if not self.proxy_url:
-            self.cc_proxy = config.get('wz_proxy')
+            self.fk_proxy = config.get('wz_proxy')
             
         self.notify = config.get('notify')
         # self.secret = SecretUpdater()
@@ -390,7 +390,7 @@ class AutoLogin:
                 "https": self.proxy_url
             }
             
-            self.log(f"启用代理: {self.cc_proxy['server'][:-3]}***")
+            self.log(f"启用代理: {self.fk_proxy['server'][:-3]}***")
 
                 
         session=self.build_session(self.app_token)
@@ -936,9 +936,9 @@ class AutoLogin:
                 ]
             }
 
-            if self.cc_proxy:
+            if self.fk_proxy:
                 try:
-                    p_url = self.cc_proxy
+                    p_url = self.fk_proxy
                     # ===== 新增：socks5 带认证 → gost =====
                     if (
                         p_url.get("type") == "socks5"
@@ -1214,7 +1214,7 @@ def main():
         fk_info={}
         fk_info['gh_username'] = username
         #fk_info['gh_password'] = account.get('password')
-        fk_info['cc_proxy'] = proxy
+        fk_info['fk_proxy'] = proxy
         fk_info['notify'] = notify
         fk_info['wz_proxy'] = proxies[-1]
 
