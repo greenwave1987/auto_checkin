@@ -377,122 +377,157 @@ class AutoLogin:
         self.log("🚀 [步骤2/3] 正在页面内执行签到 (JS)...", "STEP")
         
         checkin_js = """
-        async () => {
-            const origin = `https://api.fakerclaw.online`;  
-            const urls = {
-                checkin: `${origin}/api/user/checkin`,
-                self:    `${origin}/api/user/self`,
-            };
-        
-            // 有站点要求带自定义头：New-Api-User
-            const headerCandidates = ['web', 'true', '1'];
-        
-            const result = { attempts: [], urls };
-        
-            for (const hv of headerCandidates) {
-                const headers = {
-                    'Accept': 'application/json, text/plain, */*',
-                    'X-Requested-With': 'XMLHttpRequest',
-                    'New-Api-User': hv
+            async () => {
+                const origin = `https://api.fakerclaw.online`;  
+                const urls = {
+                    checkin: `${origin}/api/user/checkin`,
+                    self:    `${origin}/api/user/self`,
                 };
-        
-                let c = null, s = null, sc1 = 0, sc2 = 0;
-        
+            
+                // persona 作为来源页
+                const personaReferer = `${origin}/console/persona`;
+            
+                // 尝试从 localStorage 中提取真实的 New-Api-User（常见约定：session.token / newApiUser 等）
+                let hvLS = null;
                 try {
-                    const r1 = await fetch(urls.checkin, {
-                        method: 'POST',
-                        credentials: 'include',
-                        headers
-                    });
-                    sc1 = r1.status;
-                    try { c = await r1.json(); } catch (_) {}
+                    const raw =
+                        localStorage.getItem('session') ||
+                        localStorage.getItem('fk_session') ||
+                        localStorage.getItem('auth') ||
+                        localStorage.getItem('user') ||
+                        '';
+                    if (raw) {
+                        try {
+                            const obj = JSON.parse(raw);
+                            hvLS =
+                                obj?.newApiUser ||
+                                obj?.token ||
+                                obj?.accessToken ||
+                                obj?.user?.token ||
+                                obj?.user?.id ||
+                                obj?.id ||
+                                null;
+                        } catch (_) {}
+                    }
+                    // 若站点直接把值存在单独键里
+                    if (!hvLS) {
+                        const direct = localStorage.getItem('New-Api-User');
+                        if (direct) hvLS = direct;
+                    }
                 } catch (_) {}
-        
-                try {
-                    const r2 = await fetch(urls.self, {
-                        method: 'GET',
-                        credentials: 'include',
-                        headers
+            
+                // header 候选（优先用从页面存储里提取到的）
+                const headerCandidates = [hvLS, 'web', 'true', '1'].filter(Boolean);
+            
+                const result = { attempts: [], urls };
+            
+                for (const hv of headerCandidates) {
+                    const headers = {
+                        'Accept': 'application/json, text/plain, */*',
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'New-Api-User': hv,
+                        'Referer': personaReferer,
+                        'Origin': origin
+                    };
+            
+                    let c = null, s = null, sc1 = 0, sc2 = 0;
+            
+                    try {
+                        const r1 = await fetch(urls.checkin, {
+                            method: 'POST',
+                            credentials: 'include',
+                            headers
+                        });
+                        sc1 = r1.status;
+                        try { c = await r1.json(); } catch (_) {}
+                    } catch (_) {}
+            
+                    try {
+                        const r2 = await fetch(urls.self, {
+                            method: 'GET',
+                            credentials: 'include',
+                            headers
+                        });
+                        sc2 = r2.status;
+                        try { s = await r2.json(); } catch (_) {}
+                    } catch (_) {}
+            
+                    const ok = Boolean(
+                        (c && (c.success || c.message) && !c.error) ||
+                        (s && (s.success || s.data) && !s.error)
+                    );
+            
+                    result.attempts.push({
+                        hv, sc1, sc2,
+                        c_has_error: Boolean(c && c.error),
+                        s_has_error: Boolean(s && s.error)
                     });
-                    sc2 = r2.status;
-                    try { s = await r2.json(); } catch (_) {}
-                } catch (_) {}
-        
-                const ok = Boolean(
-                    (c && (c.success || c.message) && !c.error) ||
-                    (s && (s.success || s.data) && !s.error)
-                );
-        
-                result.attempts.push({
-                    hv, sc1, sc2,
-                    c_has_error: Boolean(c && c.error),
-                    s_has_error: Boolean(s && s.error)
-                });
-        
-                if (ok) {
-                    result.ok = true;
-                    result.headerValue = hv;
-                    result.checkin = c;
-                    result.profile = s;
-                    return result;
+            
+                    if (ok) {
+                        result.ok = true;
+                        result.headerValue = hv;
+                        result.checkin = c;
+                        result.profile = s;
+                        return result;
+                    }
                 }
+            
+                result.ok = false;
+                return result;
             }
-        
-            result.ok = false;
-            return result;
-        }
-        """
-        
-        try:
-            result = page.evaluate(checkin_js)
-        
-            # 简要调试
+            """
+            
             try:
-                tail = (result.get('attempts') or [])[-2:]
-                self.log({"urls": result.get("urls"), "attempts_tail": tail})
-            except Exception:
-                pass
-        
-            c = (result or {}).get('checkin') or {}
-            msg = c.get('message') or ("成功" if c.get('success') else "失败")
-            self.log(f"📝 签到结果: {msg}", "SUCCESS" if c.get('success') else "WARN")
-        
-            if "quota_awarded" in c:
+                result = page.evaluate(checkin_js)
+            
+                # 简要调试
                 try:
-                    reward = float(c["quota_awarded"]) / 500000
-                    self.log(f"🎁 获得奖励: {reward:.2f} USD", "SUCCESS")
+                    tail = (result.get('attempts') or [])[-2:]
+                    self.log({"urls": result.get("urls"), "attempts_tail": tail})
                 except Exception:
                     pass
-        
-            p = (result or {}).get('profile') or {}
-            if isinstance(p, dict) and (p.get('success') or p.get('data')):
-                d = p.get('data', {}) or {}
-                try:
-                    quota = float(d.get('quota', 0))
-                except Exception:
-                    quota = 0.0
-                uid = str(d.get('id', ''))
-                masked_id = f"{uid[:2]}***{uid[-2:]}" if len(uid) > 4 else "***"
-        
-                info = (
-                    f"\n" + "-"*35 + "\n"
-                    f"👤 用户: {d.get('display_name')} (ID: {masked_id})\n"
-                    f"💰 剩余额度: {quota} ({quota / 500000:.2f} USD)\n"
-                    f"📊 已用额度: {d.get('used_quota')}\n"
-                    + "-"*35
-                )
-                print(info)
-                self.logs.append(info)
-        
-                self.notify.send(
-                    title="FakerClaw 签到报活",
-                    content=f"✅ 签到结果: {msg}\n💰 余额: {quota / 500000:.2f} USD"
-                )
-        
-            return True
-        except Exception as e:
-            self.log(f"❌ 页面内签到执行异常: {e}", "ERROR")
-            return False
+            
+                c = (result or {}).get('checkin') or {}
+                msg = c.get('message') or ("成功" if c.get('success') else "失败")
+                self.log(f"📝 签到结果: {msg}", "SUCCESS" if c.get('success') else "WARN")
+            
+                if "quota_awarded" in c:
+                    try:
+                        reward = float(c["quota_awarded"]) / 500000
+                        self.log(f"🎁 获得奖励: {reward:.2f} USD", "SUCCESS")
+                    except Exception:
+                        pass
+            
+                p = (result or {}).get('profile') or {}
+                if isinstance(p, dict) and (p.get('success') or p.get('data')):
+                    d = p.get('data', {}) or {}
+                    try:
+                        quota = float(d.get('quota', 0))
+                    except Exception:
+                        quota = 0.0
+                    uid = str(d.get('id', ''))
+                    masked_id = f"{uid[:2]}***{uid[-2:]}" if len(uid) > 4 else "***"
+            
+                    info = (
+                        f"\n" + "-"*35 + "\n"
+                        f"👤 用户: {d.get('display_name')} (ID: {masked_id})\n"
+                        f"💰 剩余额度: {quota} ({quota / 500000:.2f} USD)\n"
+                        f"📊 已用额度: {d.get('used_quota')}\n"
+                        + "-"*35
+                    )
+                    print(info)
+                    self.logs.append(info)
+            
+                    self.notify.send(
+                        title="FakerClaw 签到报活",
+                        content=f"✅ 签到结果: {msg}\n💰 余额: {quota / 500000:.2f} USD"
+                    )
+            
+                return True
+            except Exception as e:
+                self.log(f"❌ 页面内签到执行异常: {e}", "ERROR")
+                return False
+
 
 
 
