@@ -135,12 +135,7 @@ class AutoLogin:
         self.logs = []
         self.n = 0
         
-        # 区域相关
-        self.detected_region = 'ap-northeast-1'  # 检测到的区域，如 "us-west-1"
-        self.region_base_url = 'https://ap-northeast-1.run.claw.cloud'  # 检测到的区域基础 URL
-        self.auth_token,self.app_token,self.lastLogin=self.get_local_token()
-
-        
+               
     def log(self, msg, level="INFO"):
         icons = {"INFO": "ℹ️", "SUCCESS": "✅", "ERROR": "❌", "WARN": "⚠️", "STEP": "🔹"}
         line = f"{icons.get(level, '•')} {msg}"
@@ -157,21 +152,7 @@ class AutoLogin:
             pass
         return f
     
-    def jclick(self, page, sels, desc=""):
-        for s in sels:
-            try:
-                el = page.locator(s).first
-                if el.is_visible(timeout=3000):
-                    # 模拟人类随机延迟
-                    time.sleep(random.uniform(0.5, 1.5))
-                    el.hover() # 先悬停
-                    time.sleep(random.uniform(0.2, 0.5))
-                    el.click()
-                    self.log(f"已点击: {desc}", "SUCCESS")
-                    return True
-            except:
-                pass
-        return False
+   
     def click(self, page, desc="GitHub 登录按钮"):
         """
         专用于 SPA / Chakra / Semi UI / iframe 的 GitHub 登录按钮点击
@@ -324,56 +305,8 @@ class AutoLogin:
                 return o.get("localStorage", [])
                 
         return []
-    def jjjget_local_storage_by_origin(self):
-        """
-        根据 origin 获取对应的 localStorage
-        """
-        if not isinstance(self.fk_local, dict):
-            self.log(f"❌ get_local_storage_by_origin: self.fk_local格式不对 {self.fk_local}", "ERROR")
-            return []
     
-        origins = self.fk_local.get("origins", [])
-        if not isinstance(origins, list):
-            self.log(f"❌ get_local_storage_by_origin: origins格式不对 {origins}", "ERROR")
-            return []
     
-        for o in origins:
-            if not isinstance(o, dict):
-                self.log(f"❌ get_local_storage_by_origin: origin格式不对 {o}", "ERROR")
-                continue
-            if self.host in o.get("origin"):
-                return o.get("localStorage", [])
-        self.log(f"❌ get_local_storage_by_origin: []", "ERROR")
-        return []
-    def get_local_token(self):
-        local_storage=self.get_local_storage_by_origin()
-        # 从localStorage中提取token
-        auth_token = None
-        app_token = None
-        lastLogin=0
-        for ls in local_storage:
-            if ls.get('name')=='lastLoginUpdateTime':
-                lastLogin = ls['value']
-                continue
-            if ls.get('name')=='session':
-                session_data = json.loads(ls['value'])
-                if isinstance(session_data, dict) and 'state' in session_data:
-                    if 'token' in session_data['state']:
-                        auth_token = session_data['state']['token']
-                    if 'session' in session_data['state'] and 'token' in session_data['state']['session']:
-                        app_token = session_data['state']['session']['token']
-                
-            
-
-        if not auth_token:
-            print(f"❌ [错误] 无法从保存的数据中提取 auth_token")
-
-        if not app_token:
-            print(f"❌ [错误] 无法从保存的数据中提取 app_token")
-        if not lastLogin:
-            print(f"❌ [错误] 无法从保存的数据中提取 lastLoginUpdateTime")
-            
-        return auth_token,app_token,lastLogin
         
     def start_gost_proxy(self, proxy):
         """
@@ -437,47 +370,7 @@ class AutoLogin:
             print(f"⚠️ [build_session 异常] {e}")
             return None
 
-    def get_balance_with_token(self):
-        print(f"📊 [步骤 8] 正在查询余额...")
-        
-        proxies = None
-        if self.proxy_url:
-            proxies = {
-                "http": self.proxy_url,
-                "https": self.proxy_url
-            }
-            
-            self.log(f"启用代理: {self.fk_proxy['server'][:-3]}***")
-
-                
-        session=self.build_session(self.app_token)
-        
-        api_url = f"https://{self.host}/api/accountcenter/creditsUsage"
-        api_url = f"https://ap-northeast-1.run.claw.cloud/api/accountcenter/creditsUsage"
-        api_url = "https://account-center.ap-northeast-1.run.claw.cloud/api/plan/creditsUsage"
-        for retry in range(2):
-            try:
-                res = session.get(api_url, proxies=proxies, timeout=60)
-                res.raise_for_status()
-                res_data = res.json()
-                print(res_data)
-                if res_data.get("code") == 200:
-                    plan = res_data["data"]["currentPlan"]
-                    total, used = plan["total"] / 1000000, plan["used"] / 1000000
-                    result = f"💵  {total:.2f} - 📉  {used:.2f} = 🔋 {total-used:.2f} $"
-                    print(result)
-                    return result
-                if res_data.get("code") == 401:
-
-                    result = f"⚠️  code:{res_data.get('code')} ,message:{res_data.get('message')} "
-                    print(result)
-                    return result
-                print(f"  ⏳ [等待重试] 响应: {res_data.get('message')}")
-                time.sleep(5)
-            
-            except Exception as e:
-                print(f"⚠️ [提取异常] {e}")
-        return None
+    
 
     
     def mask_url(self,url):
@@ -485,47 +378,7 @@ class AutoLogin:
         url = re.sub(r'state=[^&]+', 'state=***', url)
         return url
         
-    def detect_region(self, url):
-        """
-        从 URL 中检测区域信息
-        例如: https://us-west-1.run.claw.cloud/... -> us-west-1
-        """
-        try:
-            parsed = urlparse(url)
-            host = parsed.netloc  # 如 "us-west-1.run.claw.cloud"
-            
-            # 检查是否是区域子域名格式
-            # 格式: {region}.run.claw.cloud
-            if host.endswith('.run.claw.cloud'):
-                region = host.replace('.run.claw.cloud', '')
-                if region and region != 'console':  # 排除无效情况
-                    self.detected_region = region
-                    self.region_base_url = f"https://{host}"
-                    self.log(f"检测到区域: {region}", "SUCCESS")
-                    self.log(f"区域 URL: {self.region_base_url}", "INFO")
-                    return region
-            
-            # 如果是主域名 console.run.claw.cloud，可能还没跳转
-            if 'console.run.claw.cloud' in host or 'claw.cloud' in host:
-                # 尝试从路径或其他地方提取区域信息
-                # 有些平台可能在路径中包含区域，如 /region/us-west-1/...
-                path = parsed.path
-                region_match = re.search(r'/(?:region|r)/([a-z]+-[a-z]+-\d+)', path)
-                if region_match:
-                    region = region_match.group(1)
-                    self.detected_region = region
-                    self.region_base_url = f"https://{region}.run.claw.cloud"
-                    self.log(f"从路径检测到区域: {region}", "SUCCESS")
-                    return region
-            
-            self.log(f"未检测到特定区域，使用当前域名: {host}", "INFO")
-            # 如果没有检测到区域，使用当前 URL 的基础部分
-            self.region_base_url = f"{parsed.scheme}://{parsed.netloc}"
-            return None
-            
-        except Exception as e:
-            self.log(f"区域检测异常: {e}", "WARN")
-            return None
+    
     
     def get_base_url(self):
         """获取当前应该使用的基础 URL"""
@@ -899,9 +752,6 @@ class AutoLogin:
             if 'claw.cloud' in url and 'login' not in url.lower():
                 self.log("重定向成功！", "SUCCESS")
                 
-                # 检测并记录区域
-                self.detect_region(url)
-                
                 return True
             
             if 'github.com/login/oauth/authorize' in url:
@@ -936,12 +786,7 @@ class AutoLogin:
                 page.goto(url, timeout=30000)
                 page.wait_for_load_state('networkidle', timeout=15000)
                 self.log(f"已访问: {name} ({url})", "SUCCESS")
-                
-                # 再次检测区域（以防中途跳转）
-                current_url = page.url
-                if 'claw.cloud' in current_url:
-                    self.detect_region(current_url)
-                
+                                               
                 time.sleep(2)
             except Exception as e:
                 self.log(f"访问 {name} 失败: {e}", "WARN")
@@ -1021,31 +866,6 @@ class AutoLogin:
             
             
 
-            """
-            与当前时间比较，是否相差 >= 20 天
-            ts_ms: 毫秒时间戳
-            """
-            if self.lastLogin:
-                    
-                lastLogin=int(self.lastLogin)
-                now_ms = int(time.time() * 1000)
-                diff_ms = abs(now_ms - lastLogin)
-            
-                DAY_MS = 24 * 60 * 60 * 1000
-                dt = (
-                    datetime.datetime.utcfromtimestamp(lastLogin / 1000)
-                    + datetime.timedelta(hours=8)
-                ).replace(second=0, microsecond=0)
-                if diff_ms >= 7 * DAY_MS:
-                    self.log(f"上次登录{dt},已过7天，重新登录！", "WARN")
-                    msg+= f"上次登录{dt},已过7天，重新登录！"
-                else:
-                    self.log(f"上次登录{dt}！", "INFO")
-                    msg+=f"上次登录{dt}\n "
-                    msg+=self.get_balance_with_token()#七天有效期，失效无法查询
-                    return True, None,msg
-            else:
-                self.log("无历史登录记录，直接登录", "WARN")
                 
             
             browser = p.chromium.launch(**launch_args)
@@ -1162,15 +982,8 @@ class AutoLogin:
                             self.log(f"[1.{i}]: 访问 {page.url} 失败！", "ERROR")
                             browser.close()
                             return False,  None, f"访问 {LOGIN_ENTRY_URL} 失败！"   
-                    
-        
-                # 检测区域
-                self.detect_region(page.url)
+                          
                 
-                # 再次确认区域检测
-                if not self.detected_region:
-                    self.detect_region(current_url)
-                self.shot(page, "找不到 GitHub 按钮")
 
                 
                 # 3. 提取并保存新 local_storage
@@ -1200,16 +1013,7 @@ class AutoLogin:
                 else:
                     self.log("未获取到 storage_state", "WARN")
                 
-                # 4. 查询余额和登录信息
-                self.log("步骤4: 查询余额和登录信息", "STEP")
-                self.auth_token,self.app_token,self.lastLogin=self.get_local_token()
-                msg+=self.get_balance_with_token()
-                #msg+= "✅ 成功！"
-                print("\n" + "="*50)
-                print("✅ 成功！")
-                if self.detected_region:
-                    print(f"📍 区域: {self.detected_region}")
-                print("="*50 + "\n")
+                
                 if self.shots:
                     self.notify.send(title="fakerclaw 自动登录保活",content=f"✅ {self.gh_username}成功！",image_path=self.shots[-1])
             except Exception as e:
