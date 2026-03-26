@@ -955,6 +955,11 @@ class AutoLogin:
                             else:
                                 for j in range(10):
                                     resault=self.check_and_process_domain(page.url)
+                                    if resault=="login":
+                                        self.log(f"[2.{i}.{j}]: 仍在登录页: {self.mask_url(page.url)}", "INFO")
+                                        page.wait_for_timeout(30000)
+                                        continue
+                                                                            
                                     if resault=="logged":
                                         self.log(f"[2.{i}.{j}]: 已登录: {page.url}", "SUCCESS")
                                         self.shot(page, "找不到 GitHub 按钮")
@@ -962,7 +967,7 @@ class AutoLogin:
                                     if resault=="redirect":
                                         self.log(f"[2.{i}.{j}]: 正在重定向: {self.mask_url(page.url)}", "INFO")
                                         try:
-                                            page.wait_for_url("https://*.run.claw.cloud", timeout=60000)
+                                            page.wait_for_url("https://api.fakerclaw.online/console/token", timeout=60000)
                                             self.log(f"URL 已跳转: {page.url}", "SUCCESS")
                                             self.shot(page, "找不到 GitHub 按钮")
                                             break
