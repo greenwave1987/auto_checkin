@@ -378,7 +378,7 @@ class AutoLogin:
         
         checkin_js = """
         async () => {
-            const baseUrl = window.location.origin;
+            
         
             // 同源请求会自动附带 httpOnly 的 session Cookie
             const common = {
@@ -391,7 +391,7 @@ class AutoLogin:
             // 先探测登录状态
             let selfData = null;
             try {
-                const selfRes0 = await fetch(`${baseUrl}/api/self`, { method: 'GET', ...common });
+                const selfRes0 = await fetch(`https://api.fakerclaw.online/api/user/api/self`, { method: 'GET', ...common });
                 if (selfRes0.ok) {
                     selfData = await selfRes0.json();
                 }
@@ -400,14 +400,14 @@ class AutoLogin:
             // 签到
             let checkinData = null;
             try {
-                const checkinRes = await fetch(`${baseUrl}/api/checkin`, { method: 'POST', ...common });
+                const checkinRes = await fetch(`https://api.fakerclaw.online/api/user/checkin`, { method: 'POST', ...common });
                 checkinData = await checkinRes.json();
             } catch (_) {}
         
             // 再查余额（拿最新）
             let profileData = null;
             try {
-                const profileRes = await fetch(`${baseUrl}/api/self`, { method: 'GET', ...common });
+                const profileRes = await fetch(`https://api.fakerclaw.online/api/user/self`, { method: 'GET', ...common });
                 profileData = await profileRes.json();
             } catch (_) {}
         
