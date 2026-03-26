@@ -32,7 +32,7 @@ except ImportError:
 # 格式: socks5://user:pass@host:port 或 http://user:pass@host:port
 PROXY_DSN = os.environ.get("PROXY_DSN", "").strip()
 
-# 固定自己创建有APP的登录入口，若LOGIN_ENTRY_URL = "https://console.run.claw.cloud/signin"在OAuth后会自动跳转到根据IP定位的区域,
+# 固定自己创建有APP的登录入口，若LOGIN_ENTRY_URL = "https://console.run.claw.cloud/login"在OAuth后会自动跳转到根据IP定位的区域,
 BOARD_ENTRY_URL = "https://api.fakerclaw.online"
 LOGIN_ENTRY_URL = f"{BOARD_ENTRY_URL}/login"
 DEVICE_VERIFY_WAIT = 30  # Mobile验证 默认等 30 秒
@@ -225,7 +225,7 @@ class AutoLogin:
         self.log(f"❌ 找不到按钮: {desc}", "ERROR")
         return False
 
-    def get_clawcloud_cookies(self):
+    def get_fakerclaw_cookies(self):
         """
         从 storage_state 中提取 domain 包含 claw.cloud 的 cookies
         """
@@ -361,7 +361,7 @@ class AutoLogin:
 
     
     def build_session(self,token):
-        cookies=self.get_clawcloud_cookies()
+        cookies=self.get_fakerclaw_cookies()
         
         try:
             s = requests.Session()
@@ -507,10 +507,10 @@ class AutoLogin:
         # 自动更新 Secret
         if self.secret.update('GH_SESSION', value):
             self.log("已自动更新 GH_SESSION", "SUCCESS")
-            self.notify.send(title="clawcloud 自动登录保活",content="🔑 <b>Cookie 已自动更新</b>\n\nGH_SESSION 已保存")
+            self.notify.send(title="fakerclaw 自动登录保活",content="🔑 <b>Cookie 已自动更新</b>\n\nGH_SESSION 已保存")
         else:
             # 通过 Telegram 发送
-            self.notify.send(title="clawcloud 自动登录保活",content=f"""🔑 <b>新 Cookie</b>
+            self.notify.send(title="fakerclaw 自动登录保活",content=f"""🔑 <b>新 Cookie</b>
 
 请更新 Secret <b>GH_SESSION</b> (点击查看):
 <tg-spoiler>{value}</tg-spoiler>
@@ -522,14 +522,14 @@ class AutoLogin:
         self.log(f"需要设备验证，等待 {DEVICE_VERIFY_WAIT} 秒...", "WARN")
         self.shot(page, "设备验证")
         
-        self.notify.send(title="clawcloud 自动登录保活",content=f"""⚠️ <b>需要设备验证</b>
+        self.notify.send(title="fakerclaw 自动登录保活",content=f"""⚠️ <b>需要设备验证</b>
 
 请在 {DEVICE_VERIFY_WAIT} 秒内批准：
 1️⃣ 检查邮箱点击链接
 2️⃣ 或在 GitHub App 批准""")
         
         if self.shots:
-            self.notify.send(title="clawcloud 自动登录保活",content="设备验证页面",image_path=self.shots[-1])
+            self.notify.send(title="fakerclaw 自动登录保活",content="设备验证页面",image_path=self.shots[-1])
         
         for i in range(DEVICE_VERIFY_WAIT):
             time.sleep(1)
@@ -538,7 +538,7 @@ class AutoLogin:
                 url = page.url
                 if 'verified-device' not in url and 'device-verification' not in url:
                     self.log("设备验证通过！", "SUCCESS")
-                    self.notify.send(title="clawcloud 自动登录保活",content="✅ <b>设备验证通过</b>")
+                    self.notify.send(title="fakerclaw 自动登录保活",content="✅ <b>设备验证通过</b>")
                     return True
                 try:
                     page.reload(timeout=10000)
@@ -550,7 +550,7 @@ class AutoLogin:
             return True
         
         self.log("设备验证超时", "ERROR")
-        self.notify.send(title="clawcloud 自动登录保活",content="❌ <b>设备验证超时</b>")
+        self.notify.send(title="fakerclaw 自动登录保活",content="❌ <b>设备验证超时</b>")
         return False
     
     def wait_two_factor_mobile(self, page):
@@ -559,12 +559,12 @@ class AutoLogin:
         
         # 先截图并立刻发出去（让你看到数字）
         shot = self.shot(page, "两步验证_mobile")
-        self.notify.send(title="clawcloud 自动登录保活",content=f"""⚠️ <b>需要两步验证（GitHub Mobile）</b>
+        self.notify.send(title="fakerclaw 自动登录保活",content=f"""⚠️ <b>需要两步验证（GitHub Mobile）</b>
 
 请打开手机 GitHub App 批准本次登录（会让你确认一个数字）。
 等待时间：{TWO_FACTOR_WAIT} 秒""")
         if shot:
-            self.notify.send(title="clawcloud 自动登录保活",content="两步验证页面（数字在图里）",mage_path=shot)
+            self.notify.send(title="fakerclaw 自动登录保活",content="两步验证页面（数字在图里）",mage_path=shot)
         
         # 不要频繁 reload，避免把流程刷回登录页
         for i in range(TWO_FACTOR_WAIT):
@@ -575,7 +575,7 @@ class AutoLogin:
             # 如果离开 two-factor 流程页面，认为通过
             if "github.com/sessions/two-factor/" not in url:
                 self.log("两步验证通过！", "SUCCESS")
-                self.notify.send(title="clawcloud 自动登录保活",content="✅ <b>两步验证通过</b>")
+                self.notify.send(title="fakerclaw 自动登录保活",content="✅ <b>两步验证通过</b>")
                 return True
             
             # 如果被刷回登录页，说明这次流程断了（不要硬等）
@@ -588,7 +588,7 @@ class AutoLogin:
                 self.log(f"  等待... ({i}/{TWO_FACTOR_WAIT}秒)")
                 shot = self.shot(page, f"两步验证_{i}s")
                 if shot:
-                    self.notify.send(title="clawcloud 自动登录保活",content=f"两步验证页面（第{i}秒）",image_path=shot)
+                    self.notify.send(title="fakerclaw 自动登录保活",content=f"两步验证页面（第{i}秒）",image_path=shot)
             
             # 只在 30 秒、60 秒... 做一次轻刷新（可选，频率很低）
             if i % 30 == 0 and i != 0:
@@ -599,7 +599,7 @@ class AutoLogin:
                     pass
         
         self.log("两步验证超时", "ERROR")
-        self.notify.send(title="clawcloud 自动登录保活",content="❌ <b>两步验证超时</b>")
+        self.notify.send(title="fakerclaw 自动登录保活",content="❌ <b>两步验证超时</b>")
         return False
     
     def handle_2fa_code_input(self, page):
@@ -655,26 +655,26 @@ class AutoLogin:
             pass
 
         # 发送提示并等待验证码
-        self.notify.send(title="clawcloud 自动登录保活",content=f"""🔐 <b>需要验证码登录</b>
+        self.notify.send(title="fakerclaw 自动登录保活",content=f"""🔐 <b>需要验证码登录</b>
 
 用户{self.gh_username}正在登录，请在 Telegram 里发送：
 <code>/code 你的6位验证码</code>
 
 等待时间：{TWO_FACTOR_WAIT} 秒""")
         if shot:
-            self.notify.send(title="clawcloud 自动登录保活",content="两步验证页面",image_path=shot)
+            self.notify.send(title="fakerclaw 自动登录保活",content="两步验证页面",image_path=shot)
 
         self.log(f"等待验证码（{TWO_FACTOR_WAIT}秒）...", "WARN")
         code = '真需要的话使用库自动生成'
 
         if not code:
             self.log("等待验证码超时", "ERROR")
-            self.notify.send(title="clawcloud 自动登录保活",content="❌ <b>等待验证码超时</b>")
+            self.notify.send(title="fakerclaw 自动登录保活",content="❌ <b>等待验证码超时</b>")
             return False
 
         # 不打印验证码明文，只提示收到
         self.log("收到验证码，正在填入...", "SUCCESS")
-        self.notify.send(title="clawcloud 自动登录保活",content="✅ 收到验证码，正在填入...")
+        self.notify.send(title="fakerclaw 自动登录保活",content="✅ 收到验证码，正在填入...")
 
         # 常见 OTP 输入框 selector（优先级排序）
         selectors = [
@@ -726,17 +726,17 @@ class AutoLogin:
                     # 检查是否通过
                     if "github.com/sessions/two-factor/" not in page.url:
                         self.log("验证码验证通过！", "SUCCESS")
-                        self.notify.send(title="clawcloud 自动登录保活",content="✅ <b>验证码验证通过</b>")
+                        self.notify.send(title="fakerclaw 自动登录保活",content="✅ <b>验证码验证通过</b>")
                         return True
                     else:
                         self.log("验证码可能错误", "ERROR")
-                        self.notify.send(title="clawcloud 自动登录保活",content="❌ <b>验证码可能错误，请检查后重试</b>")
+                        self.notify.send(title="fakerclaw 自动登录保活",content="❌ <b>验证码可能错误，请检查后重试</b>")
                         return False
             except:
                 pass
 
         self.log("没找到验证码输入框", "ERROR")
-        self.notify.send(title="clawcloud 自动登录保活",content="❌ <b>没找到验证码输入框</b>")
+        self.notify.send(title="fakerclaw 自动登录保活",content="❌ <b>没找到验证码输入框</b>")
         return False
     
     def login_github(self, page, context):
@@ -839,7 +839,7 @@ class AutoLogin:
             url = page.url
             
             # 检查是否已跳转到 claw.cloud
-            if 'claw.cloud' in url and 'signin' not in url.lower():
+            if 'claw.cloud' in url and 'login' not in url.lower():
                 self.log("重定向成功！", "SUCCESS")
                 
                 # 检测并记录区域
@@ -896,16 +896,17 @@ class AutoLogin:
         # 去掉末尾斜杠
         domain = domain.rstrip('/')
     
-        # 检查是否为 signin 页面
-        if domain.endswith('.run.claw.cloud/signin'):
-            return "signin"
+        # 检查是否为 login 页面
+        if domain.endswith('.fakerclaw.online/login'):
+            return "login"
     
-        # 检查是否包含 callback（OAuth 重定向）
-        if "callback" in domain:
+        # 检查是否包含 oauth（OAuth 重定向）
+        if "oauth" in domain:
             return "redirect"
     
         # 检查是否是正常已登录的区域域名
-        if domain.endswith('.run.claw.cloud'):
+        #if domain.endswith('.fakerclaw.online/console/token'):
+        if "console" in domain:
             return "logged"
     
         # 其他情况
@@ -1048,8 +1049,8 @@ class AutoLogin:
                     except:
                         self.log("加载 Cookie 失败", "WARN")
                         
-                # 1. 访问 ClawCloud 登录入口
-                self.log("步骤1: 打开 ClawCloud 登录页", "STEP")
+                # 1. 访问 FakerClaw 登录入口
+                self.log("步骤1: 打开 FakerClaw 登录页", "STEP")
 
                 for i in range(10):
                     try:
@@ -1063,14 +1064,14 @@ class AutoLogin:
                         if resault=="logged":
                             self.log(f"[1.{i}]: 已登录: {page.url}", "SUCCESS")
                             break
-                        if resault=="signin":
+                        if resault=="login":
                             self.log(f"[1.{i}]: 需登录: {page.url}", "INFO")
                             # 步骤2: 点击 GitHub
                             self.log(f"步骤2: 点击 GitHub", "STEP")
                             if not self.click(page, desc="GitHub 登录按钮"):
                                 shot = self.shot(page, "找不到 GitHub 按钮")
                                 if shot:
-                                    self.notify.send(title="clawcloud 自动登录保活",content="找不到 GitHub 按钮",image_path=shot)
+                                    self.notify.send(title="fakerclaw 自动登录保活",content="找不到 GitHub 按钮",image_path=shot)
                                 self.log(f"[2.{i}]: 找不到 GitHub 按钮", "WARN")
                                 self.shot(page, "找不到 GitHub 按钮")
                                 continue
@@ -1153,14 +1154,14 @@ class AutoLogin:
                     print(f"📍 区域: {self.detected_region}")
                 print("="*50 + "\n")
                 if self.shots:
-                    self.notify.send(title="clawcloud 自动登录保活",content=f"✅ {self.gh_username}成功！",image_path=self.shots[-1])
+                    self.notify.send(title="fakerclaw 自动登录保活",content=f"✅ {self.gh_username}成功！",image_path=self.shots[-1])
             except Exception as e:
                 self.log(f"异常: {e}", "ERROR")
                 self.shot(page, "异常")
                 import traceback
                 traceback.print_exc()
                 if self.shots:
-                    self.notify.send(title="clawcloud 自动登录保活",content=f"❌ {self.gh_username}:{str(e)}",image_path=self.shots[-1])
+                    self.notify.send(title="fakerclaw 自动登录保活",content=f"❌ {self.gh_username}:{str(e)}",image_path=self.shots[-1])
                 msg= f"访问 {page.url} 失败！"   
             finally:
                 if browser:
@@ -1271,7 +1272,7 @@ def main():
     secret.update(fk_locals)
     # 发送结果
     notify.send(
-        title="clawcloud 自动登录保活汇总",
+        title="fakerclaw 自动登录保活汇总",
         content="\n".join(results)
     )
 
