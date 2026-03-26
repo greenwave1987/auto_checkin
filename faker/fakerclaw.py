@@ -379,63 +379,69 @@ class AutoLogin:
         checkin_js = """
         async () => {
             const baseUrl = window.location.origin;
-            const sessionData = localStorage.getItem('session');
-            if (!sessionData) return { success: false, message: '未找到 session token' };
-            
-            const token = JSON.parse(sessionData).token; // 假设存储格式为 JSON
-            const commonHeaders = {
-                "Authorization": `Bearer ${token}`,
-                "Content-Type": "application/json",
-                "Accept": "application/json, text/plain, */*"
-            };
-
-            // --- 2. 签到 (根据最新抓包修正) ---
-            const checkinRes = await fetch(`${baseUrl}/api/checkin`, {
-                method: "POST",
+        
+            // 同源请求会自动附带 httpOnly 的 session Cookie
+            const common = {
+                credentials: 'same-origin',
                 headers: {
-                    ...commonHeaders,
-                    "referer": `${baseUrl}/console/personal`
-                },
-                body: null
-            });
-            const checkinData = await checkinRes.json();
-
-            // --- 3. 查询余额 ---
-            const profileRes = await fetch(`${baseUrl}/api/self`, {
-                method: "GET",
-                headers: { 
-                    ...commonHeaders, 
-                    "referer": `${baseUrl}/console` 
+                    'Accept': 'application/json, text/plain, */*'
                 }
-            });
-            const profileData = await profileRes.json();
-
-            return { checkin: checkinData, profile: profileData };
+            };
+        
+            // 先探测登录状态
+            let selfData = null;
+            try {
+                const selfRes0 = await fetch(`${baseUrl}/api/self`, { method: 'GET', ...common });
+                if (selfRes0.ok) {
+                    selfData = await selfRes0.json();
+                }
+            } catch (_) {}
+        
+            // 签到
+            let checkinData = null;
+            try {
+                const checkinRes = await fetch(`${baseUrl}/api/checkin`, { method: 'POST', ...common });
+                checkinData = await checkinRes.json();
+            } catch (_) {}
+        
+            // 再查余额（拿最新）
+            let profileData = null;
+            try {
+                const profileRes = await fetch(`${baseUrl}/api/self`, { method: 'GET', ...common });
+                profileData = await profileRes.json();
+            } catch (_) {}
+        
+            return { self: selfData, checkin: checkinData, profile: profileData };
         }
         """
-
+        
         try:
-            # 执行 JS 并获取返回结果
             result = page.evaluate(checkin_js)
             self.log(result)
-            # 1. 处理签到结果
-            c = result.get('checkin', {})
+        
+            # 处理签到结果
+            c = (result or {}).get('checkin') or {}
             msg = c.get('message') or ("成功" if c.get('success') else "失败")
             self.log(f"📝 签到结果: {msg}", "SUCCESS" if c.get('success') else "WARN")
-            
+        
             if "quota_awarded" in c:
-                reward = float(c["quota_awarded"]) / 500000
-                self.log(f"🎁 获得奖励: {reward:.2f} USD", "SUCCESS")
-
-            # 2. 处理余额信息
-            p = result.get('profile', {})
-            if p.get('success'):
-                d = p.get('data', {})
-                quota = float(d.get('quota', 0))
-                # 脱敏处理 ID
+                try:
+                    reward = float(c["quota_awarded"]) / 500000
+                    self.log(f"🎁 获得奖励: {reward:.2f} USD", "SUCCESS")
+                except Exception:
+                    pass
+        
+            # 处理余额信息
+            p = (result or {}).get('profile') or {}
+            if isinstance(p, dict) and p.get('success'):
+                d = p.get('data', {}) or {}
+                try:
+                    quota = float(d.get('quota', 0))
+                except Exception:
+                    quota = 0.0
                 uid = str(d.get('id', ''))
                 masked_id = f"{uid[:2]}***{uid[-2:]}" if len(uid) > 4 else "***"
-                
+        
                 info = (
                     f"\n" + "-"*35 + "\n"
                     f"👤 用户: {d.get('display_name')} (ID: {masked_id})\n"
@@ -445,17 +451,17 @@ class AutoLogin:
                 )
                 print(info)
                 self.logs.append(info)
-                
-                # 推送通知
+        
                 self.notify.send(
                     title="FakerClaw 签到报活",
                     content=f"✅ 签到结果: {msg}\n💰 余额: {quota / 500000:.2f} USD"
                 )
-            
+        
             return True
         except Exception as e:
             self.log(f"❌ 页面内签到执行异常: {e}", "ERROR")
             return False
+
 
     
     def mask_url(self,url):
