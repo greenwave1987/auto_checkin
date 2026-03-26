@@ -172,55 +172,112 @@ class AutoLogin:
             except:
                 pass
         return False
-    def click(self, page, desc=""):
+    def click(self, page, desc="GitHub 登录按钮"):
         """
-        专用于 Chakra UI / SPA / iframe 登录按钮
+        专用于 SPA / Chakra / Semi UI / iframe 的 GitHub 登录按钮点击
         """
         self.log(f"🔍 尝试查找并点击: {desc}", "INFO")
     
-        # 1️⃣ 等页面真正稳定（比 networkidle 更可靠）
+        # 1️⃣ 等页面稳定
         try:
             page.wait_for_load_state("domcontentloaded", timeout=15000)
-            page.wait_for_timeout(2000)
+            page.wait_for_timeout(1500)
         except:
             pass
     
-        # 2️⃣ 收集主页面 + 所有 iframe
-        frames = [page.main_frame]
-        frames += page.frames
+        # 2️⃣ 收集所有 frame（主页面 + iframe）
+        frames = list({f for f in [page.main_frame] + page.frames})
     
+        # 3️⃣ 强化 selector（按优先级排序）
         selectors = [
-            # Chakra Button（最稳）
-            'button.chakra-button',
+            # ✅ 精准命中（最优）
+            'button:has-text("GitHub")',
+            'button:has-text("使用 GitHub")',
+            'button:has-text("继续")',
     
-            # 带 GitHub svg 的按钮（极稳）
+            # ✅ Semi UI（你当前页面）
+            'button.semi-button',
+    
+            # ✅ 含 GitHub svg
+            'button:has(svg[aria-label="github_logo"])',
             'button:has(svg)',
     
-            # XPath 兜底
+            # ✅ aria / role
+            '[role="button"]:has-text("GitHub")',
+    
+            # ✅ XPath 兜底
             '//button[.//text()[contains(., "GitHub")]]',
             '//button[.//*[name()="svg"]]',
         ]
     
-        for frame in frames:
-            for sel in selectors:
-                try:
-                    el = frame.locator(sel).first
+        # 4️⃣ 多轮重试（SPA 必须）
+        for attempt in range(3):
+            self.log(f"🔁 第 {attempt+1} 轮查找按钮", "DEBUG")
     
-                    el.wait_for(state="visible", timeout=5000)
+            for frame in frames:
+                for sel in selectors:
+                    try:
+                        el = frame.locator(sel).first
     
-                    # 模拟人类
-                    time.sleep(random.uniform(0.5, 1.2))
-                    el.hover()
-                    time.sleep(random.uniform(0.2, 0.4))
-                    el.click(force=True)
+                        # 等元素出现
+                        el.wait_for(state="attached", timeout=3000)
     
-                    self.log(f"已点击: {desc}", "SUCCESS")
-                    return True
+                        if not el.is_visible():
+                            continue
     
-                except PlaywrightTimeoutError:
-                    self.log(f"• 尝试点击失败: {sel}", "DEBUG")
-                except Exception as e:
-                    self.log(f"• 点击异常: {sel} -> {e}", "DEBUG")
+                        # 滚动到可视区域（关键）
+                        try:
+                            el.scroll_into_view_if_needed(timeout=2000)
+                        except:
+                            pass
+    
+                        # 再确认可见
+                        if not el.is_visible():
+                            continue
+    
+                        # 模拟人类
+                        time.sleep(random.uniform(0.4, 1.0))
+                        el.hover()
+                        time.sleep(random.uniform(0.2, 0.5))
+    
+                        # 尝试正常点击
+                        try:
+                            el.click(timeout=3000)
+                        except:
+                            # fallback：强制点击
+                            el.click(force=True)
+    
+                        self.log(f"✅ 已点击: {desc} ({sel})", "SUCCESS")
+                        return True
+    
+                    except PlaywrightTimeoutError:
+                        continue
+                    except Exception as e:
+                        self.log(f"• 点击异常: {sel} -> {e}", "DEBUG")
+    
+            # 每轮失败后稍等再试（SPA渲染延迟）
+            page.wait_for_timeout(1500)
+    
+        # 5️⃣ 最终兜底（JS 强制点击）
+        try:
+            self.log("⚠️ 尝试 JS 强制点击", "WARN")
+    
+            page.evaluate("""
+                const btns = Array.from(document.querySelectorAll('button'));
+                for (const b of btns) {
+                    if (b.innerText.includes('GitHub') || b.innerText.includes('继续')) {
+                        b.click();
+                        return true;
+                    }
+                }
+                return false;
+            """)
+    
+            self.log("✅ JS 点击执行完成", "SUCCESS")
+            return True
+    
+        except Exception as e:
+            self.log(f"❌ JS 点击失败: {e}", "ERROR")
     
         self.log(f"❌ 找不到按钮: {desc}", "ERROR")
         return False
