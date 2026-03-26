@@ -228,7 +228,7 @@ class AutoLogin:
                             # fallback：强制点击
                             el.click(force=True)
     
-                        self.log(f"✅ 已点击: {desc} ({sel})", "SUCCESS")
+                        self.log(f"已点击: {desc} ({sel})", "SUCCESS")
                         return True
     
                     except PlaywrightTimeoutError:
