@@ -370,7 +370,92 @@ class AutoLogin:
             print(f"⚠️ [build_session 异常] {e}")
             return None
 
-    
+    def run_internal_checkin(self, page):
+        """
+        在 Playwright 页面上下文中直接执行签到逻辑
+        """
+        self.log("🚀 [步骤2/3] 正在页面内执行签到 (JS)...", "STEP")
+        
+        checkin_js = """
+        async () => {
+            const baseUrl = window.location.origin;
+            const sessionData = localStorage.getItem('session');
+            if (!sessionData) return { success: false, message: '未找到 session token' };
+            
+            const token = JSON.parse(sessionData).token; // 假设存储格式为 JSON
+            const commonHeaders = {
+                "Authorization": `Bearer ${token}`,
+                "Content-Type": "application/json",
+                "Accept": "application/json, text/plain, */*"
+            };
+
+            // --- 2. 签到 (根据最新抓包修正) ---
+            const checkinRes = await fetch(`${baseUrl}/api/checkin`, {
+                method: "POST",
+                headers: {
+                    ...commonHeaders,
+                    "referer": `${baseUrl}/console/personal`
+                },
+                body: null
+            });
+            const checkinData = await checkinRes.json();
+
+            // --- 3. 查询余额 ---
+            const profileRes = await fetch(`${baseUrl}/api/self`, {
+                method: "GET",
+                headers: { 
+                    ...commonHeaders, 
+                    "referer": `${baseUrl}/console` 
+                }
+            });
+            const profileData = await profileRes.json();
+
+            return { checkin: checkinData, profile: profileData };
+        }
+        """
+
+        try:
+            # 执行 JS 并获取返回结果
+            result = page.evaluate(checkin_js)
+            
+            # 1. 处理签到结果
+            c = result.get('checkin', {})
+            msg = c.get('message') or ("成功" if c.get('success') else "失败")
+            self.log(f"📝 签到结果: {msg}", "SUCCESS" if c.get('success') else "WARN")
+            
+            if "quota_awarded" in c:
+                reward = float(c["quota_awarded"]) / 500000
+                self.log(f"🎁 获得奖励: {reward:.2f} USD", "SUCCESS")
+
+            # 2. 处理余额信息
+            p = result.get('profile', {})
+            if p.get('success'):
+                d = p.get('data', {})
+                quota = float(d.get('quota', 0))
+                # 脱敏处理 ID
+                uid = str(d.get('id', ''))
+                masked_id = f"{uid[:2]}***{uid[-2:]}" if len(uid) > 4 else "***"
+                
+                info = (
+                    f"\n" + "-"*35 + "\n"
+                    f"👤 用户: {d.get('display_name')} (ID: {masked_id})\n"
+                    f"💰 剩余额度: {quota} ({quota / 500000:.2f} USD)\n"
+                    f"📊 已用额度: {d.get('used_quota')}\n"
+                    + "-"*35
+                )
+                print(info)
+                self.logs.append(info)
+                
+                # 推送通知
+                self.notify.send(
+                    title="FakerClaw 签到报活",
+                    content=f"✅ 签到结果: {msg}\n💰 余额: {quota / 500000:.2f} USD"
+                )
+            
+            return True
+        except Exception as e:
+            self.log(f"❌ 页面内签到执行异常: {e}", "ERROR")
+            return False
 
     
     def mask_url(self,url):
@@ -989,7 +1074,8 @@ class AutoLogin:
                             return False,  None, f"访问 {LOGIN_ENTRY_URL} 失败！"   
                           
                 
-
+                # 2. 签到查询余额
+                self.run_internal_checkin(page)
                 
                 # 3. 提取并保存新 local_storage
                 self.log("步骤3: 更新 local_storage", "STEP")
