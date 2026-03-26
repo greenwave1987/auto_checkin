@@ -417,7 +417,7 @@ class AutoLogin:
                 } catch (_) {}
             
                 // header 候选（优先用从页面存储里提取到的）
-                const headerCandidates = [hvLS, 'web', 'true', '1'].filter(Boolean);
+                const headerCandidates = [hvLS].filter(Boolean);
             
                 const result = { attempts: [], urls };
             
