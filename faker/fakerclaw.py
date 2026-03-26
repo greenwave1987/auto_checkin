@@ -417,7 +417,7 @@ class AutoLogin:
         try:
             # 执行 JS 并获取返回结果
             result = page.evaluate(checkin_js)
-            
+            self.log(result)
             # 1. 处理签到结果
             c = result.get('checkin', {})
             msg = c.get('message') or ("成功" if c.get('success') else "失败")
