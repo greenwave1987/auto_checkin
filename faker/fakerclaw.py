@@ -378,48 +378,81 @@ class AutoLogin:
         
         checkin_js = """
         async () => {
-            
-        
-            // 同源请求会自动附带 httpOnly 的 session Cookie
-            const common = {
-                credentials: 'same-origin',
-                headers: {
-                    'Accept': 'application/json, text/plain, */*'
-                }
+            const origin = `https://api.fakerclaw.online`;  
+            const urls = {
+                checkin: `${origin}/api/user/checkin`,
+                self:    `${origin}/api/user/self`,
             };
         
-            // 先探测登录状态
-            let selfData = null;
-            try {
-                const selfRes0 = await fetch(`https://api.fakerclaw.online/api/user/api/self`, { method: 'GET', ...common });
-                if (selfRes0.ok) {
-                    selfData = await selfRes0.json();
+            // 有站点要求带自定义头：New-Api-User
+            const headerCandidates = ['web', 'true', '1'];
+        
+            const result = { attempts: [], urls };
+        
+            for (const hv of headerCandidates) {
+                const headers = {
+                    'Accept': 'application/json, text/plain, */*',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'New-Api-User': hv
+                };
+        
+                let c = null, s = null, sc1 = 0, sc2 = 0;
+        
+                try {
+                    const r1 = await fetch(urls.checkin, {
+                        method: 'POST',
+                        credentials: 'include',
+                        headers
+                    });
+                    sc1 = r1.status;
+                    try { c = await r1.json(); } catch (_) {}
+                } catch (_) {}
+        
+                try {
+                    const r2 = await fetch(urls.self, {
+                        method: 'GET',
+                        credentials: 'include',
+                        headers
+                    });
+                    sc2 = r2.status;
+                    try { s = await r2.json(); } catch (_) {}
+                } catch (_) {}
+        
+                const ok = Boolean(
+                    (c && (c.success || c.message) && !c.error) ||
+                    (s && (s.success || s.data) && !s.error)
+                );
+        
+                result.attempts.push({
+                    hv, sc1, sc2,
+                    c_has_error: Boolean(c && c.error),
+                    s_has_error: Boolean(s && s.error)
+                });
+        
+                if (ok) {
+                    result.ok = true;
+                    result.headerValue = hv;
+                    result.checkin = c;
+                    result.profile = s;
+                    return result;
                 }
-            } catch (_) {}
+            }
         
-            // 签到
-            let checkinData = null;
-            try {
-                const checkinRes = await fetch(`https://api.fakerclaw.online/api/user/checkin`, { method: 'POST', ...common });
-                checkinData = await checkinRes.json();
-            } catch (_) {}
-        
-            // 再查余额（拿最新）
-            let profileData = null;
-            try {
-                const profileRes = await fetch(`https://api.fakerclaw.online/api/user/self`, { method: 'GET', ...common });
-                profileData = await profileRes.json();
-            } catch (_) {}
-        
-            return { self: selfData, checkin: checkinData, profile: profileData };
+            result.ok = false;
+            return result;
         }
         """
         
         try:
             result = page.evaluate(checkin_js)
-            self.log(result)
         
-            # 处理签到结果
+            # 简要调试
+            try:
+                tail = (result.get('attempts') or [])[-2:]
+                self.log({"urls": result.get("urls"), "attempts_tail": tail})
+            except Exception:
+                pass
+        
             c = (result or {}).get('checkin') or {}
             msg = c.get('message') or ("成功" if c.get('success') else "失败")
             self.log(f"📝 签到结果: {msg}", "SUCCESS" if c.get('success') else "WARN")
@@ -431,9 +464,8 @@ class AutoLogin:
                 except Exception:
                     pass
         
-            # 处理余额信息
             p = (result or {}).get('profile') or {}
-            if isinstance(p, dict) and p.get('success'):
+            if isinstance(p, dict) and (p.get('success') or p.get('data')):
                 d = p.get('data', {}) or {}
                 try:
                     quota = float(d.get('quota', 0))
@@ -461,6 +493,7 @@ class AutoLogin:
         except Exception as e:
             self.log(f"❌ 页面内签到执行异常: {e}", "ERROR")
             return False
+
 
 
     
