@@ -1054,7 +1054,7 @@ class AutoLogin:
 
                 for i in range(10):
                     try:
-                        page.goto(BOARD_ENTRY_URL, timeout=60000)
+                        page.goto(LOGIN_ENTRY_URL, timeout=60000)
                         page.wait_for_load_state('networkidle', timeout=60000)
                         resault=self.check_and_process_domain(page.url)
                         self.shot(page, "找不到 GitHub 按钮")
@@ -1104,7 +1104,7 @@ class AutoLogin:
                         else:
                             self.log(f"[1.{i}]: 访问 {page.url} 失败！", "ERROR")
                             browser.close()
-                            return False,  None, f"访问 {BOARD_ENTRY_URL} 失败！"   
+                            return False,  None, f"访问 {LOGIN_ENTRY_URL} 失败！"   
                     
         
                 # 检测区域
