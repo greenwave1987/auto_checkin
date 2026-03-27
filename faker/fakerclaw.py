@@ -468,11 +468,10 @@ class AutoLogin:
 
     def run_internal_checkin(self, page):
         """
-        在 Playwright 页面上下文中直接执行签到逻辑
+        在 Playwright 页面上下文中执行签到并生成 30 天趋势图
         """
-        self.log("🚀 [步骤2/3] 正在页面内执行签到 (JS)...", "STEP")
+        self.log("🚀 [步骤2/3] 正在页面内执行签到并获取 30 天数据...", "STEP")
         
-        # 将 stats 网址修改为动态获取最近30天的时间戳
         checkin_js = """
         async () => {
             const origin = `https://api.fakerclaw.online`;  
@@ -482,7 +481,7 @@ class AutoLogin:
             const urls = {
                 checkin: `${origin}/api/user/checkin`,
                 self:    `${origin}/api/user/self`,
-                // 修改此处：使用最近30天时间戳范围，并增加 page_size 确保数据完整
+                // 确保 page_size 足够大以获取 30 天所有记录
                 stats:   `${origin}/api/log/self?p=1&page_size=100&type=0&start_timestamp=${thirtyDaysAgo}&end_timestamp=${now}`
             };
         
@@ -491,115 +490,104 @@ class AutoLogin:
             try {
                 const raw = localStorage.getItem('session') || localStorage.getItem('fk_session') || localStorage.getItem('auth') || localStorage.getItem('user') || '';
                 if (raw) {
-                    try {
-                        const obj = JSON.parse(raw);
-                        hvLS = obj?.newApiUser || obj?.token || obj?.accessToken || obj?.user?.token || obj?.user?.id || obj?.id || null;
-                    } catch (_) {}
+                    const obj = JSON.parse(raw);
+                    hvLS = obj?.newApiUser || obj?.token || obj?.accessToken || obj?.user?.token || obj?.user?.id || obj?.id || null;
                 }
-                if (!hvLS) {
-                    const direct = localStorage.getItem('New-Api-User');
-                    if (direct) hvLS = direct;
-                }
+                if (!hvLS) hvLS = localStorage.getItem('New-Api-User');
             } catch (_) {}
         
-            const headerCandidates = [hvLS].filter(Boolean);
-            const result = { attempts: [], urls };
+            const headers = {
+                'Accept': 'application/json, text/plain, */*',
+                'X-Requested-With': 'XMLHttpRequest',
+                'New-Api-User': hvLS,
+                'Referer': personaReferer,
+                'Origin': origin
+            };
         
-            for (const hv of headerCandidates) {
-                const headers = {
-                    'Accept': 'application/json, text/plain, */*',
-                    'X-Requested-With': 'XMLHttpRequest',
-                    'New-Api-User': hv,
-                    'Referer': personaReferer,
-                    'Origin': origin
-                };
-        
-                let c = null, s = null, st = null, sc1 = 0, sc2 = 0;
-        
-                try {
-                    const r1 = await fetch(urls.checkin, { method: 'POST', credentials: 'include', headers });
-                    sc1 = r1.status;
-                    try { c = await r1.json(); } catch (_) {}
-                } catch (_) {}
-        
-                try {
-                    const r2 = await fetch(urls.self, { method: 'GET', credentials: 'include', headers });
-                    sc2 = r2.status;
-                    try { s = await r2.json(); } catch (_) {}
-                } catch (_) {}
+            const res = { ok: false, checkin: null, profile: null, stats: null };
+            try {
+                // 1. 执行签到 (POST)
+                const r1 = await fetch(urls.checkin, { method: 'POST', credentials: 'include', headers });
+                res.checkin = await r1.json();
+                
+                // 2. 获取个人资料 (GET)
+                const r2 = await fetch(urls.self, { method: 'GET', credentials: 'include', headers });
+                res.profile = await r2.json();
 
-                try {
-                    const r3 = await fetch(urls.stats, { method: 'GET', credentials: 'include', headers });
-                    try { st = await r3.json(); } catch (_) {}
-                } catch (_) {}
-        
-                const ok = Boolean(
-                    (c && (c.success || c.message) && !c.error) ||
-                    (s && (s.success || s.data) && !s.error)
-                );
-        
-                result.attempts.push({
-                    hv, sc1, sc2,
-                    c_has_error: Boolean(c && c.error),
-                    s_has_error: Boolean(s && s.error)
-                });
-        
-                if (ok) {
-                    result.ok = true;
-                    result.headerValue = hv;
-                    result.checkin = c;
-                    result.profile = s;
-                    result.stats = st; 
-                    return result;
-                }
-            }
-            result.ok = false;
-            return result;
+                // 3. 获取最近 30 天日志 (GET)
+                const r3 = await fetch(urls.stats, { method: 'GET', credentials: 'include', headers });
+                res.stats = await r3.json();
+                
+                res.ok = true;
+            } catch (e) { res.error = e.message; }
+            return res;
         }
         """
         
         try:
             result = page.evaluate(checkin_js)
+            if not result or not result.get('ok'):
+                self.log(f"❌ JS 执行失败或未获取到数据: {result.get('error')}", "ERROR")
+                return False
+
+            # --- 1. 处理签到结果 ---
+            c = result.get('checkin') or {}
+            msg = c.get('message') or ("成功" if c.get('success') else "失败")
+            self.log(f"📝 签到结果: {msg}", "SUCCESS" if c.get('success') else "WARN")
             
-            # ... (中间的日志处理逻辑保持不变) ...
+            # --- 2. 处理余额信息 ---
+            p = result.get('profile') or {}
+            d = p.get('data', {}) if isinstance(p, dict) else {}
+            quota = float(d.get('quota', 0))
+            used = d.get('used_quota', 0)
+            
+            user_info = (
+                f"\n" + "-"*35 + "\n"
+                f"👤 用户: {d.get('display_name', 'Unknown')}\n"
+                f"💰 余额: {quota / 500000:.2f} USD\n"
+                f"📊 已用: {used}\n"
+                f"-"*35
+            )
+            print(user_info)
 
-            p = (result or {}).get('profile') or {}
-            if isinstance(p, dict) and (p.get('success') or p.get('data')):
-                # ... (额度信息展示逻辑保持不变) ...
+            # --- 3. 提取 Stats 数据并生成趋势图 ---
+            chart_path = None
+            stats_data = result.get('stats', {})
+            # 根据你提供的 JSON 结构，数据在 data.items 中
+            records = []
+            if isinstance(stats_data, dict) and stats_data.get('success'):
+                records = stats_data.get('data', {}).get('items', [])
+            
+            if records:
+                self.log(f"📈 成功获取到 {len(records)} 条日志记录，正在生成趋势图...", "INFO")
+                chart_path = self._generate_trend_chart(records)
+            else:
+                self.log("⚠️ 未能从 stats 中提取到有效的 items 记录", "WARN")
 
-                # --- 重点修改：处理 30 天趋势图数据提取 ---
-                chart_path = None
-                # 注意：根据你提供的 API 结构，数据通常在 result['stats']['data'] 中
-                # 如果 API 返回的是标准列表，请根据实际结构调整下一行的键名
-                stats_resp = result.get('stats') or {}
-                records = stats_resp.get('data', []) 
-                
-                # 如果获取到的是字典格式，尝试进一步深入提取
-                if isinstance(stats_resp.get('data'), dict):
-                    records = stats_resp['data'].get('records', [])
-
-                if records:
-                    # 传入之前写好的 Matplotlib 绘图函数（处理30天逻辑）
-                    chart_path = self._generate_trend_chart(records)
-        
-                # 发送通知
-                msg = (result.get('checkin') or {}).get('message', '未知')
-                quota = float((p.get('data') or {}).get('quota', 0))
-                
+            # --- 4. 发送推送 ---
+            try:
                 self.notify.send(
-                    title="FakerClaw 30天奖励趋势",
-                    content=f"✅ 签到: {msg}\n💰 余额: {quota / 500000:.2f} USD",
+                    title="FakerClaw 30天统计报表",
+                    content=f"✅ 签到: {msg}\n💰 当前余额: {quota / 500000:.2f} USD\n📅 统计范围: 最近30天",
                     image_path=chart_path 
                 )
+                self.log("🔔 推送任务已提交", "SUCCESS")
+            except Exception as e:
+                self.log(f"❌ 推送失败: {e}", "ERROR")
 
-                # 清理
-                if chart_path and os.path.exists(chart_path):
-                    try: os.remove(chart_path)
-                    except: pass
+            # --- 5. 清理临时文件 ---
+            if chart_path and os.path.exists(chart_path):
+                try: 
+                    import os
+                    os.remove(chart_path)
+                    self.log(f"🗑️ 已清理临时图表: {chart_path}", "DEBUG")
+                except: pass
         
             return True
         except Exception as e:
-            self.log(f"❌ 页面内签到执行异常: {e}", "ERROR")
+            self.log(f"❌ 签到流程异常: {e}", "ERROR")
+            import traceback
+            print(traceback.format_exc())
             return False
     
     def mask_url(self,url):
