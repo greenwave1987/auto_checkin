@@ -10,6 +10,7 @@ import requests
 import datetime
 import subprocess
 
+import matplotlib.pyplot as plt
 from urllib.parse import urlparse
 from playwright.sync_api import sync_playwright
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
