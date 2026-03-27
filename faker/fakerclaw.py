@@ -375,7 +375,7 @@ class AutoLogin:
             print(f"⚠️ [build_session 异常] {e}")
             return None
 
-    def _generate_trend_chart(self, records):
+    def _generate_trend_chart(self, records,user):
         """根据 type 分类生成多曲线趋势图"""
         try:
             
@@ -386,8 +386,8 @@ class AutoLogin:
             # 1. 数据聚合：{日期: {类型: 累加额度}}
             # 预定义类型映射（可选，方便显示名称）
             type_map = {
-                2: "Consumption (API)",
-                4: "Check-in Rewards",
+                2: "消耗",
+                4: "签到",
                 1: "Top-up",
                 3: "Refund"
             }
@@ -436,7 +436,7 @@ class AutoLogin:
                 plt.fill_between(sorted_dates, y_values, color=color, alpha=0.05)
     
             # 4. 图表修饰
-            plt.title("Account Activity Trend (USD)", fontsize=14, fontweight='bold', pad=15)
+            plt.title(f"{user}奖励及消耗曲线 (USD)", fontsize=14, fontweight='bold', pad=15)
             plt.xticks(rotation=45, fontsize=9)
             plt.ylabel("Amount (USD)", fontsize=10)
             plt.grid(True, linestyle=':', alpha=0.5)
@@ -551,7 +551,7 @@ class AutoLogin:
             records = st.get('data', {}).get('items', [])
             if records:
                 self.log(f"📈 成功获取 {len(records)} 条日志，正在生成趋势图...", "INFO")
-                chart_path = self._generate_trend_chart(records)
+                chart_path = self._generate_trend_chart(records,f"{data.get('display_name', 'Unknown')}")
             
             # --- 4. 发送通知 ---
             self.notify.send(
