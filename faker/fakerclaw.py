@@ -370,6 +370,51 @@ class AutoLogin:
             print(f"⚠️ [build_session 异常] {e}")
             return None
 
+    def _generate_trend_chart(self, records):
+        """生成趋势图内部工具函数"""
+        try:
+            from PIL import Image, ImageDraw, ImageFont
+            import os
+            
+            # 数据处理：按日期排序并取最近7条
+            records = sorted(records, key=lambda x: x['checkin_date'])[-7:]
+            if not records: return None
+            
+            dates = [r['checkin_date'][-2:] for r in records]
+            values = [float(r['quota_awarded']) / 500000 for r in records]
+            
+            # 画布设置
+            w, h = 600, 300
+            margin = 50
+            img = Image.new('RGB', (w, h), (255, 255, 255))
+            draw = ImageDraw.Draw(img)
+            
+            # 计算坐标
+            max_val = max(values) if max(values) > 0 else 1
+            points = []
+            for i, v in enumerate(values):
+                x = margin + i * (w - 2 * margin) / (len(values) - 1) if len(values) > 1 else w/2
+                y = h - margin - (v / max_val) * (h - 2 * margin)
+                points.append((x, y))
+            
+            # 绘制坐标轴
+            draw.line([(margin, h-margin), (w-margin, h-margin)], fill=(200, 200, 200), width=2) # X轴
+            
+            # 绘制折线和点
+            if len(points) > 1:
+                draw.line(points, fill=(75, 192, 192), width=3)
+            for i, (x, y) in enumerate(points):
+                draw.ellipse((x-4, y-4, x+4, y+4), fill=(54, 162, 235))
+                draw.text((x-10, h-margin+10), f"{dates[i]}d", fill=(0,0,0))
+                draw.text((x-10, y-25), f"{values[i]:.1f}U", fill=(100,100,100))
+                
+            path = "trend_temp.png"
+            img.save(path)
+            return path
+        except Exception as e:
+            self.log(f"⚠️ 趋势图绘制失败: {e}", "WARN")
+            return None
+
     def run_internal_checkin(self, page):
         """
         在 Playwright 页面上下文中直接执行签到逻辑
@@ -382,43 +427,26 @@ class AutoLogin:
             const urls = {
                 checkin: `${origin}/api/user/checkin`,
                 self:    `${origin}/api/user/self`,
+                stats:   `${origin}/api/user/checkin?month=2026-03`
             };
         
-            // persona 作为来源页
             const personaReferer = `${origin}/console/persona`;
-        
-            // 尝试从 localStorage 中提取真实的 New-Api-User（常见约定：session.token / newApiUser 等）
             let hvLS = null;
             try {
-                const raw =
-                    localStorage.getItem('session') ||
-                    localStorage.getItem('fk_session') ||
-                    localStorage.getItem('auth') ||
-                    localStorage.getItem('user') ||
-                    '';
+                const raw = localStorage.getItem('session') || localStorage.getItem('fk_session') || localStorage.getItem('auth') || localStorage.getItem('user') || '';
                 if (raw) {
                     try {
                         const obj = JSON.parse(raw);
-                        hvLS =
-                            obj?.newApiUser ||
-                            obj?.token ||
-                            obj?.accessToken ||
-                            obj?.user?.token ||
-                            obj?.user?.id ||
-                            obj?.id ||
-                            null;
+                        hvLS = obj?.newApiUser || obj?.token || obj?.accessToken || obj?.user?.token || obj?.user?.id || obj?.id || null;
                     } catch (_) {}
                 }
-                // 若站点直接把值存在单独键里
                 if (!hvLS) {
                     const direct = localStorage.getItem('New-Api-User');
                     if (direct) hvLS = direct;
                 }
             } catch (_) {}
         
-            // header 候选（优先用从页面存储里提取到的）
             const headerCandidates = [hvLS].filter(Boolean);
-        
             const result = { attempts: [], urls };
         
             for (const hv of headerCandidates) {
@@ -430,26 +458,23 @@ class AutoLogin:
                     'Origin': origin
                 };
         
-                let c = null, s = null, sc1 = 0, sc2 = 0;
+                let c = null, s = null, st = null, sc1 = 0, sc2 = 0;
         
                 try {
-                    const r1 = await fetch(urls.checkin, {
-                        method: 'POST',
-                        credentials: 'include',
-                        headers
-                    });
+                    const r1 = await fetch(urls.checkin, { method: 'POST', credentials: 'include', headers });
                     sc1 = r1.status;
                     try { c = await r1.json(); } catch (_) {}
                 } catch (_) {}
         
                 try {
-                    const r2 = await fetch(urls.self, {
-                        method: 'GET',
-                        credentials: 'include',
-                        headers
-                    });
+                    const r2 = await fetch(urls.self, { method: 'GET', credentials: 'include', headers });
                     sc2 = r2.status;
                     try { s = await r2.json(); } catch (_) {}
+                } catch (_) {}
+
+                try {
+                    const r3 = await fetch(urls.stats, { method: 'GET', credentials: 'include', headers });
+                    try { st = await r3.json(); } catch (_) {}
                 } catch (_) {}
         
                 const ok = Boolean(
@@ -468,10 +493,10 @@ class AutoLogin:
                     result.headerValue = hv;
                     result.checkin = c;
                     result.profile = s;
+                    result.stats = st; // 增加统计数据返回
                     return result;
                 }
             }
-        
             result.ok = false;
             return result;
         }
@@ -517,11 +542,23 @@ class AutoLogin:
                 )
                 print(info)
                 self.logs.append(info)
+
+                # 处理趋势图
+                chart_path = None
+                records = (result.get('stats') or {}).get('data', {}).get('stats', {}).get('records', [])
+                if records:
+                    chart_path = self._generate_trend_chart(records)
         
                 self.notify.send(
                     title="FakerClaw 签到报活",
-                    content=f"✅ 签到结果: {msg}\n💰 余额: {quota / 500000:.2f} USD"
+                    content=f"✅ 签到结果: {msg}\n💰 余额: {quota / 500000:.2f} USD",
+                    image_path=chart_path # 推送生成的趋势图
                 )
+
+                # 清理临时文件
+                if chart_path and os.path.exists(chart_path):
+                    try: os.remove(chart_path)
+                    except: pass
         
             return True
         except Exception as e:
