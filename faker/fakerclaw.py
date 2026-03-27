@@ -466,128 +466,91 @@ class AutoLogin:
                 self.log(f"⚠️ 多曲线趋势图绘制失败: {e}", "WARN")
             return None
 
+
     def run_internal_checkin(self, page):
-        """
-        在 Playwright 页面上下文中执行签到并生成 30 天趋势图
-        """
-        self.log("🚀 [步骤2/3] 正在页面内执行签到并获取 30 天数据...", "STEP")
+        self.log("🚀 [步骤2/3] 执行签到并获取趋势数据...", "STEP")
         
         checkin_js = """
         async () => {
             const origin = `https://api.fakerclaw.online`;  
             const now = Math.floor(Date.now() / 1000);
             const thirtyDaysAgo = now - 2592000;
-
             const urls = {
                 checkin: `${origin}/api/user/checkin`,
                 self:    `${origin}/api/user/self`,
-                // 确保 page_size 足够大以获取 30 天所有记录
                 stats:   `${origin}/api/log/self?p=1&page_size=100&type=0&start_timestamp=${thirtyDaysAgo}&end_timestamp=${now}`
             };
-        
-            const personaReferer = `${origin}/console/persona`;
-            let hvLS = null;
+            const raw = localStorage.getItem('session') || localStorage.getItem('fk_session') || localStorage.getItem('auth') || '';
+            let hv = null;
+            try { 
+                const obj = JSON.parse(raw); 
+                hv = obj?.newApiUser || obj?.token || obj?.accessToken || obj?.user?.token;
+            } catch(_) {}
+            if(!hv) hv = localStorage.getItem('New-Api-User');
+    
+            const headers = { 'New-Api-User': hv, 'Origin': origin };
             try {
-                const raw = localStorage.getItem('session') || localStorage.getItem('fk_session') || localStorage.getItem('auth') || localStorage.getItem('user') || '';
-                if (raw) {
-                    const obj = JSON.parse(raw);
-                    hvLS = obj?.newApiUser || obj?.token || obj?.accessToken || obj?.user?.token || obj?.user?.id || obj?.id || null;
-                }
-                if (!hvLS) hvLS = localStorage.getItem('New-Api-User');
-            } catch (_) {}
-        
-            const headers = {
-                'Accept': 'application/json, text/plain, */*',
-                'X-Requested-With': 'XMLHttpRequest',
-                'New-Api-User': hvLS,
-                'Referer': personaReferer,
-                'Origin': origin
-            };
-        
-            const res = { ok: false, checkin: null, profile: null, stats: null };
-            try {
-                // 1. 执行签到 (POST)
-                const r1 = await fetch(urls.checkin, { method: 'POST', credentials: 'include', headers });
-                res.checkin = await r1.json();
-                
-                // 2. 获取个人资料 (GET)
-                const r2 = await fetch(urls.self, { method: 'GET', credentials: 'include', headers });
-                res.profile = await r2.json();
-
-                // 3. 获取最近 30 天日志 (GET)
-                const r3 = await fetch(urls.stats, { method: 'GET', credentials: 'include', headers });
-                res.stats = await r3.json();
-                
-                res.ok = true;
-            } catch (e) { res.error = e.message; }
-            return res;
+                const r1 = await fetch(urls.checkin, { method: 'POST', headers });
+                const c = await r1.json();
+                const r2 = await fetch(urls.self, { headers });
+                const p = await r2.json();
+                const r3 = await fetch(urls.stats, { headers });
+                const st = await r3.json();
+                return { ok: true, checkin: c, profile: p, stats: st };
+            } catch (e) { return { ok: false, error: e.message }; }
         }
         """
         
         try:
             result = page.evaluate(checkin_js)
             if not result or not result.get('ok'):
-                self.log(f"❌ JS 执行失败或未获取到数据: {result.get('error')}", "ERROR")
+                self.log(f"❌ JS 执行失败: {result.get('error', '未知错误')}", "ERROR")
                 return False
-
-            # --- 1. 处理签到结果 ---
+    
+            # --- 1. 数据解析 (只解析一次，不放循环里) ---
             c = result.get('checkin') or {}
-            msg = c.get('message') or ("成功" if c.get('success') else "失败")
-            self.log(f"📝 签到结果: {msg}", "SUCCESS" if c.get('success') else "WARN")
-            
-            # --- 2. 处理余额信息 ---
             p = result.get('profile') or {}
-            d = p.get('data', {}) if isinstance(p, dict) else {}
-            quota = float(d.get('quota', 0))
-            used = d.get('used_quota', 0)
+            st = result.get('stats') or {}
             
+            msg = c.get('message') or ("成功" if c.get('success') else "失败")
+            data = p.get('data', {})
+            quota = float(data.get('quota', 0))
+            
+            # --- 2. 打印用户信息 (只打印一次) ---
             user_info = (
                 f"\n" + "-"*35 + "\n"
-                f"👤 用户: {d.get('display_name', 'Unknown')}\n"
+                f"👤 用户: {data.get('display_name', 'Unknown')}\n"
                 f"💰 余额: {quota / 500000:.2f} USD\n"
-                f"📊 已用: {used}\n"
-                f"-"*35
+                f"📊 已用: {data.get('used_quota', 0)}\n"
+                + "-"*35
             )
             print(user_info)
-
-            # --- 3. 提取 Stats 数据并生成趋势图 ---
+            self.log(f"📝 签到结果: {msg}", "SUCCESS" if c.get('success') else "WARN")
+    
+            # --- 3. 生成趋势图 ---
             chart_path = None
-            stats_data = result.get('stats', {})
-            # 根据你提供的 JSON 结构，数据在 data.items 中
-            records = []
-            if isinstance(stats_data, dict) and stats_data.get('success'):
-                records = stats_data.get('data', {}).get('items', [])
-            
+            records = st.get('data', {}).get('items', [])
             if records:
-                self.log(f"📈 成功获取到 {len(records)} 条日志记录，正在生成趋势图...", "INFO")
+                self.log(f"📈 成功获取 {len(records)} 条日志，正在生成趋势图...", "INFO")
                 chart_path = self._generate_trend_chart(records)
-            else:
-                self.log("⚠️ 未能从 stats 中提取到有效的 items 记录", "WARN")
-
-            # --- 4. 发送推送 ---
-            try:
-                self.notify.send(
-                    title="FakerClaw 30天统计报表",
-                    content=f"✅ 签到: {msg}\n💰 当前余额: {quota / 500000:.2f} USD\n📅 统计范围: 最近30天",
-                    image_path=chart_path 
-                )
-                self.log("🔔 推送任务已提交", "SUCCESS")
-            except Exception as e:
-                self.log(f"❌ 推送失败: {e}", "ERROR")
-
-            # --- 5. 清理临时文件 ---
-            if chart_path and os.path.exists(chart_path):
-                try: 
-                    import os
+            
+            # --- 4. 发送通知 ---
+            self.notify.send(
+                title="FakerClaw 30天统计报表",
+                content=f"✅ 签到: {msg}\n💰 余额: {quota / 500000:.2f} USD",
+                image_path=chart_path 
+            )
+    
+            # --- 5. 清理文件 (修复 UnboundLocalError) ---
+            if chart_path:
+                # 删掉这里面的 import os，使用全局导入
+                if os.path.exists(chart_path):
                     os.remove(chart_path)
-                    self.log(f"🗑️ 已清理临时图表: {chart_path}", "DEBUG")
-                except: pass
+                    self.log(f"🗑️ 已清理临时文件", "DEBUG")
         
             return True
         except Exception as e:
-            self.log(f"❌ 签到流程异常: {e}", "ERROR")
-            import traceback
-            print(traceback.format_exc())
+            self.log(f"❌ 流程异常: {e}", "ERROR")
             return False
     
     def mask_url(self,url):
