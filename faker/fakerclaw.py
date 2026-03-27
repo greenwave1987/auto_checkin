@@ -555,7 +555,7 @@ class AutoLogin:
             
             # --- 4. 发送通知 ---
             self.notify.send(
-                title="FakerClaw 30天统计报表",
+                title="",
                 content=f"👤 用户: {data.get('display_name', 'Unknown')}\n✅ 签到: {msg}\n💰 余额: {quota / 500000:.2f} USD",
                 image_path=chart_path 
             )
