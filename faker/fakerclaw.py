@@ -1337,10 +1337,7 @@ def main():
     print(f"fk_locals数据大小: {len(json.dumps(fk_locals)) / 1024:.2f} KB")
     secret.update(fk_locals)
     # 发送结果
-    notify.send(
-        title="fakerclaw 自动登录保活汇总",
-        content="\n".join(results)
-    )
+    #notify.send(title="fakerclaw 自动登录保活汇总", content="\n".join(results))
 
 
 if __name__ == "__main__":
