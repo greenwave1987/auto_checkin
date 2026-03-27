@@ -480,13 +480,16 @@ class AutoLogin:
                 self:    `${origin}/api/user/self`,
                 stats:   `${origin}/api/log/self?p=1&page_size=100&type=0&start_timestamp=${thirtyDaysAgo}&end_timestamp=${now}`
             };
-            const raw = localStorage.getItem('session') || localStorage.getItem('fk_session') || localStorage.getItem('auth') || '';
+            const raw = localStorage.getItem('session') || localStorage.getItem('user') || localStorage.getItem('auth') || '';
             let hv = null;
-            try { 
-                const obj = JSON.parse(raw); 
-                hv = obj?.newApiUser || obj?.token || obj?.accessToken || obj?.user?.token;
-            } catch(_) {}
-            if(!hv) hv = localStorage.getItem('New-Api-User');
+            try {
+                const raw = localStorage.getItem('session') || localStorage.getItem('fk_session') || localStorage.getItem('auth') || localStorage.getItem('user') || '';
+                if (raw) {
+                    const obj = JSON.parse(raw);
+                    hvLS = obj?.newApiUser || obj?.token || obj?.accessToken || obj?.user?.token || obj?.user?.id || obj?.id || null;
+                }
+                if (!hvLS) hvLS = localStorage.getItem('New-Api-User');
+            } catch (_) {}
     
             const headers = { 'New-Api-User': hv, 'Origin': origin };
             try {
