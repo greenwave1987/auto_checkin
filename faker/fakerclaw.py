@@ -480,27 +480,43 @@ class AutoLogin:
                 self:    `${origin}/api/user/self`,
                 stats:   `${origin}/api/log/self?p=1&page_size=100&type=0&start_timestamp=${thirtyDaysAgo}&end_timestamp=${now}`
             };
-            const raw = localStorage.getItem('session') || localStorage.getItem('user') || localStorage.getItem('auth') || '';
+
+            // --- 核心修复：找回丢失的 Token 提取逻辑 ---
             let hv = null;
             try {
-                const raw = localStorage.getItem('session') || localStorage.getItem('fk_session') || localStorage.getItem('auth') || localStorage.getItem('user') || '';
-                if (raw) {
-                    const obj = JSON.parse(raw);
-                    hvLS = obj?.newApiUser || obj?.token || obj?.accessToken || obj?.user?.token || obj?.user?.id || obj?.id || null;
+                const keys = ['session', 'fk_session', 'auth', 'user'];
+                for (const key of keys) {
+                    const raw = localStorage.getItem(key);
+                    if (raw) {
+                        try {
+                            const obj = JSON.parse(raw);
+                            hv = obj?.newApiUser || obj?.token || obj?.accessToken || obj?.user?.token || obj?.user?.id || obj?.id;
+                        } catch (_) { if (!hv) hv = raw; } // 如果不是JSON，尝试直接用raw
+                    }
+                    if (hv) break;
                 }
-                if (!hvLS) hvLS = localStorage.getItem('New-Api-User');
+                if (!hv) hv = localStorage.getItem('New-Api-User');
             } catch (_) {}
-    
-            const headers = { 'New-Api-User': hv, 'Origin': origin };
+
+            if (!hv) return { ok: false, error: "未找到有效的 New-Api-User" };
+
+            const headers = { 
+                'New-Api-User': hv, 
+                'Origin': origin,
+                'Accept': 'application/json, text/plain, */*',
+                'X-Requested-With': 'XMLHttpRequest'
+            };
+
             try {
-                const r1 = await fetch(urls.checkin, { method: 'POST', headers });
-                const c = await r1.json();
-                const r2 = await fetch(urls.self, { headers });
-                const p = await r2.json();
-                const r3 = await fetch(urls.stats, { headers });
-                const st = await r3.json();
-                return { ok: true, checkin: c, profile: p, stats: st };
-            } catch (e) { return { ok: false, error: e.message }; }
+                const [r1, r2, r3] = await Promise.all([
+                    fetch(urls.checkin, { method: 'POST', headers }).then(r => r.json().catch(() => ({}))),
+                    fetch(urls.self, { headers }).then(r => r.json().catch(() => ({}))),
+                    fetch(urls.stats, { headers }).then(r => r.json().catch(() => ({})))
+                ]);
+                return { ok: true, checkin: r1, profile: r2, stats: r3 };
+            } catch (e) { 
+                return { ok: false, error: e.message }; 
+            }
         }
         """
         
