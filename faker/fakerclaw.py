@@ -386,10 +386,10 @@ class AutoLogin:
             # 1. 数据聚合：{日期: {类型: 累加额度}}
             # 预定义类型映射（可选，方便显示名称）
             type_map = {
-                2: "消耗",
-                4: "签到",
                 1: "Top-up",
-                3: "Refund"
+                2: "Consumption",
+                3: "Refund",
+                4: "Check-in"
             }
             
             aggregated_data = defaultdict(lambda: defaultdict(float))
@@ -436,7 +436,7 @@ class AutoLogin:
                 plt.fill_between(sorted_dates, y_values, color=color, alpha=0.05)
     
             # 4. 图表修饰
-            plt.title(f"{user}奖励及消耗曲线 (USD)", fontsize=14, fontweight='bold', pad=15)
+            plt.title(f"Activity Trend for {user} (USD)", fontsize=14, fontweight='bold', pad=15)
             plt.xticks(rotation=45, fontsize=9)
             plt.ylabel("Amount (USD)", fontsize=10)
             plt.grid(True, linestyle=':', alpha=0.5)
@@ -556,7 +556,7 @@ class AutoLogin:
             # --- 4. 发送通知 ---
             self.notify.send(
                 title="FakerClaw 30天统计报表",
-                content=f"✅ 签到: {msg}\n💰 余额: {quota / 500000:.2f} USD",
+                content=f"👤 用户: {data.get('display_name', 'Unknown')}\n✅ 签到: {msg}\n💰 余额: {quota / 500000:.2f} USD",
                 image_path=chart_path 
             )
     
@@ -1217,10 +1217,11 @@ class AutoLogin:
                 
                 else:
                     self.log("未获取到 storage_state", "WARN")
+                    if self.shots:
+                        self.notify.send(title="fakerclaw 自动登录保活",content=f"❌ {self.gh_username}！",image_path=self.shots[-1])
                 
                 
-                if self.shots:
-                    self.notify.send(title="fakerclaw 自动登录保活",content=f"✅ {self.gh_username}成功！",image_path=self.shots[-1])
+                
             except Exception as e:
                 self.log(f"异常: {e}", "ERROR")
                 self.shot(page, "异常")
