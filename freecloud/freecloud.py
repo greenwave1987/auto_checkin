@@ -17,7 +17,7 @@ from engine.notify import TelegramNotifier
 from engine.main import ConfigReader, SecretUpdater, test_proxy,to_beijing_time
 plt.switch_backend('Agg') # 必须在其他 plt 操作之前执行
 LOGIN_URL = "https://freecloud.ltd/login"
-DASHBOARD_URL = "https://freecloud.ltd/dashboard"
+DASHBOARD_URL = "https://freecloud.ltd/server/lxc"
 BALANCE_URL = "https://freecloud.ltd/balance"
 CHECKIN_URL = "https://checkin.freecloud.ltd/"
 SCREENSHOT_DIR = "/tmp/freecloud_fail"
