@@ -1,0 +1,59 @@
+name: FREECLOUD 自动签到
+
+on:
+  workflow_dispatch:   # 手动触发
+  schedule:
+    - cron: "15 23,11 * * *"  # 每天 UTC 23:15 and 11:15，可改为你的时间
+
+jobs:
+  checkin:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write  # 必须开启以便更新 Secret
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Gost
+        run: |
+          curl -L https://github.com/ginuerzh/gost/releases/download/v2.11.5/gost-linux-amd64-2.11.5.gz | gunzip > gost
+          chmod +x gost
+
+      - name: Install Python Dependencies
+        run: |
+          pip install playwright requests pyotp pynacl requests[socks] cryptography matplotlib
+          playwright install chromium --with-deps
+
+      - name: Run FREECLOUD Task
+        env:
+          # 配置解密密钥
+          CONFIG_PASSWORD: ${{ secrets.CONFIG_PASSWORD }}
+
+          # 账号信息与代理信息
+          LF_INFO: ${{ secrets.LF_INFO }}
+          PROXY_INFO: ${{ secrets.PROXY_INFO }}
+
+          # 多账号 session storage
+          FREECLOUD_LOCALS: ${{ secrets.FREECLOUD_LOCALS }}
+
+          # GitHub 信息，SecretUpdater 需要
+          GITHUB_REPOSITORY: ${{ github.repository }}
+
+
+        run: |
+          python -u freecloud/freecloud.py
+
+      - name: Upload Screenshots on Failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FREECLOUD-debug-screenshots
+          path: "*.png"
+          retention-days: 3
