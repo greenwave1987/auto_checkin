@@ -586,7 +586,7 @@ class freecloudTask:
     def run(self):
         self.log("freecloud 多账号任务启动", "STEP")
 
-        accounts = self.config.get_value("CF_INFO") or []
+        accounts = self.config.get_value("FC_INFO") or []
         proxies = self.config.get_value("WZ_INFO") or []
         lf_locals = self.secret.load() or {}
 
