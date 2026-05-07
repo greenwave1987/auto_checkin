@@ -17,10 +17,10 @@ from engine.notify import TelegramNotifier
 from engine.main import ConfigReader, SecretUpdater, test_proxy,to_beijing_time
 plt.switch_backend('Agg') # 必须在其他 plt 操作之前执行
 LOGIN_URL = "https://freecloud.ltd/login"
-DASHBOARD_URL = "https://freecloud.net/dashboard"
-BALANCE_URL = "https://freecloud.net/balance"
-CHECKIN_URL = "https://checkin.freecloud.net/"
-SCREENSHOT_DIR = "/tmp/leaflow_fail"
+DASHBOARD_URL = "https://freecloud.ltd/dashboard"
+BALANCE_URL = "https://freecloud.ltd/balance"
+CHECKIN_URL = "https://checkin.freecloud.ltd/"
+SCREENSHOT_DIR = "/tmp/freecloud_fail"
 
 
 # ==================== 工具函数 ====================
@@ -232,21 +232,7 @@ class freecloudTask:
                     self.log("storage 已失效，重新登录", "WARN")
                     self.do_login(page, user, pwd)
                     return True
-    
-                # 可选：额外验证接口（更稳）
-                try:
-                    resp = page.evaluate("""
-                        async () => {
-                            const r = await fetch("/api/workspaces/current/all");
-                            return r.status;
-                        }
-                    """)
-                    if resp != 200:
-                        raise Exception(f"接口状态异常: {resp}")
-                except:
-                    self.log("接口验证失败，尝试重新登录", "WARN")
-                    self.do_login(page, user, pwd)
-                    return True
+
     
                 self.log("storage 有效，跳过登录", "SUCCESS")
                 return False
@@ -273,7 +259,7 @@ class freecloudTask:
         api_script = """
         async () => {
             try {
-                const response = await fetch("https://freecloud.net/balance", {
+                const response = await fetch("https://freecloud.ltd/balance", {
                     headers: {
                         "x-inertia": "true",
                         "x-inertia-version": "1da8f358bacd543adbf104c91fa91267",
