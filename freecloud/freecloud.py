@@ -151,27 +151,59 @@ class freecloudTask:
     # ---------- 登录 ----------
     def do_login(self, page, user, pwd):
         self.log(f"打开登录页: {LOGIN_URL}", "STEP")
-        page.goto(LOGIN_URL)
-
+        # 建议使用 wait_until="networkidle" 确保验证码加载出来
+        page.goto(LOGIN_URL, wait_until="networkidle")
+    
+        # 1. 输入账号 (使用你提供的 name="username")
         self.log(f"输入账号: {mask_email(user)}", "INFO")
-        page.fill("#account", user)
-
+        page.locator('input[name="username"]').fill(user)
+    
+        # 2. 输入密码 (使用 name="password")
         self.log(f"输入密码: {mask_password(pwd)}", "INFO")
-        page.fill("#password", pwd)
-
+        page.locator('input[name="password"]').fill(pwd)
+    
+        # 3. 处理数学验证码 (核心修改)
         try:
-            self.log("点击「保持登录状态」", "STEP")
-            page.get_by_role("checkbox", name="保持登录状态").click(force=True)
+            self.log("正在识别数学验证码...", "STEP")
+            # 验证码输入框通常带有 placeholder="X + Y = ?"
+            captcha_input = page.locator('input[placeholder*="="]')
+            captcha_text = captcha_input.get_attribute("placeholder")
+            
+            # 提取数字并计算
+            nums = re.findall(r'\d+', captcha_text)
+            if len(nums) >= 2:
+                result = str(int(nums[0]) + int(nums[1]))
+                captcha_input.fill(result)
+                self.log(f"验证码计算成功: {nums[0]} + {nums[1]} = {result}", "INFO")
+            else:
+                self.log("无法解析验证码文本", "ERROR")
+        except Exception as e:
+            self.log(f"验证码处理异常: {e}", "WARN")
+    
+        # 4. 勾选协议 (截图显示这是登录的前提)
+        try:
+            self.log("勾选法律声明协议", "STEP")
+            # 页面只有一个 checkbox
+            page.locator('input[type="checkbox"]').check()
         except Exception:
-            self.log("未找到保持登录复选框", "WARN")
-
+            self.log("未找到协议复选框", "WARN")
+    
+        # 5. 点击登录按钮
         self.log("点击登录按钮", "STEP")
-        page.locator('button[type="submit"]').click()
-        page.wait_for_load_state("networkidle", timeout=60000)
-
+        # 页面显示按钮文本为 "点击登录"
+        page.locator('button:has-text("点击登录")').click()
+        
+        # 增加等待时间，防止 GitHub 这种慢速环境跳转过快
+        try:
+            page.wait_for_url(re.compile(r".*/index|.*/dashboard"), timeout=30000)
+        except Exception:
+            pass
+    
         if "login" in page.url.lower():
-            raise RuntimeError("登录失败")
-
+            # 如果还在登录页，尝试截个图方便调试
+            page.screenshot(path="login_failed.png")
+            raise RuntimeError("登录失败：页面未跳转，请检查账号或验证码")
+    
         self.log("登录成功", "SUCCESS")
 
     # ---------- 验证 storage ----------
