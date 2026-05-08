@@ -9,7 +9,7 @@ import json
 import socket
 import subprocess
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
-from playwright_stealth import stealth_async
+from playwright_stealth import stealth
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE_DIR)
@@ -134,7 +134,7 @@ class freecloudTask:
 
         page = context.new_page()
         # 应用 stealth 脚本
-        await stealth_async(page)
+        await stealth(page)
         return pw, browser, page
 
     # ---------- 截图 ----------
