@@ -2,17 +2,18 @@ import os
 import io
 import sys
 import time
-import re  # 修复缺失的正则库
+import re
 import matplotlib.pyplot as plt
 from datetime import datetime, timedelta, timezone
 import base64
 import json
 import socket
 import subprocess
-from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeoutError # 改为异步
+from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeoutError
 from playwright_stealth import stealth
 import asyncio
 
+# ==================== 环境配置 ====================
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE_DIR)
 
@@ -25,7 +26,6 @@ DASHBOARD_URL = "https://freecloud.ltd/server/lxc"
 BALANCE_URL = "https://freecloud.ltd/balance"
 CHECKIN_URL = "https://checkin.freecloud.ltd/"
 SCREENSHOT_DIR = "/tmp/freecloud_fail"
-
 
 # ==================== 工具函数 ====================
 def mask_email(email: str):
@@ -53,7 +53,6 @@ def decode_storage(b64_str):
 def encode_storage(storage):
     return base64.b64encode(json.dumps(storage).encode()).decode()
 
-
 # ==================== 核心类 ====================
 class freecloudTask:
     def __init__(self):
@@ -62,7 +61,7 @@ class freecloudTask:
         self.notifier = TelegramNotifier(self.config)
         self.secret = SecretUpdater("FREECLOUD_LOCALS", config_reader=self.config)
         self.gost_proc = None
-        self.user = "Unknown" # 初始化
+        self.user = "Unknown" 
         os.makedirs(SCREENSHOT_DIR, exist_ok=True)
 
     # ---------- 日志 ----------
@@ -72,8 +71,8 @@ class freecloudTask:
         print(line, flush=True)
         self.logs.append(line)
 
-    # ---------- Gost ----------
-    def start_gost_proxy(self, proxy):
+    # ---------- Gost (修改为异步等待) ----------
+    async def start_gost_proxy(self, proxy):
         def free_port():
             s = socket.socket()
             s.bind(("", 0))
@@ -95,14 +94,13 @@ class freecloudTask:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL
         )
-        time.sleep(2)
+        await asyncio.sleep(2) # 替换 time.sleep
         return {"server": server}
 
-    # ---------- 浏览器 ----------
-    async def open_browser(self, proxy, storage):
+    # ---------- 浏览器 (修复 async_playwright 调用) ----------
+    async def open_browser(self, playwright_instance, proxy, storage):
         self.log("启动 Playwright 浏览器", "STEP")
-        pw = await async_playwright().start() # 异步启动
-
+        
         launch_args = {
             "headless": True,
             "args": [
@@ -115,7 +113,7 @@ class freecloudTask:
 
         if proxy:
             if proxy.get("type") == "socks5" and proxy.get("username"):
-                gost = self.start_gost_proxy(proxy)
+                gost = await self.start_gost_proxy(proxy)
                 launch_args["proxy"] = {"server": gost["server"]}
                 self.log(f"使用 Gost 本地代理: {gost['server']}", "SUCCESS")
             else:
@@ -123,16 +121,17 @@ class freecloudTask:
                 launch_args["proxy"] = {"server": server}
                 self.log(f"启用代理: {mask_ip(proxy['server'])}", "INFO")
 
-        browser = await pw.chromium.launch(**launch_args)
+        # 使用传入的 playwright 实例启动浏览器
+        browser = await playwright_instance.chromium.launch(**launch_args)
         context = await browser.new_context(
             storage_state=storage,
             viewport={"width": 1920, "height": 1080},
-            user_agent="Mozilla/5.0 Chrome/128.0.0.0"
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
         )
 
         page = await context.new_page()
         await stealth(page)
-        return pw, browser, page
+        return browser, page
 
     # ---------- 截图 ----------
     async def capture_and_notify(self, page, user, reason):
@@ -142,7 +141,7 @@ class freecloudTask:
         except PlaywrightTimeoutError:
             self.log("截图超时，跳过截图", "WARN")
         self.notifier.send(
-            title=f"ℹ️ FreeCloud 登录\n", content=f"账号: {mask_name(user)}\n原因: {reason}", image_path=path
+            title=f"ℹ️ FreeCloud 登录状态\n", content=f"账号: {mask_name(user)}\n原因: {reason}", image_path=path
         )
 
     # ---------- 登录 ----------
@@ -161,13 +160,14 @@ class freecloudTask:
             captcha_input = page.locator('input[placeholder*="="]')
             captcha_text = await captcha_input.get_attribute("placeholder")
             
-            nums = re.findall(r'\d+', captcha_text)
-            if len(nums) >= 2:
-                result = str(int(nums[0]) + int(nums[1]))
-                await captcha_input.fill(result)
-                self.log(f"验证码计算成功: {nums[0]} + {nums[1]} = {result}", "INFO")
-            else:
-                self.log("无法解析验证码文本", "ERROR")
+            if captcha_text:
+                nums = re.findall(r'\d+', captcha_text)
+                if len(nums) >= 2:
+                    result = str(int(nums[0]) + int(nums[1]))
+                    await captcha_input.fill(result)
+                    self.log(f"验证码计算成功: {nums[0]} + {nums[1]} = {result}", "INFO")
+                else:
+                    self.log("无法解析验证码文本", "ERROR")
         except Exception as e:
             self.log(f"验证码处理异常: {e}", "WARN")
     
@@ -198,8 +198,8 @@ class freecloudTask:
                 self.log(f"验证登录状态 (第 {attempt}/{max_retry} 次)", "INFO")
                 await page.goto(DASHBOARD_URL, timeout=60000)
                 await page.wait_for_load_state("domcontentloaded", timeout=60000)
-                await page.wait_for_timeout(5000) # 替换 time.sleep
-    
+                await asyncio.sleep(5) 
+
                 current_url = page.url.lower()
                 if "login" in current_url:
                     self.log("storage 已失效，重新登录", "WARN")
@@ -213,7 +213,7 @@ class freecloudTask:
                 self.log(f"验证异常: {str(e)}", "ERROR")
                 if attempt < max_retry:
                     self.log("等待后重试...", "WARN")
-                    await page.wait_for_timeout(3000)
+                    await asyncio.sleep(3)
                     continue
                 else:
                     self.log("多次失败，强制重新登录", "ERROR")
@@ -248,7 +248,7 @@ class freecloudTask:
                 self.log(f"获取余额信息 (第 {attempt}/{max_retry} 次)", "STEP")
                 await page.goto(DASHBOARD_URL, timeout=60000)
                 await page.wait_for_load_state("domcontentloaded", timeout=30000)
-                await page.wait_for_timeout(2000)
+                await asyncio.sleep(2)
                 result = await page.evaluate(api_script)
                 if result is None: raise Exception("返回数据为空")
                 if result.get("status") == -1: raise Exception(result.get("error"))
@@ -262,7 +262,7 @@ class freecloudTask:
             except Exception as e:
                 self.log(f"获取失败: {str(e)}", "WARN")
                 if attempt < max_retry:
-                    await page.wait_for_timeout(3000)
+                    await asyncio.sleep(3)
                     continue
                 else: return None
 
@@ -314,7 +314,7 @@ class freecloudTask:
             try:
                 self.log(f"第 {attempt+1} 次尝试访问签到页: {CHECKIN_URL}", "STEP")
                 await page.goto(CHECKIN_URL, wait_until="domcontentloaded", timeout=60000)
-                await page.wait_for_timeout(15000)
+                await asyncio.sleep(15)
                 
                 if await page.locator(success_text_selector).count() > 0:
                     self.log("页面检测到今日已签到", "SUCCESS")
@@ -327,14 +327,14 @@ class freecloudTask:
                 
                 if btn:
                     self.log("发现签到按钮，执行点击", "SUCCESS")
-                    await page.wait_for_timeout(5000)
+                    await asyncio.sleep(5)
                     await btn.click()
                     
                     for _ in range(15):
                         if await page.locator(success_text_selector).count() > 0:
                             self.log("签到确认成功", "SUCCESS")
                             break
-                        await page.wait_for_timeout(5000)
+                        await asyncio.sleep(5)
                     
                     await self.capture_and_notify(page, self.user, "签到状态!")
                     if await self.get_checkin_info(page):
@@ -344,7 +344,7 @@ class freecloudTask:
             except Exception as e:
                 self.log(f"第 {attempt+1} 次尝试异常: {str(e)}", "WARN")
                 if attempt < 14:
-                    await page.wait_for_timeout(10000)
+                    await asyncio.sleep(10)
                 else:
                     await self.capture_and_notify(page, self.user, f"签到最终失败: {str(e)}")
                     raise RuntimeError("签到流程重试耗尽")
@@ -382,7 +382,8 @@ class freecloudTask:
             
         if res["daily_history"]:
             plt.figure(figsize=(10, 5))
-            dates = list(res["daily_history"].keys())[-12:]
+            all_dates = sorted(res["daily_history"].keys())
+            dates = all_dates[-12:]
             amounts = [res["daily_history"][d] for d in dates]
             plt.plot(dates, amounts, marker='o', color='#10a37f', linewidth=2)
             plt.fill_between(dates, amounts, color='#10a37f', alpha=0.1)
@@ -405,40 +406,45 @@ class freecloudTask:
         lf_locals = self.secret.load() or {}
         new_sessions = {}
 
-        for account, proxy in zip(accounts, proxies):
-            page = None
-            browser = None
-            pw = None
-            try:
-                print("\n" + "="*50)
-                user = account["username"]
-                pwd = account["password"]
-                self.log(f"开始处理账号: {mask_email(user)}", "STEP")
-                test_proxy(proxy)
-                storage = decode_storage(lf_locals[user]) if user in lf_locals else None
+        # 核心修复：使用 async with 启动 playwright
+        async with async_playwright() as pw_manager:
+            for account, proxy in zip(accounts, proxies):
+                page = None
+                browser = None
                 try:
-                    pw, browser, page = await self.open_browser(proxy, storage)
-                    refreshed = await self.ensure_login(page, user, pwd)
-                    await self.do_checkin(page)
-                    if refreshed or not storage:
-                        self.log("更新 storage", "STEP")
-                        new_sessions[user] = await page.context.storage_state()
+                    print("\n" + "="*50)
+                    user = account["username"]
+                    pwd = account["password"]
+                    self.log(f"开始处理账号: {mask_email(user)}", "STEP")
+                    
+                    test_proxy(proxy)
+                    storage = decode_storage(lf_locals[user]) if user in lf_locals else None
+                    
+                    try:
+                        # 传入上下文管理器实例
+                        browser, page = await self.open_browser(pw_manager, proxy, storage)
+                        refreshed = await self.ensure_login(page, user, pwd)
+                        await self.do_checkin(page)
+                        
+                        if refreshed or not storage:
+                            self.log("更新 storage", "STEP")
+                            state = await page.context.storage_state()
+                            new_sessions[user] = encode_storage(state)
+                    except Exception as e:
+                        self.log(f"{mask_email(user)} 登录异常: {e}", "ERROR")
+                        if page: await self.capture_and_notify(page, user, str(e))
+                    finally:
+                        if browser: await browser.close()
+                        if self.gost_proc:
+                            self.gost_proc.terminate()
+                            self.gost_proc = None
                 except Exception as e:
-                    self.log(f"{mask_email(user)} 登录异常: {e}", "ERROR")
-                    if page: await self.capture_and_notify(page, user, str(e))
-                finally:
-                    if browser: await browser.close()
-                    if pw: await pw.stop()
-                    if self.gost_proc:
-                        self.gost_proc.terminate()
-                        self.gost_proc = None
-            except Exception as e:
-                self.log(f"处理账号 {user} 时发生未预期错误: {e}", "ERROR")
+                    self.log(f"处理账号 {user} 时发生未预期错误: {e}", "ERROR")
             
         if new_sessions:
             self.log("准备回写 GitHub Secret", "STEP")
-            encoded = {k: encode_storage(v) for k, v in new_sessions.items()}
-            self.secret.update(encoded)
+            lf_locals.update(new_sessions)
+            self.secret.update(lf_locals)
             self.log("Secret 回写成功", "SUCCESS")
         self.log("全部任务结束", "STEP")
 
