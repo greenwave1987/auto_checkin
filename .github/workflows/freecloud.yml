@@ -22,10 +22,10 @@ jobs:
           python-version: "3.11"
 
       - name: Install System Dependencies
-        # 必须安装 xvfb (虚拟显示器) 和 xdotool (物理点击工具)
         run: |
           sudo apt-get update
-          sudo apt-get install -y xdotool xvfb libgbm1 libasound2
+          # 将 libasound2 替换为 libasound2t64
+          sudo apt-get install -y xdotool xvfb libgbm1 libasound2t64
 
       - name: Install Gost
         run: |
