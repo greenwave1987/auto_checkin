@@ -10,10 +10,10 @@ import json
 import socket
 import subprocess
 import asyncio
+import traceback
 
-# --- 关键导入：确保从 async_api 明确导入函数 ---
-from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeoutError
-from playwright_stealth import stealth
+# 强制使用绝对路径导入
+import playwright.async_api
 
 # ==================== 环境依赖加载 ====================
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -36,9 +36,6 @@ def mask_email(email: str):
     if not email or "@" not in email: return "***"
     name, domain = email.split("@", 1)
     return f"{name[:2]}***@{domain}"
-
-def mask_name(name: str):
-    return f"{name[:2]}***" if name else "***"
 
 def decode_storage(b64_str):
     if not b64_str: return None
@@ -91,6 +88,7 @@ class FreecloudTask:
             else:
                 launch_args["proxy"] = {"server": f"socks5://{proxy_info['server']}:{proxy_info['port']}"}
 
+        # 这里使用 playwright.async_api.async_playwright() 显式调用
         browser = await p_instance.chromium.launch(**launch_args)
         context = await browser.new_context(
             storage_state=storage_state,
@@ -98,7 +96,8 @@ class FreecloudTask:
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
         )
         page = await context.new_page()
-        await stealth(page)
+        # 简单注入防止检测
+        await page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
         return browser, page
 
     async def run(self):
@@ -108,8 +107,9 @@ class FreecloudTask:
         local_secrets = self.secret.load() or {}
         new_sessions = {}
 
-        # --- 核心修复：确保使用 async with async_playwright() ---
-        async with async_playwright() as p:
+        # 【重点修复】显式调用 playwright.async_api.async_playwright()
+        # 这种写法最能避开“模块名与函数名同名”导致的调用冲突
+        async with playwright.async_api.async_playwright() as p:
             for i, account in enumerate(accounts):
                 user = account.get("username")
                 pwd = account.get("password")
@@ -127,22 +127,24 @@ class FreecloudTask:
                     
                     # 登录验证
                     await page.goto(DASHBOARD_URL, timeout=60000)
-                    await asyncio.sleep(3)
+                    await asyncio.sleep(5)
                     
                     if "login" in page.url.lower():
-                        self.log("Storage 失效，执行登录", "WARN")
+                        self.log("Session 已过期，开始重新登录", "WARN")
                         await self.do_login(page, user, pwd)
-                        # 登录后获取新状态
+                        # 记录新 Session
                         state = await page.context.storage_state()
                         new_sessions[user] = encode_storage(state)
+                        self.log("Session 已更新", "SUCCESS")
                     else:
-                        self.log("Storage 有效，跳过登录", "SUCCESS")
+                        self.log("Session 依然有效", "SUCCESS")
 
-                    # 执行签到及获取数据
+                    # 执行签到
                     await self.do_checkin(page, user)
 
-                except Exception as e:
-                    self.log(f"账号异常: {str(e)}", "ERROR")
+                except Exception:
+                    error_trace = traceback.format_exc()
+                    self.log(f"账号处理失败，详细错误:\n{error_trace}", "ERROR")
                 finally:
                     if browser: await browser.close()
                     if self.gost_proc:
@@ -152,42 +154,49 @@ class FreecloudTask:
         if new_sessions:
             local_secrets.update(new_sessions)
             self.secret.update(local_secrets)
-            self.log("Secret 更新成功", "SUCCESS")
+            self.log("GitHub Secrets 回写完成", "SUCCESS")
+        
+        self.log("全部任务处理结束", "STEP")
 
     async def do_login(self, page, user, pwd):
         await page.goto(LOGIN_URL, wait_until="networkidle")
         await page.locator('input[name="username"]').fill(user)
         await page.locator('input[name="password"]').fill(pwd)
         
-        # 验证码处理
+        # 简单数学验证码
         try:
-            captcha_input = page.locator('input[placeholder*="="]')
-            text = await captcha_input.get_attribute("placeholder")
-            nums = re.findall(r'\d+', text)
+            placeholder = await page.locator('input[placeholder*="="]').get_attribute("placeholder")
+            nums = re.findall(r'\d+', placeholder)
             if len(nums) >= 2:
-                res = str(int(nums[0]) + int(nums[1]))
-                await captcha_input.fill(res)
+                ans = str(int(nums[0]) + int(nums[1]))
+                await page.locator('input[placeholder*="="]').fill(ans)
+                self.log(f"自动计算验证码: {nums[0]}+{nums[1]}={ans}", "INFO")
         except: pass
 
         await page.locator('button:has-text("点击登录")').click()
+        # 等待成功跳转
         await page.wait_for_url(re.compile(r".*/dashboard|.*/index"), timeout=30000)
 
     async def do_checkin(self, page, user):
-        self.log("检查签到状态...", "STEP")
+        self.log("跳转签到页...", "STEP")
         await page.goto(CHECKIN_URL, wait_until="networkidle")
         await asyncio.sleep(5)
         
         if await page.locator('text=今日已签到').count() > 0:
-            self.log("今日已签到", "SUCCESS")
+            self.log("检测到今日已签到过", "SUCCESS")
         else:
             btn = page.locator('button.checkin-btn')
             if await btn.is_visible():
                 await btn.click()
-                self.log("点击签到成功", "SUCCESS")
+                self.log("点击签到按钮成功", "SUCCESS")
                 await asyncio.sleep(3)
-        
-        # 数据报告处理 (此处复用你之前的报表逻辑)
-        self.log(f"账号 {mask_email(user)} 处理结束", "INFO")
+            else:
+                self.log("未找到签到按钮，可能已签到或页面结构变化", "WARN")
 
 if __name__ == "__main__":
-    asyncio.run(FreecloudTask().run())
+    # 增加简单的异常捕获，确保 main 运行正常
+    try:
+        asyncio.run(FreecloudTask().run())
+    except Exception as e:
+        print(f"CRITICAL ERROR: {e}")
+        traceback.print_exc()
