@@ -1,9 +1,6 @@
 import os
 import io
 import sys
-import timeimport os
-import io
-import sys
 import time
 import re
 import matplotlib.pyplot as plt
