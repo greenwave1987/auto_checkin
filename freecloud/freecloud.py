@@ -160,23 +160,14 @@ class FreecloudTask:
                     storage = decode_storage(local_secrets.get(user))
                     browser, page = await self.init_browser(p, proxy, storage)
                     
-                    # 1. 尝试进入面板判断状态 (激进导航)
-                    try:
-                        self.log("访问控制台以验证 Session...", "STEP")
-                        await page.goto(DASHBOARD_URL, wait_until="commit", timeout=60000)
-                        await asyncio.sleep(5)
-                    except:
-                        self.log("控制台加载超时，准备进入登录流程", "WARN")
                     
-                    if "login" in page.url.lower() or "auth" in page.url.lower():
-                        self.log("需要登录，开始执行登录流程...", "WARN")
-                        await self.do_login(page, user, pwd)
-                        # 成功后回传 Session
-                        state = await page.context.storage_state()
-                        new_sessions[user] = encode_storage(state)
-                        self.log("Session 已保存", "SUCCESS")
-                    else:
-                        self.log("Session 有效，跳过登录", "SUCCESS")
+                    self.log("登录，开始执行登录流程...", "WARN")
+                    await self.do_login(page, user, pwd)
+                    # 成功后回传 Session
+                    state = await page.context.storage_state()
+                    new_sessions[user] = encode_storage(state)
+                    self.log("Session 已保存", "SUCCESS")
+                    
 
                     # 2. 执行签到
                     await self.do_checkin(page, user)
