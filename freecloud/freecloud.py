@@ -165,8 +165,20 @@ class FreecloudTask:
                     browser, page = await self.init_browser(p, proxy, storage)
                     
                     # 1. 访问面板判断登录状态
-                    await page.goto(DASHBOARD_URL, wait_until="domcontentloaded", timeout=60000)
+                    # --- 修改后 ---
+                    try:
+                        self.log(f"正在访问面板: {DASHBOARD_URL}", "STEP")
+                        # 使用 commit 模式，只要页面有响应就开始执行后续逻辑
+                        await page.goto(DASHBOARD_URL, wait_until="commit", timeout=45000)
+                    except Exception as e:
+                        self.log(f"首访超时，尝试强制刷新一次...", "WARN")
+                        await page.goto(DASHBOARD_URL, wait_until="commit", timeout=45000)
+                    
+                    # 给页面一点点缓冲时间加载 HTML 结构
+                    await asyncio.sleep(5)
+                    # 立即开始处理 Turnstile 验证
                     await self.wait_for_turnstile(page)
+
                     
                     if "login" in page.url.lower():
                         self.log("Session 过期，开始登录...", "WARN")
