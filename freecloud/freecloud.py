@@ -198,37 +198,54 @@ class FreecloudTask:
         self.log("所有任务执行完毕", "STEP")
 
     async def do_login(self, page, user, pwd):
-        self.log(f"正在打开登录页: {LOGIN_URL}", "STEP")
+        self.log(f"开始登录流程，目标: {LOGIN_URL}", "STEP")
         try:
-            # 使用 commit 模式防止因资源加载不全导致的超时
+            # 1. 延长超时至 90 秒，且使用 commit 模式（只要收到数据包就开始处理）
+            # 这能有效解决因为代理慢导致的 30s 超时报错
             await page.goto(LOGIN_URL, wait_until="commit", timeout=90000)
-            await asyncio.sleep(8) # 留出验证码渲染时间
-        except:
-            self.log("登录页加载缓慢，强制继续...", "WARN")
+            self.log("登录页面已建立连接，等待渲染...", "INFO")
+        except Exception as e:
+            self.log(f"页面加载触发异常 (可能未完全加载): {str(e)}", "WARN")
+            # 即使报错也强制留出时间给物理点击，因为 commit 模式下页面可能已经部分可见
+            await asyncio.sleep(10)
 
+        # 2. 给 Turnstile 验证框预留更长的加载时间
+        await asyncio.sleep(8)
+        
+        # 3. 调用物理点击
         await self.wait_for_turnstile(page)
         
         try:
-            username_field = page.locator('input[name="username"]')
-            await username_field.wait_for(state="visible", timeout=20000)
-            await username_field.fill(user)
+            # 4. 显式等待输入框出现，而不是依赖 page.goto 的加载状态
+            username_input = page.locator('input[name="username"]')
+            await username_input.wait_for(state="visible", timeout=30000)
+            
+            await username_input.fill(user)
+            await asyncio.sleep(1)
             await page.locator('input[name="password"]').fill(pwd)
             
-            # 数学计算验证码 (V2Board 特色)
+            # 数学验证码自动化逻辑 (保持不变)
             try:
                 placeholder = await page.locator('input[placeholder*="="]').get_attribute("placeholder")
-                nums = re.findall(r'\d+', placeholder)
-                if len(nums) >= 2:
-                    ans = str(int(nums[0]) + int(nums[1]))
-                    await page.locator('input[placeholder*="="]').fill(ans)
-                    self.log(f"自动计算验证码: {ans}", "SUCCESS")
+                if placeholder:
+                    nums = re.findall(r'\d+', placeholder)
+                    if len(nums) >= 2:
+                        ans = str(int(nums[0]) + int(nums[1]))
+                        await page.locator('input[placeholder*="="]').fill(ans)
+                        self.log(f"数学验证码已自动填充: {ans}", "SUCCESS")
             except: pass
 
+            # 5. 点击登录并等待跳转
             await page.locator('button:has-text("点击登录"), button:has-text("登录")').click()
-            await page.wait_for_url(re.compile(r".*/user|.*/dashboard"), timeout=45000)
-            self.log("登录跳转成功", "SUCCESS")
+            
+            # 等待跳转到用户中心，同样给足时间
+            await page.wait_for_url(re.compile(r".*/user|.*/dashboard"), timeout=60000)
+            self.log("登录成功！", "SUCCESS")
+            
         except Exception as e:
-            self.log(f"登录填充阶段失败: {str(e)}", "ERROR")
+            self.log(f"登录表单操作失败: {str(e)}", "ERROR")
+            # 此时保存截图非常重要，可以查看是卡在了验证码还是账号输入
+            await page.screenshot(path=f"login_failed_{user}.png")
             raise e
 
     async def do_checkin(self, page, user):
