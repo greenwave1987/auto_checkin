@@ -10,6 +10,7 @@ import socket
 import subprocess
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 from playwright_stealth import stealth
+import asyncio
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE_DIR)
@@ -647,4 +648,4 @@ class freecloudTask:
 
 
 if __name__ == "__main__":
-    freecloudTask().run()
+    asyncio.run(freecloudTask().run())
