@@ -572,7 +572,7 @@ class freecloudTask:
         return res
 
     # ---------- 主流程 ----------
-    def run(self):
+    async def run(self):
         self.log("freecloud 多账号任务启动", "STEP")
 
         accounts = self.config.get_value("FC_INFO") or []
