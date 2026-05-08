@@ -9,6 +9,7 @@ import json
 import socket
 import subprocess
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+from playwright_stealth import stealth_async
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE_DIR)
@@ -105,7 +106,7 @@ class freecloudTask:
         pw = sync_playwright().start()
 
         launch_args = {
-            "headless": True,
+            "headless": "new",
             "args": [
                 "--no-sandbox",
                 "--disable-blink-features=AutomationControlled",
@@ -132,6 +133,8 @@ class freecloudTask:
         )
 
         page = context.new_page()
+        # 应用 stealth 脚本
+        await stealth_async(page)
         return pw, browser, page
 
     # ---------- 截图 ----------
@@ -224,7 +227,7 @@ class freecloudTask:
                 page.wait_for_load_state("domcontentloaded", timeout=60000)
     
                 # 给页面一点时间跳转
-                page.wait_for_timeout(60000)
+                page.wait_for_timeout(120000)
     
                 current_url = page.url.lower()
     
