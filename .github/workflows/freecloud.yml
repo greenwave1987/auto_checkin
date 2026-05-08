@@ -1,16 +1,16 @@
 name: FREECLOUD 自动签到
 
 on:
-  workflow_dispatch:   # 手动触发
+  workflow_dispatch:
   schedule:
-    - cron: "15 23,11 * * *"  # 每天 UTC 23:15 and 11:15，可改为你的时间
+    - cron: "15 23,11 * * *"
 
 jobs:
   checkin:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      actions: write  # 必须开启以便更新 Secret
+      actions: write
 
     steps:
       - name: Checkout
@@ -21,6 +21,12 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Install System Dependencies
+        # 必须安装 xvfb (虚拟显示器) 和 xdotool (物理点击工具)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xdotool xvfb libgbm1 libasound2
+
       - name: Install Gost
         run: |
           curl -L https://github.com/ginuerzh/gost/releases/download/v2.11.5/gost-linux-amd64-2.11.5.gz | gunzip > gost
@@ -28,30 +34,27 @@ jobs:
 
       - name: Install Python Dependencies
         run: |
-          pip install -y xdotool xvfb playwright requests pyotp pynacl requests[socks] cryptography matplotlib playwright_stealth asyncio
+          # 注意：pip install 不支持 -y 参数，已修正
+          pip install playwright requests pyotp pynacl requests[socks] cryptography matplotlib playwright-stealth asyncio
           playwright install chromium --with-deps
 
       - name: Run FREECLOUD Task
         env:
-          # 配置解密密钥
           CONFIG_PASSWORD: ${{ secrets.CONFIG_PASSWORD }}
-
-          # 账号信息与代理信息
           LF_INFO: ${{ secrets.LF_INFO }}
           PROXY_INFO: ${{ secrets.PROXY_INFO }}
-
-          # 多账号 session storage
           FREECLOUD_LOCALS: ${{ secrets.FREECLOUD_LOCALS }}
-
-          # GitHub 信息，SecretUpdater 需要
           GITHUB_REPOSITORY: ${{ github.repository }}
-
+          # 必须提供 GITHUB_TOKEN 才能让 SecretUpdater 更新本地 Session
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
         run: |
-          python -u freecloud/freecloud.py
+          # 使用 xvfb-run 启动，模拟一个 1280x800 的显示器环境
+          # -s "-screen 0 1280x800x24" 确保分辨率与脚本中设置的一致
+          xvfb-run --server-args="-screen 0 1280x800x24" python -u freecloud/freecloud.py
 
       - name: Upload Screenshots on Failure
-        if: failure()
+        if: always() # 改为 always 方便你在成功或失败时都能看到点击位置的截图
         uses: actions/upload-artifact@v4
         with:
           name: FREECLOUD-debug-screenshots
