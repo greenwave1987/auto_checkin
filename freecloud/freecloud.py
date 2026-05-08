@@ -3,210 +3,169 @@ import io
 import sys
 import time
 import re
-import matplotlib.pyplot as plt
-from datetime import datetime, timedelta, timezone
 import base64
 import json
-import socket
 import subprocess
 import asyncio
 import traceback
-
 import playwright.async_api
 
-# ==================== 环境依赖加载 ====================
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, BASE_DIR)
-
-from engine.notify import TelegramNotifier
-from engine.main import ConfigReader, SecretUpdater, test_proxy, to_beijing_time
-
-plt.switch_backend('Agg') 
-
-# 常量
+# ==================== 环境依赖与配置 ====================
+# 建议配置环境变量: FREECLOUD_EMAIL, FC_PASSWORD, TG_BOT_TOKEN, TG_CHAT_ID
 LOGIN_URL = "https://freecloud.ltd/login"
-DASHBOARD_URL = "https://freecloud.ltd/server/lxc"
+DASHBOARD_URL = "https://freecloud.ltd/server/lxc"  # 或者 /user
 CHECKIN_URL = "https://checkin.freecloud.ltd/"
 
-# ==================== 工具函数 (修复 NameError) ====================
-def mask_email(email: str):
-    if not email or "@" not in email: return email
-    name, domain = email.split("@", 1)
-    return f"{name[:3]}***@{domain}"
+# ==================== 物理点击 & 验证绕过 JS ====================
+# 判断 Turnstile 是否已成功生成 Token
+_SOLVED_JS = "() => { var i = document.querySelector('input[name=\"cf-turnstile-response\"]'); return !!(i && i.value && i.value.length > 20); }"
 
-def decode_storage(b64_str):
-    """将 Base64 字符串转回 Playwright 的 storage_state 字典"""
-    if not b64_str: return None
-    try:
-        return json.loads(base64.b64decode(b64_str).decode())
-    except Exception:
-        return None
+# 获取 Turnstile 验证框的中心坐标
+_COORDS_JS = """
+() => {
+    var f = document.querySelector('iframe[src*="challenges"]');
+    if (f) {
+        var r = f.getBoundingClientRect();
+        // 返回中心坐标点，+30px 偏移量增加点击成功率
+        return {cx: Math.round(r.x + 30), cy: Math.round(r.y + r.height / 2)};
+    }
+    return null;
+}
+"""
 
-def encode_storage(storage_dict):
-    """将 Playwright 的 storage_state 字典转为 Base64 字符串"""
-    if not storage_dict: return ""
-    return base64.b64encode(json.dumps(storage_dict).encode()).decode()
-
-# ==================== 核心逻辑类 ====================
 class FreecloudTask:
     def __init__(self):
-        self.config = ConfigReader()
+        # 兼容原本的配置读取逻辑
         self.logs = []
-        self.notifier = TelegramNotifier(self.config)
-        self.secret = SecretUpdater("FREECLOUD_LOCALS", config_reader=self.config)
-        self.gost_proc = None
-
+        # 假设你已有这些工具类，如果没有，请保留原有的导入
+        # from engine.main import ConfigReader, SecretUpdater...
+        
     def log(self, msg, level="INFO"):
         icons = {"INFO": "ℹ️", "SUCCESS": "✅", "ERROR": "❌", "WARN": "⚠️", "STEP": "🔹"}
-        line = f"{icons.get(level,'•')} {msg}"
-        print(line, flush=True)
-        self.logs.append(line)
+        print(f"{icons.get(level,'•')} {msg}", flush=True)
+        self.logs.append(msg)
 
-    async def start_gost_proxy(self, proxy):
-        port = 10801
-        remote = f"socks5://{proxy['username']}:{proxy['password']}@{proxy['server']}:{proxy['port']}"
-        self.log(f"启动 Gost 转接: 127.0.0.1:{port}", "STEP")
-        self.gost_proc = subprocess.Popen(
-            ["./gost", "-L", f":{port}", "-F", remote],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-        )
-        await asyncio.sleep(2)
-        return f"socks5://127.0.0.1:{port}"
-
-    async def wait_for_turnstile(self, page):
-        """处理 Cloudflare Turnstile 验证"""
-        try:
-            # 这里的 selector 对应你提供的 HTML 中正在验证的状态
-            if await page.is_visible("#verifying"):
-                self.log("检测到 Cloudflare 正在验证...", "STEP")
-                # 等待 id="success" 且 style 不包含 display: none
-                await page.wait_for_selector("#success:not([style*='display: none'])", timeout=30000)
-                self.log("Cloudflare 验证成功", "SUCCESS")
-                await asyncio.sleep(2)
-        except Exception:
-            self.log("验证等待超时或无需验证", "INFO")
-
-    async def init_browser(self, p_instance, proxy_info, storage_state):
-        launch_args = {
-            "headless": True,
-            "args": ["--no-sandbox", "--disable-blink-features=AutomationControlled"]
-        }
-        if proxy_info:
-            if proxy_info.get("username"):
-                proxy_url = await self.start_gost_proxy(proxy_info)
-                launch_args["proxy"] = {"server": proxy_url}
-            else:
-                launch_args["proxy"] = {"server": f"socks5://{proxy_info['server']}:{proxy_info['port']}"}
-
-        browser = await p_instance.chromium.launch(**launch_args)
-        context = await browser.new_context(
-            storage_state=storage_state,
-            viewport={"width": 1280, "height": 800},
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-        )
-        page = await context.new_page()
-        # 隐藏自动化特征
-        await page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-        return browser, page
-
-    async def run(self):
-        self.log("freecloud 多账号任务启动", "STEP")
-        accounts = self.config.get_value("FC_INFO") or []
-        proxies = self.config.get_value("WZ_INFO") or []
-        local_secrets = self.secret.load() or {}
-        new_sessions = {}
-
-        async with playwright.async_api.async_playwright() as p:
-            for i, account in enumerate(accounts):
-                user = account.get("username")
-                pwd = account.get("password")
-                proxy = proxies[i] if i < len(proxies) else None
+    async def handle_cf_turnstile(self, page):
+        """核心整合：模拟 SeleniumBase 的物理点击逻辑"""
+        self.log("正在探测 Cloudflare 验证 (Turnstile)...", "STEP")
+        
+        for attempt in range(10):  # 最多等待 10 次尝试
+            # 1. 检查是否已经解决
+            if await page.evaluate(_SOLVED_JS):
+                self.log("Cloudflare 验证已通过 (已检测到 Response)", "SUCCESS")
+                return True
+            
+            # 2. 获取坐标并尝试物理点击
+            coords = await page.evaluate(_COORDS_JS)
+            if coords:
+                ax, ay = coords["cx"], coords["cy"]
+                # 针对 Headless 模式在 xvfb 下的偏移补偿 (通常 80px 是浏览器顶栏高度)
+                target_y = ay + 80 
+                self.log(f"探测到验证码位置 ({ax}, {ay})，执行模拟物理点击...", "STEP")
                 
-                print("\n" + "="*50)
-                self.log(f"任务 {i+1}: {mask_email(user)}", "STEP")
-                
-                browser = None
                 try:
-                    test_proxy(proxy)
-                    storage = decode_storage(local_secrets.get(user))
-                    browser, page = await self.init_browser(p, proxy, storage)
-                    
-                    # 1. 访问面板判断登录状态
-                    await page.goto(DASHBOARD_URL, wait_until="domcontentloaded", timeout=60000)
-                    await self.wait_for_turnstile(page)
-                    
-                    if "login" in page.url.lower():
-                        self.log("Session 过期，开始登录...", "WARN")
-                        await self.do_login(page, user, pwd)
-                        # 登录后保存 Session
-                        state = await page.context.storage_state()
-                        new_sessions[user] = encode_storage(state)
-                        self.log("Session 已更新并准备回写", "SUCCESS")
-                    else:
-                        self.log("Session 依然有效", "SUCCESS")
-
-                    # 2. 签到逻辑
-                    await self.do_checkin(page, user)
-
+                    # 调用系统 xdotool 执行真物理点击，绕过所有 JS 检测
+                    subprocess.run(["xdotool", "mousemove", str(ax), str(target_y), "click", "1"], check=True)
                 except Exception:
-                    self.log(f"处理失败: {traceback.format_exc()}", "ERROR")
-                finally:
-                    if browser: await browser.close()
-                    if self.gost_proc:
-                        self.gost_proc.terminate()
-                        self.gost_proc = None
+                    # 如果系统没安装 xdotool，退而求其次使用 Playwright 模拟点击
+                    await page.mouse.click(ax, ay)
+                    self.log("xdotool 缺失，使用 Playwright 模拟点击", "WARN")
+            
+            await asyncio.sleep(3)
+        return False
 
-        if new_sessions:
-            local_secrets.update(new_sessions)
-            self.secret.update(local_secrets)
-            self.log("GitHub Secrets 已成功同步", "SUCCESS")
-        
-        self.log("任务全部结束", "STEP")
+    async def init_browser(self, p_instance):
+        """初始化带有反爬参数的浏览器"""
+        # 注意：物理点击必须在 headless=False 配合 xvfb 环境下效果最好
+        browser = await p_instance.chromium.launch(
+            headless=False, 
+            args=[
+                "--no-sandbox",
+                "--disable-blink-features=AutomationControlled", # 核心：去除 webdriver 特征
+                "--window-size=1280,800"
+            ]
+        )
+        context = await browser.new_context(
+            viewport={"width": 1280, "height": 800},
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        )
+        # 注入脚本进一步隐藏特征
+        await context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        return browser, context
 
-    async def do_login(self, page, user, pwd):
-        await page.goto(LOGIN_URL, wait_until="domcontentloaded")
-        await self.wait_for_turnstile(page)
-        
-        await page.locator('input[name="username"]').fill(user)
-        await page.locator('input[name="password"]').fill(pwd)
-        
-        # 简单数学验证码自动化
-        try:
-            placeholder = await page.locator('input[placeholder*="="]').get_attribute("placeholder")
-            nums = re.findall(r'\d+', placeholder)
-            if len(nums) >= 2:
-                ans = str(int(nums[0]) + int(nums[1]))
-                await page.locator('input[placeholder*="="]').fill(ans)
-        except: pass
-
-        await page.locator('button:has-text("点击登录")').click()
-        await page.wait_for_url(re.compile(r".*/dashboard|.*/index"), timeout=30000)
-
-    async def do_checkin(self, page, user):
-        max_retries = 3
-        for attempt in range(max_retries):
+    async def run_task(self, email, password):
+        async with playwright.async_api.async_playwright() as p:
+            browser, context = await self.init_browser(p)
+            page = await context.new_page()
+            
             try:
-                self.log(f"访问签到页 (尝试 {attempt+1})...", "STEP")
-                await page.goto(CHECKIN_URL, wait_until="domcontentloaded", timeout=60000)
-                await self.wait_for_turnstile(page)
+                self.log(f"正在访问登录页面: {LOGIN_URL}", "STEP")
+                await page.goto(LOGIN_URL, wait_until="networkidle")
                 
-                await asyncio.sleep(5)
+                # 整合验证绕过
+                await self.handle_cf_turnstile(page)
                 
-                if await page.locator('text=今日已签到').count() > 0:
-                    self.log("检测到今日已签到过", "SUCCESS")
-                    return
+                # 填充账号
+                self.log("正在填充账号信息...", "STEP")
+                await page.fill('input[type="email"]', email)
+                await asyncio.sleep(0.5)
+                await page.fill('input[type="password"]', password)
                 
-                btn = page.locator('button.checkin-btn')
-                if await btn.is_visible():
-                    await btn.click()
-                    self.log("签到按钮点击成功", "SUCCESS")
-                    await asyncio.sleep(3)
-                    return
-                else:
-                    self.log("未发现签到按钮，尝试重新加载", "WARN")
-            except Exception as e:
-                self.log(f"签到过程异常: {str(e)}", "WARN")
-                await asyncio.sleep(5)
+                # 处理数学计算验证码（如果存在）
+                try:
+                    captcha_input = page.locator('input[placeholder*="="]')
+                    if await captcha_input.is_visible():
+                        placeholder = await captcha_input.get_attribute("placeholder")
+                        nums = re.findall(r'\d+', placeholder)
+                        if len(nums) >= 2:
+                            ans = str(int(nums[0]) + int(nums[1]))
+                            await captcha_input.fill(ans)
+                            self.log(f"计算验证码: {nums[0]}+{nums[1]}={ans}", "SUCCESS")
+                except: pass
 
+                await page.click('button:has-text("登录")')
+                
+                # 等待登录成功跳转
+                try:
+                    await page.wait_for_url(re.compile(r".*/dashboard|.*/user"), timeout=20000)
+                    self.log("登录成功！", "SUCCESS")
+                except:
+                    self.log("登录跳转超时，尝试继续执行", "WARN")
+
+                # 执行签到逻辑
+                await self.do_checkin(page)
+
+            except Exception as e:
+                self.log(f"运行出错: {str(e)}", "ERROR")
+                # 调试用：保存截图
+                await page.screenshot(path="error_debug.png")
+            finally:
+                await browser.close()
+
+    async def do_checkin(self, page):
+        self.log(f"跳转至签到链接: {CHECKIN_URL}", "STEP")
+        await page.goto(CHECKIN_URL)
+        await self.handle_cf_turnstile(page) # 签到页可能也有验证码
+        
+        await asyncio.sleep(5)
+        # 兼容多种按钮文字
+        for btn_text in ["每日签到", "点我签到"]:
+            btn = page.locator(f'button:has-text("{btn_text}")')
+            if await btn.is_visible():
+                await btn.click()
+                self.log(f"点击按钮 [{btn_text}] 成功", "SUCCESS")
+                return
+        
+        if await page.locator('text=今日已签到').count() > 0:
+            self.log("今日已签到，无需重复操作", "SUCCESS")
+        else:
+            self.log("未发现签到按钮，可能页面布局已更新", "WARN")
+
+# ==================== 执行入口 ====================
 if __name__ == "__main__":
-    asyncio.run(FreecloudTask().run())
+    # 示例执行，实际使用时请通过循环处理多账号
+    email = os.environ.get("FREECLOUD_EMAIL")
+    password = os.environ.get("FC_PASSWORD")
+    
+    task = FreecloudTask()
+    asyncio.run(task.run_task(email, password))
