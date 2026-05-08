@@ -28,6 +28,26 @@ LOGIN_URL = "https://freecloud.ltd/login"
 DASHBOARD_URL = "https://freecloud.ltd/server/lxc"
 CHECKIN_URL = "https://checkin.freecloud.ltd/"
 
+# ==================== 工具函数 (修复 NameError) ====================
+def mask_email(email: str):
+    if not email or "@" not in email: return email
+    name, domain = email.split("@", 1)
+    return f"{name[:3]}***@{domain}"
+
+def decode_storage(b64_str):
+    """将 Base64 字符串转回 Playwright 的 storage_state 字典"""
+    if not b64_str: return None
+    try:
+        return json.loads(base64.b64decode(b64_str).decode())
+    except Exception:
+        return None
+
+def encode_storage(storage_dict):
+    """将 Playwright 的 storage_state 字典转为 Base64 字符串"""
+    if not storage_dict: return ""
+    return base64.b64encode(json.dumps(storage_dict).encode()).decode()
+
+# ==================== 核心逻辑类 ====================
 class FreecloudTask:
     def __init__(self):
         self.config = ConfigReader()
@@ -54,21 +74,17 @@ class FreecloudTask:
         return f"socks5://127.0.0.1:{port}"
 
     async def wait_for_turnstile(self, page):
-        """专门处理 Cloudflare Turnstile 验证"""
+        """处理 Cloudflare Turnstile 验证"""
         try:
-            # 检测是否正在验证
-            is_verifying = await page.is_visible("#verifying")
-            if is_verifying:
-                self.log("检测到 Cloudflare 正在验证，请稍候...", "STEP")
-                # 等待 success 容器变为可见，或者 success-text 出现
-                # 即使 Session 有效，Cloudflare 也会闪过这个验证
+            # 这里的 selector 对应你提供的 HTML 中正在验证的状态
+            if await page.is_visible("#verifying"):
+                self.log("检测到 Cloudflare 正在验证...", "STEP")
+                # 等待 id="success" 且 style 不包含 display: none
                 await page.wait_for_selector("#success:not([style*='display: none'])", timeout=30000)
                 self.log("Cloudflare 验证成功", "SUCCESS")
                 await asyncio.sleep(2)
-            else:
-                self.log("无需额外验证", "INFO")
         except Exception:
-            self.log("Cloudflare 验证等待超时，尝试强行继续...", "WARN")
+            self.log("验证等待超时或无需验证", "INFO")
 
     async def init_browser(self, p_instance, proxy_info, storage_state):
         launch_args = {
@@ -89,6 +105,7 @@ class FreecloudTask:
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
         )
         page = await context.new_page()
+        # 隐藏自动化特征
         await page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
         return browser, page
 
@@ -106,7 +123,7 @@ class FreecloudTask:
                 proxy = proxies[i] if i < len(proxies) else None
                 
                 print("\n" + "="*50)
-                self.log(f"任务 {i+1}: {user[:3]}***")
+                self.log(f"任务 {i+1}: {mask_email(user)}", "STEP")
                 
                 browser = None
                 try:
@@ -114,16 +131,17 @@ class FreecloudTask:
                     storage = decode_storage(local_secrets.get(user))
                     browser, page = await self.init_browser(p, proxy, storage)
                     
-                    # 1. 访问主页并处理验证
+                    # 1. 访问面板判断登录状态
                     await page.goto(DASHBOARD_URL, wait_until="domcontentloaded", timeout=60000)
                     await self.wait_for_turnstile(page)
                     
                     if "login" in page.url.lower():
                         self.log("Session 过期，开始登录...", "WARN")
                         await self.do_login(page, user, pwd)
+                        # 登录后保存 Session
                         state = await page.context.storage_state()
                         new_sessions[user] = encode_storage(state)
-                        self.log("Session 已保存", "SUCCESS")
+                        self.log("Session 已更新并准备回写", "SUCCESS")
                     else:
                         self.log("Session 依然有效", "SUCCESS")
 
@@ -141,6 +159,7 @@ class FreecloudTask:
         if new_sessions:
             local_secrets.update(new_sessions)
             self.secret.update(local_secrets)
+            self.log("GitHub Secrets 已成功同步", "SUCCESS")
         
         self.log("任务全部结束", "STEP")
 
@@ -151,7 +170,7 @@ class FreecloudTask:
         await page.locator('input[name="username"]').fill(user)
         await page.locator('input[name="password"]').fill(pwd)
         
-        # 验证码计算
+        # 简单数学验证码自动化
         try:
             placeholder = await page.locator('input[placeholder*="="]').get_attribute("placeholder")
             nums = re.findall(r'\d+', placeholder)
@@ -169,25 +188,24 @@ class FreecloudTask:
             try:
                 self.log(f"访问签到页 (尝试 {attempt+1})...", "STEP")
                 await page.goto(CHECKIN_URL, wait_until="domcontentloaded", timeout=60000)
-                # 重要：签到子域名同样会有验证
                 await self.wait_for_turnstile(page)
                 
                 await asyncio.sleep(5)
                 
                 if await page.locator('text=今日已签到').count() > 0:
-                    self.log("今日已签到过", "SUCCESS")
+                    self.log("检测到今日已签到过", "SUCCESS")
                     return
                 
                 btn = page.locator('button.checkin-btn')
                 if await btn.is_visible():
                     await btn.click()
-                    self.log("签到成功！", "SUCCESS")
+                    self.log("签到按钮点击成功", "SUCCESS")
                     await asyncio.sleep(3)
                     return
                 else:
-                    self.log("未找到签到按钮，可能页面未完全加载", "WARN")
+                    self.log("未发现签到按钮，尝试重新加载", "WARN")
             except Exception as e:
-                self.log(f"签到异常: {str(e)}", "WARN")
+                self.log(f"签到过程异常: {str(e)}", "WARN")
                 await asyncio.sleep(5)
 
 if __name__ == "__main__":
