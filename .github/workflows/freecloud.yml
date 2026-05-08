@@ -1,19 +1,19 @@
 name: FREECLOUD 自动签到
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:   # 手动触发
   schedule:
-    - cron: "15 23,11 * * *"
+    - cron: "15 23,11 * * *"  # 每天北京时间 07:15 和 19:15 左右运行
 
 jobs:
   checkin:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      actions: write
+      actions: write  # 必须开启，SecretUpdater 需要此权限回写 Session
 
     steps:
-      - name: Checkout
+      - name: Checkout Code
         uses: actions/checkout@v4
 
       - name: Setup Python
@@ -22,41 +22,52 @@ jobs:
           python-version: "3.11"
 
       - name: Install System Dependencies
+        # 核心：安装物理点击所需的 xvfb 和 xdotool，并修复 libasound2t64 依赖
         run: |
           sudo apt-get update
-          # 将 libasound2 替换为 libasound2t64
-          sudo apt-get install -y xdotool xvfb libgbm1 libasound2t64
+          sudo apt-get install -y xdotool xvfb libgbm1 libasound2t64 libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxrandr2 libpango-1.0-0 libcairo2 libasound2t64
 
       - name: Install Gost
+        # 保留你原有的 Gost 安装逻辑
         run: |
           curl -L https://github.com/ginuerzh/gost/releases/download/v2.11.5/gost-linux-amd64-2.11.5.gz | gunzip > gost
           chmod +x gost
 
       - name: Install Python Dependencies
         run: |
-          # 注意：pip install 不支持 -y 参数，已修正
           pip install playwright requests pyotp pynacl requests[socks] cryptography matplotlib playwright-stealth asyncio
+          # 安装 Chromium 内核及其系统底层依赖
           playwright install chromium --with-deps
 
       - name: Run FREECLOUD Task
         env:
+          # 1. 基础配置加密密钥
           CONFIG_PASSWORD: ${{ secrets.CONFIG_PASSWORD }}
-          LF_INFO: ${{ secrets.LF_INFO }}
-          PROXY_INFO: ${{ secrets.PROXY_INFO }}
+
+          # 2. 账号信息 (FC_INFO) 与 代理信息 (WZ_INFO)
+          # 注意：请确保 Secret 中的变量名与 Python 脚本中 config.get_value("xxx") 一致
+          FC_INFO: ${{ secrets.FC_INFO }}
+          WZ_INFO: ${{ secrets.WZ_INFO }}
+
+          # 3. 多账号 Session 存储 (Base64 格式)
           FREECLOUD_LOCALS: ${{ secrets.FREECLOUD_LOCALS }}
+
+          # 4. GitHub 自动化回写权限
           GITHUB_REPOSITORY: ${{ github.repository }}
-          # 必须提供 GITHUB_TOKEN 才能让 SecretUpdater 更新本地 Session
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
         run: |
-          # 使用 xvfb-run 启动，模拟一个 1280x800 的显示器环境
-          # -s "-screen 0 1280x800x24" 确保分辨率与脚本中设置的一致
+          # 关键点：必须在虚拟显示器 xvfb 中运行，否则 xdotool 无法执行物理点击
+          # 分辨率 1280x800x24 必须与 Python 脚本中的 viewport 保持一致
           xvfb-run --server-args="-screen 0 1280x800x24" python -u freecloud/freecloud.py
 
-      - name: Upload Screenshots on Failure
-        if: always() # 改为 always 方便你在成功或失败时都能看到点击位置的截图
+      - name: Upload Debug Screenshots
+        # 无论成功失败都上传截图，方便查看物理点击是否对准了验证框
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: FREECLOUD-debug-screenshots
-          path: "*.png"
+          name: freecloud-debug-artifacts
+          path: |
+            *.png
+            *.log
           retention-days: 3
