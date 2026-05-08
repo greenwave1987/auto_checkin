@@ -101,7 +101,7 @@ class freecloudTask:
         return {"server": server}
 
    # ---------- 浏览器 ----------
-    def open_browser(self, proxy, storage):
+    async def open_browser(self, proxy, storage):
         self.log("启动 Playwright 浏览器", "STEP")
         pw = sync_playwright().start()
 
@@ -599,7 +599,7 @@ class freecloudTask:
     
                 pw = browser = None
                 try:
-                    pw, browser, page = self.open_browser(proxy, storage)
+                    pw, browser, page = await self.open_browser(proxy, storage)
     
                     refreshed = self.ensure_login(page, user, pwd)
                     self.do_checkin(page)
