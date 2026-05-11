@@ -1,73 +1,43 @@
-name: FREECLOUD 自动签到
+name: Freecloud Auto Checkin
 
 on:
-  workflow_dispatch:   # 手动触发
+  workflow_dispatch:      # 支持手动触发
   schedule:
-    - cron: "15 23,11 * * *"  # 每天北京时间 07:15 和 19:15 左右运行
+    - cron: '0 1 * * *'    # 每天北京时间上午 9:00 运行 (UTC 1:00)
 
 jobs:
   checkin:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      actions: write  # 必须开启，SecretUpdater 需要此权限回写 Session
 
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - name: Set up Python
+        uses: actions/setup-python@v4
         with:
-          python-version: "3.11"
+          python-version: '3.10'
 
-      - name: Install System Dependencies
-        # 核心：安装物理点击所需的 xvfb 和 xdotool，并修复 libasound2t64 依赖
+      - name: Install dependencies
         run: |
+          pip install seleniumbase requests
+          # 安装必要的系统库以运行 Chrome
           sudo apt-get update
-          sudo apt-get install -y xdotool xvfb libgbm1 libasound2t64 libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxrandr2 libpango-1.0-0 libcairo2 libasound2t64
+          sudo apt-get install -y google-chrome-stable
 
-      - name: Install Gost
-        # 保留你原有的 Gost 安装逻辑
+      - name: Install SeleniumBase Browsers
         run: |
-          curl -L https://github.com/ginuerzh/gost/releases/download/v2.11.5/gost-linux-amd64-2.11.5.gz | gunzip > gost
-          chmod +x gost
+          # 这一步会下载匹配的 ChromeDriver
+          sbase install chromedriver
 
-      - name: Install Python Dependencies
-        run: |
-          pip install playwright requests pyotp pynacl requests[socks] cryptography matplotlib playwright-stealth asyncio
-          # 安装 Chromium 内核及其系统底层依赖
-          playwright install chromium --with-deps
-
-      - name: Run FREECLOUD Task
+      - name: Run Checkin Script
         env:
-          # 1. 基础配置加密密钥
-          CONFIG_PASSWORD: ${{ secrets.CONFIG_PASSWORD }}
-
-          # 2. 账号信息 (FC_INFO) 与 代理信息 (WZ_INFO)
-          # 注意：请确保 Secret 中的变量名与 Python 脚本中 config.get_value("xxx") 一致
-          FC_INFO: ${{ secrets.FC_INFO }}
-          WZ_INFO: ${{ secrets.WZ_INFO }}
-
-          # 3. 多账号 Session 存储 (Base64 格式)
-          FREECLOUD_LOCALS: ${{ secrets.FREECLOUD_LOCALS }}
-
-          # 4. GitHub 自动化回写权限
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
+          # 这里的变量名必须与 Python 脚本中 os.environ.get 的一致
+          FC_EMAIL: ${{ secrets.FC_EMAIL }}
+          FC_PASSWORD: ${{ secrets.FC_PASSWORD }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: |
-          # 关键点：必须在虚拟显示器 xvfb 中运行，否则 xdotool 无法执行物理点击
-          # 分辨率 1280x800x24 必须与 Python 脚本中的 viewport 保持一致
-          xvfb-run --server-args="-screen 0 1280x800x24" python -u freecloud/freecloud.py
-
-      - name: Upload Debug Screenshots
-        # 无论成功失败都上传截图，方便查看物理点击是否对准了验证框
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: freecloud-debug-artifacts
-          path: |
-            *.png
-            *.log
-          retention-days: 3
+          # 使用 xvfb-run 启动虚拟显示器，这是过 Cloudflare 验证码的关键
+          # 它模拟了一个真实的显示环境，让浏览器不被识别为纯 headless
+          xvfb-run --auto-servernum python freecloud/freecloud.py
