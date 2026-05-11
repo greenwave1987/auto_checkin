@@ -1,275 +1,167 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 import os
-import io
 import sys
 import time
-import re
-import matplotlib.pyplot as plt
-from datetime import datetime, timedelta, timezone
-import base64
-import json
-import socket
-import subprocess
-import asyncio
-import traceback
+import requests
+from seleniumbase import SB
 
-import playwright.async_api
-
-# ==================== 环境依赖加载 ====================
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, BASE_DIR)
-
-from engine.notify import TelegramNotifier
-from engine.main import ConfigReader, SecretUpdater, test_proxy, to_beijing_time
-
-plt.switch_backend('Agg') 
-
-# 常量配置
-LOGIN_URL = "https://freecloud.ltd/login"
+# ============================================================
+#  基础配置
+# ============================================================
+LOGIN_URL = "https://freecloud.ltd/auth/login"
 DASHBOARD_URL = "https://freecloud.ltd/user"
-CHECKIN_URL = "https://checkin.freecloud.ltd/"
 
-# ==================== 工具函数 ====================
-def mask_email(email: str):
-    if not email or "@" not in email: return email
-    name, domain = email.split("@", 1)
-    return f"{name[:3]}***@{domain}"
+EMAIL = os.environ.get("FC_EMAIL")
+PASSWORD = os.environ.get("FC_PASSWORD")
+TG_BOT_TOKEN = os.environ.get("TG_BOT_TOKEN")
+TG_CHAT_ID = os.environ.get("TG_CHAT_ID")
 
-def decode_storage(b64_str):
-    if not b64_str: return None
+def send_tg_message(status_icon, status_text, detail=""):
+    if not TG_BOT_TOKEN or not TG_CHAT_ID:
+        print("ℹ️ 未配置 TG 推送，跳过。")
+        return
+    text = f"{status_icon} **Freecloud 通知**\n状态: {status_text}\n详情: {detail}"
+    url = f"https://api.telegram.org/bot{TG_BOT_TOKEN}/sendMessage"
     try:
-        return json.loads(base64.b64decode(b64_str).decode())
-    except Exception:
-        return None
+        requests.post(url, json={"chat_id": TG_CHAT_ID, "text": text, "parse_mode": "Markdown"}, timeout=10)
+    except Exception as e:
+        print(f"  ⚠️ TG 发送失败: {e}")
 
-def encode_storage(storage_dict):
-    if not storage_dict: return ""
-    return base64.b64encode(json.dumps(storage_dict).encode()).decode()
+# ============================================================
+#  核心逻辑
+# ============================================================
 
-# ==================== 物理点击逻辑脚本 ====================
-_SOLVED_JS = "() => { var i = document.querySelector('input[name=\"cf-turnstile-response\"]'); return !!(i && i.value && i.value.length > 20); }"
-
-_COORDS_JS = """
-() => {
-    var f = document.querySelector('iframe[src*="challenges"]');
-    if (f) {
-        var r = f.getBoundingClientRect();
-        if (r.width > 0 && r.height > 0)
-            return {cx: Math.round(r.x + 30), cy: Math.round(r.y + r.height / 2)};
-    }
-    return null;
-}
-"""
-
-class FreecloudTask:
-    def __init__(self):
-        self.config = ConfigReader()
-        self.logs = []
-        self.notifier = TelegramNotifier(self.config)
-        self.secret = SecretUpdater("FREECLOUD_LOCALS", config_reader=self.config)
-        self.gost_proc = None
-
-    def log(self, msg, level="INFO"):
-        icons = {"INFO": "ℹ️", "SUCCESS": "✅", "ERROR": "❌", "WARN": "⚠️", "STEP": "🔹"}
-        line = f"{icons.get(level,'•')} {msg}"
-        print(line, flush=True)
-        self.logs.append(line)
-
-    async def capture_and_send(self, page, caption):
-        """截图并立即发送到 Telegram"""
+def handle_turnstile(sb):
+    """专门处理 Cloudflare Turnstile 验证"""
+    print("🛡️ 正在检测 Cloudflare 验证状态...")
+    time.sleep(3)
+    
+    # 检查是否存在验证码 iframe
+    if sb.is_element_visible('iframe[src*="challenges"]'):
+        print("🖱️ 发现 Turnstile 验证框，尝试模拟点击...")
         try:
-            img_bytes = await page.screenshot(full_page=False)
-            # 这里的 self.notifier.send_photo 是基于你 engine 里的实现
-            # 如果你的 notifier 只有 send_msg，请确保它支持发送字节流
-            await self.notifier.send_photo(img_bytes, caption=f"📸 {caption}")
+            # SeleniumBase 核心魔法：自动定位并点击验证码复选框
+            sb.driver.uc_gui_click_captcha()
+            print("⏳ 已发送点击指令，等待验证通过...")
+            time.sleep(5)
         except Exception as e:
-            self.log(f"截图发送失败: {str(e)}", "WARN")
+            print(f"⚠️ 模拟点击异常 (可能是无头模式限制): {e}")
+    else:
+        print("✅ 未发现明显的验证码拦截。")
 
-    async def start_gost_proxy(self, proxy):
-        port = 10801
-        remote = f"socks5://{proxy['username']}:{proxy['password']}@{proxy['server']}:{proxy['port']}"
-        self.log(f"启动 Gost 转接: 127.0.0.1:{port}", "STEP")
-        self.gost_proc = subprocess.Popen(
-            ["./gost", "-L", f":{port}", "-F", remote],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-        )
-        await asyncio.sleep(3)
-        return f"socks5://127.0.0.1:{port}"
+def login(sb):
+    """执行登录流程"""
+    print(f"🌐 访问地址: {LOGIN_URL}")
+    # uc_open_with_reconnect 能有效绕过初级屏蔽
+    sb.uc_open_with_reconnect(LOGIN_URL, reconnect_time=5)
+    
+    # 第一步：解决可能存在的验证码
+    handle_turnstile(sb)
 
-    async def wait_for_turnstile(self, page):
-        self.log("正在探测 Cloudflare 验证码...", "STEP")
-        try:
-            for attempt in range(12):
-                if await page.evaluate(_SOLVED_JS):
-                    self.log("Cloudflare 验证已自动/手动通过", "SUCCESS")
-                    return True
+    # 第二步：等待并填写表单
+    print("⏳ 正在定位登录表单...")
+    try:
+        # 兼容多种可能的选择器
+        email_selector = 'input[type="email"], input[name="email"], input[placeholder*="邮箱"]'
+        sb.wait_for_element(email_selector, timeout=20)
+        
+        print("📧 填写账号密码...")
+        sb.type(email_selector, EMAIL)
+        time.sleep(0.5)
+        sb.type('input[type="password"]', PASSWORD)
+        time.sleep(1)
+        
+        print("🖱️ 提交登录...")
+        # 优先点击按钮，如果找不到则回车
+        if sb.is_element_visible('button[type="submit"]'):
+            sb.click('button[type="submit"]')
+        else:
+            sb.press_keys('input[type="password"]', '\n')
+            
+    except Exception as e:
+        print(f"❌ 登录表单加载失败: {e}")
+        sb.save_screenshot("login_timeout.png")
+        return False
+
+    # 第三步：判断登录结果
+    print("⏳ 等待页面跳转...")
+    for _ in range(10):
+        time.sleep(1.5)
+        if "/user" in sb.get_current_url() or "/dashboard" in sb.get_current_url():
+            print("✅ 成功进入用户中心")
+            return True
+    
+    print("❌ 登录失败，页面未跳转。")
+    sb.save_screenshot("login_failed.png")
+    return False
+
+def check_in(sb):
+    """执行签到流程"""
+    print(f"🚀 进入签到页面: {DASHBOARD_URL}")
+    sb.open(DASHBOARD_URL)
+    time.sleep(5)
+
+    try:
+        # V2Board 常见的签到文案
+        btns = ["每日签到", "点我签到", "立即签到"]
+        for btn_text in btns:
+            if sb.is_text_visible(btn_text):
+                print(f"🖱️ 发现签到按钮: {btn_text}")
+                sb.click(f'button:contains("{btn_text}")')
+                time.sleep(3)
                 
-                coords = await page.evaluate(_COORDS_JS)
-                if coords:
-                    ax, ay = coords["cx"], coords["cy"]
-                    target_y = ay + 80 
-                    self.log(f"发现验证框 ({ax}, {ay})，执行物理点击...", "STEP")
-                    try:
-                        subprocess.run(["xdotool", "mousemove", str(ax), str(target_y), "click", "1"], check=True)
-                    except:
-                        await page.mouse.click(ax, ay)
-                    
-                    await asyncio.sleep(2)
-                    await self.capture_and_send(page, "尝试点击验证码")
-                
-                await asyncio.sleep(5)
-            return False
-        except Exception as e:
-            self.log(f"验证模块异常: {str(e)}", "WARN")
-            return False
-
-    async def init_browser(self, p_instance, proxy_info, storage_state):
-        launch_args = {
-            "headless": False, 
-            "args": [
-                "--no-sandbox", 
-                "--disable-blink-features=AutomationControlled",
-                "--window-size=1280,800"
-            ]
-        }
-        if proxy_info:
-            if proxy_info.get("username"):
-                proxy_url = await self.start_gost_proxy(proxy_info)
-                launch_args["proxy"] = {"server": proxy_url}
-            else:
-                launch_args["proxy"] = {"server": f"socks5://{proxy_info['server']}:{proxy_info['port']}"}
-
-        browser = await p_instance.chromium.launch(**launch_args)
-        context = await browser.new_context(
-            storage_state=storage_state,
-            viewport={"width": 1280, "height": 800},
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
-        )
-        page = await context.new_page()
-        await page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-        return browser, page
-
-    async def run(self):
-        self.log("Freecloud 任务启动 [网络增强版]", "STEP")
-        accounts = self.config.get_value("FC_INFO") or []
-        proxies = self.config.get_value("WZ_INFO") or []
-        local_secrets = self.secret.load() or {}
-        new_sessions = {}
-
-        async with playwright.async_api.async_playwright() as p:
-            for i, account in enumerate(accounts):
-                user = account.get("username")
-                pwd = account.get("password")
-                proxy = proxies[i] if i < len(proxies) else None
-                
-                print(f"\n{'='*20} 账号 {i+1} {'='*20}")
-                self.log(f"当前账号: {mask_email(user)}", "STEP")
-                
-                browser = None
+                # 尝试获取签到成功后的弹窗消息
                 try:
-                    test_proxy(proxy)
-                    storage = decode_storage(local_secrets.get(user))
-                    browser, page = await self.init_browser(p, proxy, storage)
-                    
-                    self.log("开始执行登录流程...", "WARN")
-                    await self.do_login(page, user, pwd)
-                    
-                    state = await page.context.storage_state()
-                    new_sessions[user] = encode_storage(state)
-                    self.log("Session 已保存", "SUCCESS")
-
-                    await self.do_checkin(page, user)
-
-                except Exception:
-                    err_msg = traceback.format_exc()
-                    self.log(f"任务执行异常: {err_msg}", "ERROR")
-                    await self.capture_and_send(page, f"任务异常: {user}")
-                finally:
-                    if browser: await browser.close()
-                    if self.gost_proc:
-                        self.gost_proc.terminate()
-                        self.gost_proc = None
-
-        if new_sessions:
-            local_secrets.update(new_sessions)
-            self.secret.update(local_secrets)
-            self.log("多账号 Session 已回写至 GitHub Secrets", "SUCCESS")
+                    msg = sb.get_text('.v-toast__text')
+                except:
+                    msg = "签到动作已完成"
+                
+                print(f"🎉 结果: {msg}")
+                send_tg_message("✅", "签到成功", msg)
+                return True
         
-        self.log("所有任务执行完毕", "STEP")
-
-    async def do_login(self, page, user, pwd):
-        self.log(f"登录目标: {LOGIN_URL}", "STEP")
-        try:
-            await page.goto(LOGIN_URL, wait_until="commit", timeout=90000)
-            await asyncio.sleep(5)
-            await self.capture_and_send(page, f"进入登录页: {mask_email(user)}")
-        except Exception as e:
-            self.log(f"页面加载触发异常: {str(e)}", "WARN")
-            await asyncio.sleep(10)
-
-        await self.wait_for_turnstile(page)
+        if sb.is_text_visible("已签到"):
+            print("😊 今天已经签过到啦！")
+            send_tg_message("✅", "已签到", "今日任务已完成，无需重复操作")
+            return True
+            
+        print("⚠️ 未发现签到按钮，可能页面结构已改变。")
+        send_tg_message("⚠️", "未找到签到按钮", "请检查截图确认页面布局")
+        sb.save_screenshot("checkin_not_found.png")
         
+    except Exception as e:
+        print(f"❌ 签到过程发生错误: {e}")
+        send_tg_message("❌", "签到异常", str(e))
+
+# ============================================================
+#  主入口
+# ============================================================
+def main():
+    if not EMAIL or not PASSWORD:
+        print("❌ 致命错误：未配置环境变量 FC_EMAIL 或 FC_PASSWORD")
+        return
+
+    # 配置启动参数
+    # 在 GitHub Actions 运行时建议 headless=True，但如果验证过不去，可尝试 False
+    sb_kwargs = {
+        "uc": True,             # 必须开启 UC 模式
+        "test": True,           # 增强规避特征
+        "headless": True,       # 生产环境建议 True
+        "browser": "chrome",
+        "locale_code": "zh-CN"
+    }
+
+    with SB(**sb_kwargs) as sb:
         try:
-            username_input = page.locator('input[name="username"]')
-            await username_input.wait_for(state="visible", timeout=30000)
-            
-            await username_input.fill(user)
-            await page.locator('input[name="password"]').fill(pwd)
-            
-            try:
-                placeholder = await page.locator('input[placeholder*="="]').get_attribute("placeholder")
-                if placeholder:
-                    nums = re.findall(r'\d+', placeholder)
-                    if len(nums) >= 2:
-                        ans = str(int(nums[0]) + int(nums[1]))
-                        await page.locator('input[placeholder*="="]').fill(ans)
-                        self.log(f"数学验证码: {ans}", "SUCCESS")
-            except: pass
-
-            await self.capture_and_send(page, "填充表单完毕，准备点击登录")
-            await page.locator('button:has-text("点击登录"), button:has-text("登录")').click()
-            
-            await page.wait_for_url(re.compile(r".*/user|.*/dashboard"), timeout=60000)
-            await self.capture_and_send(page, "登录成功，进入面板")
-            self.log("登录成功！", "SUCCESS")
-            
+            if login(sb):
+                check_in(sb)
+            else:
+                send_tg_message("❌", "登录环节失败", "通常是因为 Cloudflare 验证未通过或账号错误")
         except Exception as e:
-            await self.capture_and_send(page, f"登录失败详情: {user}")
-            raise e
-
-    async def do_checkin(self, page, user):
-        self.log(f"访问签到地址: {CHECKIN_URL}", "STEP")
-        try:
-            await page.goto(CHECKIN_URL, wait_until="commit", timeout=60000)
-            await asyncio.sleep(6)
-            await self.capture_and_send(page, "进入签到页面")
-            await self.wait_for_turnstile(page)
-            
-            checkin_selectors = [
-                'button:has-text("每日签到")',
-                'button:has-text("点我签到")',
-                '.checkin-btn',
-                '#checkin'
-            ]
-            
-            if await page.locator('text=今日已签到').count() > 0:
-                self.log("今日已签到，跳过", "SUCCESS")
-                await self.capture_and_send(page, "检查结果：今日已签到")
-                return
-
-            for selector in checkin_selectors:
-                btn = page.locator(selector)
-                if await btn.count() > 0 and await btn.is_visible():
-                    await btn.click()
-                    self.log(f"点击签到按钮: {selector}", "SUCCESS")
-                    await asyncio.sleep(3)
-                    await self.capture_and_send(page, "点击签到后状态")
-                    return
-            
-            self.log("未找到可用签到按钮", "WARN")
-            await self.capture_and_send(page, "未找到签到按钮")
-        except Exception as e:
-            self.log(f"签到异常: {str(e)}", "ERROR")
-            await self.capture_and_send(page, "签到过程异常")
+            print(f"🔥 运行崩溃: {e}")
+            send_tg_message("🔥", "脚本崩溃", str(e))
 
 if __name__ == "__main__":
-    asyncio.run(FreecloudTask().run())
+    main()
