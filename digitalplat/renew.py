@@ -1057,7 +1057,7 @@ class AutoLogin:
                 for i in range(10):
                     try:
                         page.goto(BOARD_ENTRY_URL, timeout=60000)
-                        page.wait_for_load_state('networkidle', timeout=60000)
+                        page.wait_for_load_state('domcontentloaded', timeout=60000)
                         time.sleep(random.uniform(15, 20))
                         resault=self.check_and_process_domain(page.url)
                         self.log(f"检测结果: {resault}", "INFO")
