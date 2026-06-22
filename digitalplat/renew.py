@@ -380,47 +380,113 @@ class AutoLogin:
             print(f"⚠️ [build_session 异常] {e}")
             return None
 
-    def get_balance_with_token(self):
-        print(f"📊 [步骤 8] 正在查询余额...")
-        
-        proxies = None
-        if self.proxy_url:
-            proxies = {
-                "http": self.proxy_url,
-                "https": self.proxy_url
-            }
-            
-            self.log(f"启用代理: {self.dt_proxy['server'][:-3]}***")
+    def get_balance_with_token(self, page):
+        print(f"📊 [步骤 8] 正在查询有效期...")
 
+        """保活并自动续费（剩余不足120天）"""
+        self.log("开始执行保活与自动续费检查...", "STEP")
+        
+        try:
+            self.log("正在获取域名列表并检查过期时间...", "INFO")
+            
+            # 使用 page.evaluate 在浏览器内完成：获取数据 -> 轮询判断 -> 触发续费
+            result_data = page.evaluate("""
+                async () => {
+                    try {
+                        // 1. 先获取所有域名数据
+                        const response = await fetch("https://dash.domain.digitalplat.org/_panel_api/api/domains", {
+                            "headers": {
+                                "accept": "*/*",
+                                "accept-language": "zh-CN,zh;q=0.9",
+                                "cache-control": "no-cache",
+                                "pragma": "no-cache"
+                            },
+                            "referrer": "https://dash.domain.digitalplat.org/domains",
+                            "method": "GET",
+                            "credentials": "include"
+                        });
+                        
+                        if (!response.ok) {
+                            return { success: false, error: `获取列表失败，HTTP 状态码: ${response.status}` };
+                        }
+                        
+                        const resData = await response.json();
+                        const domains = resData.domains || [];
+                        const logResults = [];
+                        
+                        // 2. 获取当前日期并转换为时间戳
+                        const today = new Date();
+                        
+                        // 3. 轮询遍历每一个域名
+                        for (const item of domains) {
+                            const domainName = item.domain;
+                            const expiryStr = item.expiry_date; // 格式: "20261120"
+                            
+                            if (!expiryStr || expiryStr.length !== 8) {
+                                logResults.push(`${domainName}: 日期格式异常 (${expiryStr})`);
+                                continue;
+                            }
+                            
+                            // 解析 "YYYYMMDD"
+                            const year = parseInt(expiryStr.substring(0, 4));
+                            const month = parseInt(expiryStr.substring(4, 6)) - 1; // JS 月份从 0 开始
+                            const day = parseInt(expiryStr.substring(6, 8));
+                            const expiryDate = new Date(year, month, day);
+                            
+                            // 计算相差天数
+                            const diffTime = expiryDate.getTime() - today.getTime();
+                            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                            
+                            // 4. 判断是否小于 120 天
+                            if (diffDays < 120) {
+                                logResults.push(`${domainName}: 剩余 ${diffDays} 天 (< 120天)，正在触发续费...`);
+                                
+                                // 动态构建续费 URL 并发送 POST 请求
+                                const renewRes = await fetch(`https://dash.domain.digitalplat.org/_panel_api/api/domains/${domainName}/renew`, {
+                                    "headers": {
+                                        "accept": "*/*",
+                                        "accept-language": "zh-CN,zh;q=0.9",
+                                        "cache-control": "no-cache",
+                                        "content-type": "application/json",
+                                        "pragma": "no-cache"
+                                    },
+                                    "referrer": `https://dash.domain.digitalplat.org/domains/${domainName}`,
+                                    "body": JSON.stringify({ "renewal_type": "free", "years": 1 }),
+                                    "method": "POST",
+                                    "credentials": "include"
+                                });
+                                
+                                if (renewRes.ok) {
+                                    logResults.push(`${domainName}: 续费请求成功发送！`);
+                                } else {
+                                    logResults.push(`${domainName}: 续费请求失败，状态码: ${renewRes.status}`);
+                                }
+                            } else {
+                                logResults.push(`${domainName}: 剩余 ${diffDays} 天 (>= 120天)，无需续费。`);
+                            }
+                        }
+                        
+                        return { success: true, logs: logResults };
+                    } catch (error) {
+                        return { success: false, error: error.message };
+                    }
+                }
+            """)
+            
+            # 在 Python 控制台输出执行日志
+            if result_data and result_data.get("success"):
+                for log_item in result_data.get("logs", []):
+                    self.log(log_item, "INFO")
+                self.log("所有域名轮询检查完毕！", "SUCCESS")
+            else:
+                err_msg = result_data.get("error") if result_data else "未知错误"
+                self.log(f"执行轮询续费脚本失败: {err_msg}", "WARN")
                 
-        session=self.build_session(self.app_token)
-        
-        api_url = f"https://{self.host}/api/accountcenter/creditsUsage"
-        api_url = f"https://ap-northeast-1.run.digitalplat.org/api/accountcenter/creditsUsage"
-        api_url = "https://account-center.ap-northeast-1.run.digitalplat.org/api/plan/creditsUsage"
-        for retry in range(2):
-            try:
-                res = session.get(api_url, proxies=proxies, timeout=60)
-                res.raise_for_status()
-                res_data = res.json()
-                print(res_data)
-                if res_data.get("code") == 200:
-                    plan = res_data["data"]["currentPlan"]
-                    total, used = plan["total"] / 1000000, plan["used"] / 1000000
-                    result = f"💵  {total:.2f} - 📉  {used:.2f} = 🔋 {total-used:.2f} $"
-                    print(result)
-                    return result
-                if res_data.get("code") == 401:
-
-                    result = f"⚠️  code:{res_data.get('code')} ,message:{res_data.get('message')} "
-                    print(result)
-                    return result
-                print(f"  ⏳ [等待重试] 响应: {res_data.get('message')}")
-                time.sleep(5)
+            time.sleep(2)
+        except Exception as e:
+            self.log(f"续费流程异常: {e}", "WARN")
             
-            except Exception as e:
-                print(f"⚠️ [提取异常] {e}")
-        return None
+        self.shot(page, "完成")
 
     
     def mask_url(self,url):
@@ -897,7 +963,7 @@ class AutoLogin:
         domain = domain.rstrip('/')
     
         # 检查是否为 signin 页面
-        if domain.endswith('.run.digitalplat.org/signin'):
+        if domain.endswith('digitalplat.org/auth/login'):
             return "signin"
     
         # 检查是否包含 callback（OAuth 重定向）
@@ -905,7 +971,7 @@ class AutoLogin:
             return "redirect"
     
         # 检查是否是正常已登录的区域域名
-        if domain.endswith('.run.digitalplat.org'):
+        if domain.endswith('.digitalplat.org/domains'):
             return "logged"
     
         # 其他情况
@@ -984,7 +1050,7 @@ class AutoLogin:
                 else:
                     self.log(f"上次登录{dt}！", "INFO")
                     msg+=f"上次登录{dt}\n "
-                    msg+=self.get_balance_with_token()#七天有效期，失效无法查询
+                    #msg+=self.get_balance_with_token()#七天有效期，失效无法查询
                     return True, None,msg
             else:
                 self.log("无历史登录记录，直接登录", "WARN")
@@ -1054,7 +1120,7 @@ class AutoLogin:
                 for i in range(10):
                     try:
                         page.goto(BOARD_ENTRY_URL, timeout=60000)
-                        page.wait_for_load_state('networkidle', timeout=60000)
+                        page.wait_for_load_state('load', timeout=60000)
                         resault=self.check_and_process_domain(page.url)
                         self.shot(page, "找不到 GitHub 按钮")
                         if resault=="invalid":
@@ -1104,17 +1170,8 @@ class AutoLogin:
                             self.log(f"[1.{i}]: 访问 {page.url} 失败！", "ERROR")
                             browser.close()
                             return False,  None, f"访问 {BOARD_ENTRY_URL} 失败！"   
-                    
-        
-                # 检测区域
-                self.detect_region(page.url)
-                
-                # 再次确认区域检测
-                if not self.detected_region:
-                    self.detect_region(current_url)
-                self.shot(page, "找不到 GitHub 按钮")
-
-                
+                         
+                               
                 # 3. 提取并保存新 local_storage
                 self.log("步骤3: 更新 local_storage", "STEP")
                 storage_state = self.get_storage(context)
@@ -1142,10 +1199,10 @@ class AutoLogin:
                 else:
                     self.log("未获取到 storage_state", "WARN")
                 
-                # 4. 查询余额和登录信息
-                self.log("步骤4: 查询余额和登录信息", "STEP")
-                self.auth_token,self.app_token,self.lastLogin=self.get_local_token()
-                msg+=self.get_balance_with_token()
+                # 4. 查询有效期信息
+                self.log("步骤4: 查询有效期信息", "STEP")
+                
+                msg+=self.get_balance_with_token(page):)
                 #msg+= "✅ 成功！"
                 print("\n" + "="*50)
                 print("✅ 成功！")
