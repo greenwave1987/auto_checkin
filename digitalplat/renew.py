@@ -1026,7 +1026,7 @@ class AutoLogin:
                             page.wait_for_selector(github_btn_selector, timeout=60000, state="visible")
                             self.log("成功检测到 GitHub 登录按钮！", "SUCCESS")
                         except Exception as e:
-                            self.log(f"等待 GitHub 按钮超时或未显现: {e}", "WARN")
+                            self.log(f"等待 GitHub 按钮超时或未显现！", "WARN")
                             
                         resault=self.check_and_process_domain(page.url)
                         self.log(f"检测结果: {resault}", "INFO")
