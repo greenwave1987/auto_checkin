@@ -1058,7 +1058,7 @@ class AutoLogin:
                                             shot = self.shot(page, "找不到 GitHub 按钮")
                                             if shot:
                                                 self.notify.send(title="digitalplat 自动登录保活",content="找不到 GitHub 按钮",image_path=shot)
-                                            self.log(f"[2.{i}]: 找不到 GitHub 按钮", "WARN")
+                                            self.log(f"[2.{i}.{j}]: 找不到 GitHub 按钮", "WARN")
                                             self.shot(page, "找不到 GitHub 按钮")
                                         continue
                                     if resault=="logged":
@@ -1209,6 +1209,8 @@ def main():
     # 使用 zip 实现一一对应
     for account, proxy  in zip(accounts, proxies):
         username=account['username']
+        if username=='you5102':
+            continue
         print("\n" + "="*50)
         print(f"\n🚀 开始处理账号: {mask_name(username)}\n  🌐 使用代理: {proxy['server'][:-4]}***\n")
         print("="*50 + "\n")
