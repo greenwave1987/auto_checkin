@@ -1202,7 +1202,7 @@ class AutoLogin:
                 # 4. 查询有效期信息
                 self.log("步骤4: 查询有效期信息", "STEP")
                 
-                msg+=self.get_balance_with_token(page):)
+                msg+=self.get_balance_with_token(page)
                 #msg+= "✅ 成功！"
                 print("\n" + "="*50)
                 print("✅ 成功！")
