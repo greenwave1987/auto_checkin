@@ -1053,7 +1053,12 @@ class AutoLogin:
                                     resault=self.check_and_process_domain(page.url)
                                     if resault=="signin":
                                         self.log(f"[2.{i}.{j}]: 未跳转: {page.url}", "INFO")
-                                        time.sleep(random.uniform(10, 20))
+                                        if not self.click(page, desc="GitHub 登录按钮"):
+                                            shot = self.shot(page, "找不到 GitHub 按钮")
+                                            if shot:
+                                                self.notify.send(title="digitalplat 自动登录保活",content="找不到 GitHub 按钮",image_path=shot)
+                                            self.log(f"[2.{i}]: 找不到 GitHub 按钮", "WARN")
+                                            self.shot(page, "找不到 GitHub 按钮")
                                         continue
                                     if resault=="logged":
                                         self.log(f"[2.{i}.{j}]: 已登录: {page.url}", "SUCCESS")
