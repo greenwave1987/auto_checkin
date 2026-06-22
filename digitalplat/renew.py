@@ -925,12 +925,10 @@ class AutoLogin:
             url = page.url
             
             # 检查是否已跳转到 digitalplat.org
-            if 'digitalplat.org' in url and 'signin' not in url.lower():
+            if 'digitalplat.org' in url and 'login' not in url.lower():
                 self.log("重定向成功！", "SUCCESS")
                 
-                # 检测并记录区域
-                self.detect_region(url)
-                
+
                 return True
             
             if 'github.com/login/oauth/authorize' in url:
@@ -943,39 +941,7 @@ class AutoLogin:
         self.log("重定向超时", "ERROR")
         return False
     
-    def keepalive(self, page):
-        """保活 - 使用检测到的区域 URL"""
-        self.log("保活...", "STEP")
-        
-        # 使用检测到的区域 URL，如果没有则使用默认
-        base_url = self.get_base_url()
-        self.log(f"使用区域 URL: {base_url}", "INFO")
-        
-        pages_to_visit = [
-            (f"{base_url}/", "控制台"),
-            (f"{base_url}/apps", "应用"),
-        ]
-        
-        # 如果检测到了区域，可以额外访问一些区域特定页面
-        if self.detected_region:
-            self.log(f"当前区域: {self.detected_region}", "INFO")
-        
-        for url, name in pages_to_visit:
-            try:
-                page.goto(url, timeout=30000)
-                page.wait_for_load_state('networkidle', timeout=15000)
-                self.log(f"已访问: {name} ({url})", "SUCCESS")
-                
-                # 再次检测区域（以防中途跳转）
-                current_url = page.url
-                if 'digitalplat.org' in current_url:
-                    self.detect_region(current_url)
-                
-                time.sleep(2)
-            except Exception as e:
-                self.log(f"访问 {name} 失败: {e}", "WARN")
-        
-        self.shot(page, "完成")
+    
 
     def check_and_process_domain(self, domain):
 
@@ -1202,9 +1168,8 @@ class AutoLogin:
                 msg+=self.get_balance_with_token(page)
                 #msg+= "✅ 成功！"
                 print("\n" + "="*50)
-                print("✅ 成功！")
-                if self.detected_region:
-                    print(f"📍 区域: {self.detected_region}")
+                
+                
                 print("="*50 + "\n")
                 if self.shots:
                     self.notify.send(title="digitalplat 自动登录保活",content=f"✅ {self.gh_username}成功！",image_path=self.shots[-1])
