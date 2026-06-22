@@ -190,6 +190,9 @@ class AutoLogin:
         frames += page.frames
     
         selectors = [
+            'button:has-text("GitHub")',
+            'a:has-text("GitHub")',
+            '[data-provider="github"]',
             # Chakra Button（最稳）
             'button.chakra-button',
     
@@ -198,7 +201,7 @@ class AutoLogin:
     
             # XPath 兜底
             '//button[.//text()[contains(., "GitHub")]]',
-            '//button[.//*[name()="svg"]]',
+            '//button[.//*[name()="svg"]]'
         ]
     
         for frame in frames:
