@@ -488,54 +488,8 @@ class AutoLogin:
         url = re.sub(r'code=[^&]+', 'code=***', url)
         url = re.sub(r'state=[^&]+', 'state=***', url)
         return url
-        
-    def detect_region(self, url):
-        """
-        从 URL 中检测区域信息
-        例如: https://us-west-1.run.digitalplat.org/... -> us-west-1
-        """
-        try:
-            parsed = urlparse(url)
-            host = parsed.netloc  # 如 "us-west-1.run.digitalplat.org"
-            
-            # 检查是否是区域子域名格式
-            # 格式: {region}.run.digitalplat.org
-            if host.endswith('.run.digitalplat.org'):
-                region = host.replace('.run.digitalplat.org', '')
-                if region and region != 'console':  # 排除无效情况
-                    
-                    self.region_base_url = f"https://{host}"
-                    self.log(f"检测到区域: {region}", "SUCCESS")
-                    self.log(f"区域 URL: {self.region_base_url}", "INFO")
-                    return region
-            
-            # 如果是主域名 console.run.digitalplat.org，可能还没跳转
-            if 'console.run.digitalplat.org' in host or 'digitalplat.org' in host:
-                # 尝试从路径或其他地方提取区域信息
-                # 有些平台可能在路径中包含区域，如 /region/us-west-1/...
-                path = parsed.path
-                region_match = re.search(r'/(?:region|r)/([a-z]+-[a-z]+-\d+)', path)
-                if region_match:
-                    region = region_match.group(1)
-                    
-                    self.region_base_url = f"https://{region}.run.digitalplat.org"
-                    self.log(f"从路径检测到区域: {region}", "SUCCESS")
-                    return region
-            
-            self.log(f"未检测到特定区域，使用当前域名: {host}", "INFO")
-            # 如果没有检测到区域，使用当前 URL 的基础部分
-            self.region_base_url = f"{parsed.scheme}://{parsed.netloc}"
-            return None
-            
-        except Exception as e:
-            self.log(f"区域检测异常: {e}", "WARN")
-            return None
+          
     
-    def get_base_url(self):
-        """获取当前应该使用的基础 URL"""
-        if self.region_base_url:
-            return self.region_base_url
-        return BOARD_ENTRY_URL
     
     def get_session(self, context):
         """提取 Session Cookie"""
@@ -1058,7 +1012,16 @@ class AutoLogin:
                     try:
                         page.goto(BOARD_ENTRY_URL, timeout=60000)
                         page.wait_for_load_state('domcontentloaded', timeout=60000)
-                        time.sleep(random.uniform(15, 20))
+                        # 2. 精准等待 GitHub 登录按钮在页面上出现
+                        self.log("正在等待 GitHub 登录按钮渲染...", "INFO")
+                        try:
+                            # 盯防 href 包含 /auth/login/github 的 a 标签
+                            github_btn_selector = 'a[href="/auth/login/github"]'
+                            page.wait_for_selector(github_btn_selector, timeout=60000, state="visible")
+                            self.log("成功检测到 GitHub 登录按钮！", "SUCCESS")
+                        except Exception as e:
+                            self.log(f"等待 GitHub 按钮超时或未显现: {e}", "WARN")
+                            
                         resault=self.check_and_process_domain(page.url)
                         self.log(f"检测结果: {resault}", "INFO")
                         self.shot(page, "找不到 GitHub 按钮")
