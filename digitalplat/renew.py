@@ -946,7 +946,7 @@ class AutoLogin:
     def check_and_process_domain(self, domain):
 
         # 去掉末尾斜杠
-        domain = domain.rstrip('/')
+        #domain = domain.rstrip('/')
         self.log(f"检查网址: {domain}")
         # 检查是否为 signin 页面
         if domain.endswith('digitalplat.org/auth/login'):
