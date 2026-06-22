@@ -136,9 +136,9 @@ class AutoLogin:
         self.n = 0
         
         # 区域相关
-        self.detected_region = 'ap-northeast-1'  # 检测到的区域，如 "us-west-1"
+        
         self.region_base_url = 'https://ap-northeast-1.run.digitalplat.org'  # 检测到的区域基础 URL
-        self.auth_token,self.app_token,self.lastLogin=self.get_local_token()
+        
 
         
     def log(self, msg, level="INFO"):
@@ -288,35 +288,7 @@ class AutoLogin:
                 return o.get("localStorage", [])
         self.log(f"❌ get_local_storage_by_origin: []", "ERROR")
         return []
-    def get_local_token(self):
-        local_storage=self.get_local_storage_by_origin()
-        # 从localStorage中提取token
-        auth_token = None
-        app_token = None
-        lastLogin=0
-        for ls in local_storage:
-            if ls.get('name')=='lastLoginUpdateTime':
-                lastLogin = ls['value']
-                continue
-            if ls.get('name')=='session':
-                session_data = json.loads(ls['value'])
-                if isinstance(session_data, dict) and 'state' in session_data:
-                    if 'token' in session_data['state']:
-                        auth_token = session_data['state']['token']
-                    if 'session' in session_data['state'] and 'token' in session_data['state']['session']:
-                        app_token = session_data['state']['session']['token']
-                
-            
-
-        if not auth_token:
-            print(f"❌ [错误] 无法从保存的数据中提取 auth_token")
-
-        if not app_token:
-            print(f"❌ [错误] 无法从保存的数据中提取 app_token")
-        if not lastLogin:
-            print(f"❌ [错误] 无法从保存的数据中提取 lastLoginUpdateTime")
-            
-        return auth_token,app_token,lastLogin
+    
         
     def start_gost_proxy(self, proxy):
         """
@@ -528,7 +500,7 @@ class AutoLogin:
             if host.endswith('.run.digitalplat.org'):
                 region = host.replace('.run.digitalplat.org', '')
                 if region and region != 'console':  # 排除无效情况
-                    self.detected_region = region
+                    
                     self.region_base_url = f"https://{host}"
                     self.log(f"检测到区域: {region}", "SUCCESS")
                     self.log(f"区域 URL: {self.region_base_url}", "INFO")
@@ -542,7 +514,7 @@ class AutoLogin:
                 region_match = re.search(r'/(?:region|r)/([a-z]+-[a-z]+-\d+)', path)
                 if region_match:
                     region = region_match.group(1)
-                    self.detected_region = region
+                    
                     self.region_base_url = f"https://{region}.run.digitalplat.org"
                     self.log(f"从路径检测到区域: {region}", "SUCCESS")
                     return region
