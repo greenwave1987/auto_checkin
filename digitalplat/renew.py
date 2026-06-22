@@ -224,6 +224,7 @@ class AutoLogin:
                     el.click(force=True)
     
                     self.log(f"已点击: {desc}", "SUCCESS")
+                    time.sleep(random.uniform(30, 40))
                     return True
     
                 except PlaywrightTimeoutError:
