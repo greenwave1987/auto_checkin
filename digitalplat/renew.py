@@ -1066,6 +1066,33 @@ class AutoLogin:
                                         break
                                     if resault=="redirect":
                                         self.log(f"[2.{i}.{j}]: 正在重定向: {self.mask_url(page.url)}", "INFO")
+
+                                        # 5. 在点击 GitHub 按钮并等待跳转后，检测是否出现了“未绑定”提示
+                                        self.log("正在检测 GitHub 账号是否绑定...", "INFO")
+                                        
+                                        # 使用精准文本匹配定位
+                                        not_bound_selector = 'p.text-slate-600:has-text("This GitHub account is not bound")'
+                                        
+                                        try:
+                                            # 只等 5 秒，如果有这个提示，说明走错分支了
+                                            if page.locator(not_bound_selector).is_visible(timeout=5000):
+                                                self.log("❌ 登录失败：该 GitHub 账号未绑定到 DigitalPlat！", "ERROR")
+                                                
+                                                # 截图留存并发送 TG 通知
+                                                shot = self.shot(page, "GitHub未绑定提示")
+                                                if shot:
+                                                    self.notify.send(
+                                                        title="DigitalPlat 登录异常", 
+                                                        content=f"❌ 账号 {self.gh_username} 未绑定：请先手动用密码登录并在设置中绑定 GitHub！", 
+                                                        image_path=shot
+                                                    )
+                                                    
+                                                return False, None, "❌ GitHub 账号未绑定到平台，请手动绑定！"
+                                                
+                                        except Exception:
+                                            # 如果超时没等到这个元素，说明一切正常，没有触发未绑定提示
+                                            self.log("未检测到未绑定错误提示，继续正常流程...", "SUCCESS")
+                                            
                                         try:
                                             page.wait_for_url("https://*.digitalplat.org", timeout=60000)
                                             self.log(f"URL 已跳转: {page.url}", "SUCCESS")
