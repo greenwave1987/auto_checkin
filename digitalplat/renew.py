@@ -190,13 +190,18 @@ class AutoLogin:
         frames += page.frames
     
         selectors = [
+            # 🚀 【新增最高优先级】针对当前系统的超精准 href 选择器，秒杀一切
+            'a[href="/auth/login/github"]',
+            
+            # 原有的兜底规则
             'button:has-text("GitHub")',
             'a:has-text("GitHub")',
             '[data-provider="github"]',
-            # Chakra Button（最稳）
+            
+            # Chakra Button
             'button.chakra-button',
     
-            # 带 GitHub svg 的按钮（极稳）
+            # 带 GitHub svg 的按钮
             'button:has(svg)',
     
             # XPath 兜底
@@ -209,7 +214,8 @@ class AutoLogin:
                 try:
                     el = frame.locator(sel).first
     
-                    el.wait_for(state="visible", timeout=5000)
+                    # 💡 注意：将最精准的前几条快速过一遍，建议降低单个规则的等待超时（从5s降到2s），提升整体扫描效率
+                    el.wait_for(state="visible", timeout=2000)
     
                     # 模拟人类
                     time.sleep(random.uniform(0.5, 1.2))
@@ -227,7 +233,7 @@ class AutoLogin:
     
         self.log(f"❌ 找不到按钮: {desc}", "ERROR")
         return False
-
+        
     def get_digitalplat_cookies(self):
         """
         从 storage_state 中提取 domain 包含 digitalplat.org 的 cookies
