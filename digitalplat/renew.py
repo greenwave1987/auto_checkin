@@ -381,10 +381,11 @@ class AutoLogin:
             return None
 
     def get_balance_with_token(self, page):
-        print(f"📊 [步骤 8] 正在查询有效期...")
-
         """保活并自动续费（剩余不足120天）"""
         self.log("开始执行保活与自动续费检查...", "STEP")
+        
+        # 📌 初始化准备返回给 msg 的文本内容
+        return_msg = ""
         
         try:
             self.log("正在获取域名列表并检查过期时间...", "INFO")
@@ -393,13 +394,24 @@ class AutoLogin:
             result_data = page.evaluate("""
                 async () => {
                     try {
+                        // 尝试从本地 Cookie 中提取 XSRF-TOKEN 以免401
+                        const getCookie = (name) => {
+                            const value = `; ${document.cookie}`;
+                            const parts = value.split(`; ${name}=`);
+                            if (parts.length === 2) return parts.pop().split(';').shift();
+                            return null;
+                        };
+                        const xsrfToken = getCookie('XSRF-TOKEN');
+
                         // 1. 先获取所有域名数据
                         const response = await fetch("https://dash.domain.digitalplat.org/_panel_api/api/domains", {
                             "headers": {
-                                "accept": "*/*",
+                                "accept": "application/json, text/plain, */*",
                                 "accept-language": "zh-CN,zh;q=0.9",
                                 "cache-control": "no-cache",
-                                "pragma": "no-cache"
+                                "pragma": "no-cache",
+                                "X-Requested-With": "XMLHttpRequest", // 📌 核心：声明是Ajax异步请求，防401
+                                ...(xsrfToken && { "X-XSRF-TOKEN": decodeURIComponent(xsrfToken) })
                             },
                             "referrer": "https://dash.domain.digitalplat.org/domains",
                             "method": "GET",
@@ -444,11 +456,13 @@ class AutoLogin:
                                 // 动态构建续费 URL 并发送 POST 请求
                                 const renewRes = await fetch(`https://dash.domain.digitalplat.org/_panel_api/api/domains/${domainName}/renew`, {
                                     "headers": {
-                                        "accept": "*/*",
+                                        "accept": "application/json, text/plain, */*",
                                         "accept-language": "zh-CN,zh;q=0.9",
                                         "cache-control": "no-cache",
                                         "content-type": "application/json",
-                                        "pragma": "no-cache"
+                                        "pragma": "no-cache",
+                                        "X-Requested-With": "XMLHttpRequest", // 📌 同样加上防401
+                                        ...(xsrfToken && { "X-XSRF-TOKEN": decodeURIComponent(xsrfToken) })
                                     },
                                     "referrer": `https://dash.domain.digitalplat.org/domains/${domainName}`,
                                     "body": JSON.stringify({ "renewal_type": "free", "years": 1 }),
@@ -473,21 +487,27 @@ class AutoLogin:
                 }
             """)
             
-            # 在 Python 控制台输出执行日志
+            # 在 Python 控制台输出执行日志并拼接给 return_msg
             if result_data and result_data.get("success"):
                 for log_item in result_data.get("logs", []):
                     self.log(log_item, "INFO")
+                    return_msg += log_item + "\n" # 📌 将每行日志加到通知文本中
                 self.log("所有域名轮询检查完毕！", "SUCCESS")
+                return_msg += "✅ 所有域名轮询检查完毕！\n"
             else:
                 err_msg = result_data.get("error") if result_data else "未知错误"
                 self.log(f"执行轮询续费脚本失败: {err_msg}", "WARN")
+                return_msg += f"⚠️ 执行轮询续费脚本失败: {err_msg}\n"
                 
             time.sleep(2)
         except Exception as e:
             self.log(f"续费流程异常: {e}", "WARN")
+            return_msg += f"❌ 续费流程异常: {e}\n"
             
         self.shot(page, "完成")
-
+        
+        # 📌 极其重要：把拼接好的字符串返回，让外部的 msg += 能够正常执行
+        return return_msg
     
     def mask_url(self,url):
         url = re.sub(r'code=[^&]+', 'code=***', url)
@@ -1029,31 +1049,7 @@ class AutoLogin:
             
             
 
-            """
-            与当前时间比较，是否相差 >= 20 天
-            ts_ms: 毫秒时间戳
-            """
-            if self.lastLogin:
-                    
-                lastLogin=int(self.lastLogin)
-                now_ms = int(time.time() * 1000)
-                diff_ms = abs(now_ms - lastLogin)
             
-                DAY_MS = 24 * 60 * 60 * 1000
-                dt = (
-                    datetime.datetime.utcfromtimestamp(lastLogin / 1000)
-                    + datetime.timedelta(hours=8)
-                ).replace(second=0, microsecond=0)
-                if diff_ms >= 7 * DAY_MS:
-                    self.log(f"上次登录{dt},已过7天，重新登录！", "WARN")
-                    msg+= f"上次登录{dt},已过7天，重新登录！"
-                else:
-                    self.log(f"上次登录{dt}！", "INFO")
-                    msg+=f"上次登录{dt}\n "
-                    #msg+=self.get_balance_with_token()#七天有效期，失效无法查询
-                    return True, None,msg
-            else:
-                self.log("无历史登录记录，直接登录", "WARN")
                 
             
             browser = p.chromium.launch(**launch_args)
