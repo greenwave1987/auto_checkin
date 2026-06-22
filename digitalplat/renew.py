@@ -1189,7 +1189,7 @@ def main():
     gh_sessions = gh_secret.load() or {}
     
     # 初始化 SecretUpdater，会自动根据当前仓库用户名获取 token
-    secret = SecretUpdater("digitalplat_LOCALS", config_reader=config)
+    secret = SecretUpdater("DIGITALPLAT_LOCALS", config_reader=config)
     # 读取
     dt_locals = secret.load() 
     
