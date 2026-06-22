@@ -981,7 +981,7 @@ class AutoLogin:
 
         # 去掉末尾斜杠
         domain = domain.rstrip('/')
-    
+        self.log(f"检查网址: {domain}")
         # 检查是否为 signin 页面
         if domain.endswith('digitalplat.org/auth/login'):
             return "signin"
@@ -1117,6 +1117,7 @@ class AutoLogin:
                     try:
                         page.goto(BOARD_ENTRY_URL, timeout=60000)
                         page.wait_for_load_state('load', timeout=60000)
+                        time.sleep(random.uniform(15, 20))
                         resault=self.check_and_process_domain(page.url)
                         self.shot(page, "找不到 GitHub 按钮")
                         if resault=="invalid":
