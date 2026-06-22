@@ -1051,6 +1051,9 @@ class AutoLogin:
                             else:
                                 for j in range(10):
                                     resault=self.check_and_process_domain(page.url)
+                                    if resault=="signin":
+                                        self.log(f"[2.{i}.{j}]: 未跳转: {page.url}", "INFO")
+                                        time.sleep(random.uniform(10, 20))
                                     if resault=="logged":
                                         self.log(f"[2.{i}.{j}]: 已登录: {page.url}", "SUCCESS")
                                         self.shot(page, "找不到 GitHub 按钮")
