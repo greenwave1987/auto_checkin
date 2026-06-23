@@ -41,3 +41,11 @@ jobs:
           # 使用 xvfb-run 启动虚拟显示器，这是过 Cloudflare 验证码的关键
           # 它模拟了一个真实的显示环境，让浏览器不被识别为纯 headless
           xvfb-run --auto-servernum python freecloud/freecloud.py
+      - name: 🧹 清理旧的工作流运行记录
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: ${{ github.workflow }}
+          retain_days: 0
+          keep_minimum_runs: 3
