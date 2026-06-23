@@ -106,7 +106,7 @@ class AutoLogin:
         self.host = urlparse(BOARD_ENTRY_URL).netloc
         self.gh_username = config.get('gh_username')
         # self.gh_password = config.get('gh_password')
-        
+        self.proxy_url=None
         # gh_session 处理类型安全
         gh_sess = config.get('gh_session', '')
         if isinstance(gh_sess, str):
