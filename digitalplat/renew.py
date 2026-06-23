@@ -124,10 +124,11 @@ class AutoLogin:
             # storage_state 本身是 dict，无需 strip
             self.dt_local = dt_local_val
         
-        self.dt_proxy = config.get('dt_proxy', '').strip() if isinstance(config.get('dt_proxy', ''), str) else config.get('dt_proxy')
-        self.proxy_url=test_proxy(self.dt_proxy)
+        #self.dt_proxy = config.get('dt_proxy', '').strip() if isinstance(config.get('dt_proxy', ''), str) else config.get('dt_proxy')
+        #self.proxy_url=test_proxy(self.dt_proxy)
         if not self.proxy_url:
             self.dt_proxy = config.get('wz_proxy')
+            self.proxy_url=test_proxy(self.dt_proxy)
             
         self.notify = config.get('notify')
         # self.secret = SecretUpdater()
