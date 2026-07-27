@@ -5,7 +5,7 @@ import os
 import requests
 from engine.safe_print import desensitize_text
 from engine.main import ConfigReader
-
+from html import escape
 
 class TelegramNotifier:
     def __init__(self, config: ConfigReader, default_index: int = 0):
@@ -107,8 +107,12 @@ class TelegramNotifier:
     def send(self, title: str, content: str, image_path: str | None = None) -> bool:
         print("🔔 开始发送通知")
 
-        message = f"<b>{title}</b>\n\n{content}"
+        safe_title = escape(title)
+        safe_content = escape(content)
+        
+        message = f"<b>{safe_title}</b>\n\n{safe_content}"
         message = desensitize_text(message)
+
 
         # -------- 文字 --------
         try:
