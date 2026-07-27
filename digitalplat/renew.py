@@ -438,6 +438,7 @@ class AutoLogin:
                                 
                                 // 动态构建续费 URL 并发送 POST 请求
                                 const renewRes = await fetch(`https://dash.domain.digitalplat.org/_panel_api/api/domains/${domainName}/renew`, {
+                                                            ##https://dash.domain.digitalplat.org/_panel_api/api/domains/hndz.qzz.io/renew
                                     "headers": {
                                         "accept": "application/json, text/plain, */*",
                                         "accept-language": "zh-CN,zh;q=0.9",
@@ -450,7 +451,7 @@ class AutoLogin:
                                     "referrer": `https://dash.domain.digitalplat.org/domains/${domainName}`,
                                     "body": JSON.stringify({ "renewal_type": "free", "years": 1 }),
                                     "method": "POST",
-                                    "credentials": "include"
+                                    ##"credentials": "include"
                                 });
                                 
                                 if (renewRes.ok) {
