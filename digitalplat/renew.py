@@ -451,7 +451,7 @@ class AutoLogin:
                                     "referrer": `https://dash.domain.digitalplat.org/domains/${domainName}`,
                                     "body": JSON.stringify({ "renewal_type": "free", "years": 1 }),
                                     "method": "POST",
-                                    ##"credentials": "include"
+                                    "credentials": "include"
                                 });
                                 
                                 if (renewRes.ok) {
