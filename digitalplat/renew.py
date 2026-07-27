@@ -457,6 +457,7 @@ class AutoLogin:
                                 if (renewRes.ok) {
                                     logResults.push(`${domainName}: 续费请求成功发送！`);
                                 } else {
+                                    logResults.push(`${domainName}: 续费请求失败，状态码: ${renewRes}`);
                                     logResults.push(`${domainName}: 续费请求失败，状态码: ${renewRes.status}`);
                                 }
                             } else {
