@@ -158,21 +158,6 @@ class AutoLogin:
             pass
         return f
     
-    def jclick(self, page, sels, desc=""):
-        for s in sels:
-            try:
-                el = page.locator(s).first
-                if el.is_visible(timeout=3000):
-                    # 模拟人类随机延迟
-                    time.sleep(random.uniform(0.5, 1.5))
-                    el.hover() # 先悬停
-                    time.sleep(random.uniform(0.2, 0.5))
-                    el.click()
-                    self.log(f"已点击: {desc}", "SUCCESS")
-                    return True
-            except:
-                pass
-        return False
     def click(self, page, desc=""):
         """
         专用于 Chakra UI / SPA / iframe 登录按钮
@@ -278,27 +263,7 @@ class AutoLogin:
                 return o.get("localStorage", [])
                 
         return []
-    def jjjget_local_storage_by_origin(self):
-        """
-        根据 origin 获取对应的 localStorage
-        """
-        if not isinstance(self.dt_local, dict):
-            self.log(f"❌ get_local_storage_by_origin: self.dt_local格式不对 {self.dt_local}", "ERROR")
-            return []
     
-        origins = self.dt_local.get("origins", [])
-        if not isinstance(origins, list):
-            self.log(f"❌ get_local_storage_by_origin: origins格式不对 {origins}", "ERROR")
-            return []
-    
-        for o in origins:
-            if not isinstance(o, dict):
-                self.log(f"❌ get_local_storage_by_origin: origin格式不对 {o}", "ERROR")
-                continue
-            if self.host in o.get("origin"):
-                return o.get("localStorage", [])
-        self.log(f"❌ get_local_storage_by_origin: []", "ERROR")
-        return []
     
         
     def start_gost_proxy(self, proxy):
@@ -384,7 +349,7 @@ class AutoLogin:
                             if (parts.length === 2) return parts.pop().split(';').shift();
                             return null;
                         };
-                        const xsrfToken = getCookie('XSRF-TOKEN');
+                        const xsrfToken = getCookie('panel_csrf_token');
 
                         // 1. 先获取所有域名数据
                         const response = await fetch("https://dash.domain.digitalplat.org/_panel_api/api/domains", {
@@ -394,7 +359,7 @@ class AutoLogin:
                                 "cache-control": "no-cache",
                                 "pragma": "no-cache",
                                 "X-Requested-With": "XMLHttpRequest", // 📌 核心：声明是Ajax异步请求，防401
-                                ...(xsrfToken && { "X-XSRF-TOKEN": decodeURIComponent(xsrfToken) })
+                                ...(xsrfToken && { "x-csrf-token": decodeURIComponent(xsrfToken) })
                             },
                             "referrer": "https://dash.domain.digitalplat.org/domains",
                             "method": "GET",
@@ -445,7 +410,7 @@ class AutoLogin:
                                         "content-type": "application/json",
                                         "pragma": "no-cache",
                                         "X-Requested-With": "XMLHttpRequest", // 📌 同样加上防401
-                                        ...(xsrfToken && { "X-XSRF-TOKEN": decodeURIComponent(xsrfToken) })
+                                        ...(xsrfToken && { "x-csrf-token": decodeURIComponent(xsrfToken) })
                                     },
                                     "referrer": `https://dash.domain.digitalplat.org/domains/${domainName}`,
                                     "body": JSON.stringify({ "renewal_type": "free", "years": 1 }),
