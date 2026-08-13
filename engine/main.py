@@ -9,7 +9,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from hashlib import sha256
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
-
+from urllib.parse import quote
 
 """
 # ==================================================
