@@ -124,8 +124,8 @@ class AutoLogin:
             # storage_state 本身是 dict，无需 strip
             self.dt_local = dt_local_val
         
-        #self.dt_proxy = config.get('dt_proxy', '').strip() if isinstance(config.get('dt_proxy', ''), str) else config.get('dt_proxy')
-        #self.proxy_url=test_proxy(self.dt_proxy)
+        self.dt_proxy = config.get('dt_proxy', '').strip() if isinstance(config.get('dt_proxy', ''), str) else config.get('dt_proxy')
+        self.proxy_url=test_proxy(self.dt_proxy)
         if not self.proxy_url:
             self.dt_proxy = config.get('wz_proxy')
             self.proxy_url=test_proxy(self.dt_proxy)
@@ -897,8 +897,7 @@ class AutoLogin:
                     p_url = self.dt_proxy
                     # ===== 新增：socks5 带认证 → gost =====
                     if (
-                        p_url.get("type") == "socks5h"
-                        and p_url.get("username")
+                        p_url.get("username")
                         and p_url.get("password")
                     ):
                         gost = self.start_gost_proxy(p_url)
