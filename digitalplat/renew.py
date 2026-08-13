@@ -327,8 +327,267 @@ class AutoLogin:
         except Exception as e:
             print(f"⚠️ [build_session 异常] {e}")
             return None
-
     def get_balance_with_token(self, page):
+        """保活并自动续费（剩余不足120天）"""
+        self.log("开始执行保活与自动续费检查...", "STEP")
+        return_msg = ""
+        try:
+            self.log("正在获取域名列表并检查过期时间...", "INFO")
+            result_data = page.evaluate("""
+                async () => {
+                    try {
+                        // 获取 Cookie
+                        const getCookie = (name) => {
+                            const value = `; ${document.cookie}`;
+                            const parts = value.split(`; ${name}=`);
+                            if (parts.length === 2) {
+                                return parts.pop().split(';').shift();
+                            }
+                            return null;
+                        };
+    
+                        // 当前站点使用 panel_csrf_token
+                        const xsrfToken = getCookie("panel_csrf_token");
+    
+                        // 公共请求头
+                        const getHeaders = () => {
+                            const headers = {
+                                "accept": "application/json, text/plain, */*",
+                                "accept-language": "zh-CN,zh;q=0.9",
+                                "cache-control": "no-cache",
+                                "pragma": "no-cache",
+                                "X-Requested-With": "XMLHttpRequest"
+                            };
+    
+                            if (xsrfToken) {
+                                headers["x-csrf-token"] =
+                                    decodeURIComponent(xsrfToken);
+                            }
+    
+                            return headers;
+                        };
+    
+                        // ==============================
+                        // 1. 获取域名列表
+                        // ==============================
+                        const response = await fetch(
+                            "https://dashboard.digitalplat.org/_panel_api/api/domains",
+                            {
+                                "headers": getHeaders(),
+                                "referrer": "https://dash.domain.digitalplat.org/domains",
+                                "method": "GET",
+                                "credentials": "include"
+                            }
+                        );
+    
+                        if (!response.ok) {
+                            const text = await response.text();
+    
+                            return {
+                                success: false,
+                                error: `获取列表失败，HTTP ${response.status}: ${text}`
+                            };
+                        }
+    
+                        const resData = await response.json();
+                        const domains = resData.domains || [];
+                        const logResults = [];
+    
+                        // ==============================
+                        // 2. 当前日期
+                        // ==============================
+                        const today = new Date();
+                        today.setHours(0, 0, 0, 0);
+    
+                        // ==============================
+                        // 3. 遍历域名
+                        // ==============================
+                        for (const item of domains) {
+                            const domainName = item.domain;
+                            const expiryStr = String(item.expiry_date || "");
+    
+                            if (!expiryStr || !/^\\d{8}$/.test(expiryStr)) {
+                                logResults.push(
+                                    `${domainName}: 日期格式异常 (${expiryStr})`
+                                );
+                                continue;
+                            }
+    
+                            // YYYYMMDD
+                            const year = parseInt(
+                                expiryStr.substring(0, 4)
+                            );
+    
+                            const month = parseInt(
+                                expiryStr.substring(4, 6)
+                            ) - 1;
+    
+                            const day = parseInt(
+                                expiryStr.substring(6, 8)
+                            );
+    
+                            const expiryDate = new Date(
+                                year,
+                                month,
+                                day
+                            );
+    
+                            expiryDate.setHours(0, 0, 0, 0);
+    
+                            // ==============================
+                            // 4. 计算剩余天数
+                            // ==============================
+                            const diffTime =
+                                expiryDate.getTime() -
+                                today.getTime();
+    
+                            const diffDays = Math.ceil(
+                                diffTime /
+                                (1000 * 60 * 60 * 24)
+                            );
+    
+                            // ==============================
+                            // 5. 小于120天 -> 自动续费
+                            // ==============================
+                            if (diffDays < 120) {
+    
+                                logResults.push(
+                                    `${domainName}: 剩余 ${diffDays} 天 (< 120天)，正在触发续费...`
+                                );
+    
+                                // 防止域名中存在特殊字符
+                                const encodedDomain =
+                                    encodeURIComponent(domainName);
+    
+                                const renewUrl =
+                                    `https://dashboard.digitalplat.org/_panel_api/api/domains/${encodedDomain}/renew`;
+    
+                                // ==============================
+                                // 6. POST 续费
+                                // ==============================
+                                const renewRes = await fetch(
+                                    renewUrl,
+                                    {
+                                        "headers": {
+                                            ...getHeaders(),
+                                            "content-type": "application/json"
+                                        },
+                                        "referrer":
+                                            `https://dash.domain.digitalplat.org/domains/${encodedDomain}`,
+                                        "body": JSON.stringify({
+                                            "renewal_type": "free",
+                                            "years": 1
+                                        }),
+                                        "method": "POST",
+                                        "credentials": "include"
+                                    }
+                                );
+    
+                                if (renewRes.ok) {
+    
+                                    let renewData = null;
+    
+                                    try {
+                                        renewData =
+                                            await renewRes.json();
+                                    } catch (e) {
+                                        // 返回不是 JSON
+                                    }
+    
+                                    if (renewData) {
+                                        logResults.push(
+                                            `${domainName}: 续费请求成功！返回: ${JSON.stringify(renewData)}`
+                                        );
+                                    } else {
+                                        logResults.push(
+                                            `${domainName}: 续费请求成功！`
+                                        );
+                                    }
+    
+                                } else {
+    
+                                    const text =
+                                        await renewRes.text();
+    
+                                    logResults.push(
+                                        `${domainName}: 续费请求失败，状态码: ${renewRes.status}`
+                                    );
+    
+                                    logResults.push(
+                                        `${domainName}: 返回内容: ${text}`
+                                    );
+                                }
+    
+                            } else {
+    
+                                logResults.push(
+                                    `${domainName}: 剩余 ${diffDays} 天 (>= 120天)，无需续费。`
+                                );
+                            }
+                        }
+    
+                        return {
+                            success: true,
+                            count: domains.length,
+                            logs: logResults
+                        };
+    
+                    } catch (error) {
+    
+                        return {
+                            success: false,
+                            error:
+                                `${error.name || "Error"}: ${error.message}`
+                        };
+                    }
+                }
+            """)
+    
+            if result_data and result_data.get("success"):
+                for log_item in result_data.get("logs", []):
+                    self.log(log_item, "INFO")
+                    return_msg += log_item + "\n"
+    
+                count = result_data.get("count", 0)
+    
+                self.log(
+                    f"所有域名轮询检查完毕，共 {count} 个域名。",
+                    "SUCCESS"
+                )
+    
+                return_msg += (
+                    f"✅ 所有域名轮询检查完毕，共 {count} 个域名。\n"
+                )
+    
+            else:
+                err_msg = (
+                    result_data.get("error")
+                    if result_data
+                    else "未知错误"
+                )
+    
+                self.log(
+                    f"执行轮询续费脚本失败: {err_msg}",
+                    "WARN"
+                )
+    
+                return_msg += (
+                    f"⚠️ 执行轮询续费脚本失败: {err_msg}\n"
+                )
+    
+            time.sleep(2)
+    
+        except Exception as e:
+            self.log(
+                f"续费流程异常: {e}",
+                "WARN"
+            )
+            return_msg += f"❌ 续费流程异常: {e}\n"
+    
+        self.shot(page, "完成")
+        return return_msg
+        
+    def jjjget_balance_with_token(self, page):
         """保活并自动续费（剩余不足120天）"""
         self.log("开始执行保活与自动续费检查...", "STEP")
         
