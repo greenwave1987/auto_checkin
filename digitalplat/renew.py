@@ -352,7 +352,7 @@ class AutoLogin:
                         const xsrfToken = getCookie('panel_csrf_token');
 
                         // 1. 先获取所有域名数据
-                        const response = await fetch("https://dash.domain.digitalplat.org/_panel_api/api/domains", {
+                        const response = await fetch("https://dashboard.digitalplat.org/_panel_api/api/domains", {
                             "headers": {
                                 "accept": "application/json, text/plain, */*",
                                 "accept-language": "zh-CN,zh;q=0.9",
