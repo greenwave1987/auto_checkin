@@ -523,37 +523,59 @@ def print_dict_tree(d, prefix=""):
 def test_proxy(proxy_info, timeout=5):
     """
     测试代理是否可用
-    proxy_info: dict, 包含以下字段
-        - type: 'http', 'https', 'socks5'
-        - server: 代理地址
-        - port: 端口
-        - username: 用户名 (可为空)
-        - password: 密码 (可为空)
-    timeout: 请求超时时间（秒）
-    
-    返回: True 可用, False 不可用
+    返回: proxy_url / None
     """
+    proxy_url = None
+
     try:
-        # 构建 proxies 字典
         if proxy_info.get("username") and proxy_info.get("password"):
-            auth_part = f"{proxy_info['username']}:{proxy_info['password']}@"
+            auth_part = (
+                f"{quote(str(proxy_info['username']), safe='')}:"
+                f"{quote(str(proxy_info['password']), safe='')}@"
+            )
         else:
             auth_part = ""
 
-        proxy_url = f"{proxy_info['type']}://{auth_part}{proxy_info['server']}:{proxy_info['port']}"
+        proxy_url = (
+            f"{proxy_info['type']}://"
+            f"{auth_part}"
+            f"{proxy_info['server']}:{proxy_info['port']}"
+        )
+
         proxies = {
             "http": proxy_url,
             "https": proxy_url
         }
 
-        # 测试请求
-        test_res = requests.get("https://httpbin.org/ip", proxies=proxies, timeout=timeout)
-        test_res.raise_for_status()
-        print(f"✅ 代理可用: {proxy_info['server']}")
-        return proxy_url
+        # 备用检测地址
+        urls = [
+            "https://httpbin.io/ip",
+            "https://api.ipify.org?format=json",
+            "https://ipinfo.io/json"
+        ]
+
+        for url in urls:
+            try:
+                test_res = requests.get(
+                    url,
+                    proxies=proxies,
+                    timeout=timeout,
+                    headers={"User-Agent": "Mozilla/5.0"}
+                )
+
+                if test_res.status_code == 200:
+                    print(f"✅ 代理可用: {proxy_info['server']}")
+                    print(f"   检测地址: {url}")
+                    return proxy_url
+
+            except requests.RequestException:
+                continue
+
+        print(f"❌ 代理不可用: {proxy_url}")
+        return None
 
     except Exception as e:
-        print(f"❌ 代理不可用: {proxy_url}, 错误: {e}")
+        print(f"❌ 代理测试异常: {proxy_url}, 错误: {e}")
         return None
 # 转换到东八区 (北京时间)
 def to_beijing_time(utc_str):
