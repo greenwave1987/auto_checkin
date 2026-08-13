@@ -327,7 +327,7 @@ class AutoLogin:
         except Exception as e:
             print(f"⚠️ [build_session 异常] {e}")
             return None
-    def parse_cookies(cookie_string):
+    def parse_cookies(self, cookie_string):
         cookies = {}
         for item in cookie_string.split(";"):
             item = item.strip()
@@ -338,7 +338,7 @@ class AutoLogin:
         return cookies
     
     
-    def get_headers(cookies, json=False):
+    def get_headers(self, cookies, json=False):
         headers = {
             "accept": "*/*",
             "accept-language": "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7",
@@ -358,7 +358,7 @@ class AutoLogin:
         return headers
     
     
-    def get_domains(cookies):
+    def get_domains(self, cookies):
         """使用 requests 获取 Dashboard 域名列表"""
         try:
             response = requests.get(
@@ -398,7 +398,7 @@ class AutoLogin:
             return None
     
     
-    def get_days_left(expiry_str):
+    def get_days_left(self, expiry_str):
         """计算剩余天数"""
         if not expiry_str:
             return None
@@ -426,7 +426,7 @@ class AutoLogin:
             return None
     
     
-    def renew_domain(cookies, domain):
+    def renew_domain(self, cookies, domain):
         """使用 requests 调用 Dashboard 续费接口"""
     
         encoded_domain = quote(
@@ -481,7 +481,7 @@ class AutoLogin:
             return False
     
     
-    def check_and_renew(cookies):
+    def check_and_renew(self, cookies):
         """检查域名并自动续费"""
     
         domains = get_domains(cookies)
@@ -627,7 +627,7 @@ class AutoLogin:
             # 2. Cookie 字符串转换成 requests cookies
             # ==================================================
     
-            cookies = parse_cookies(
+            cookies = self.parse_cookies(
                 cookie_string
             )
     
@@ -682,7 +682,7 @@ class AutoLogin:
                 "INFO"
             )
     
-            result = check_and_renew(
+            result = self.check_and_renew(
                 cookies
             )
     
