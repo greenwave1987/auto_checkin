@@ -16,6 +16,9 @@ from playwright.sync_api import sync_playwright
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 # ==================== 基准数据对接 ====================
+BASE_URL = "https://dashboard.digitalplat.org/_panel_api/api/domains"
+RENEW_DAYS = 120
+TIMEOUT = 15
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE_DIR)
 from engine.notify import TelegramNotifier
