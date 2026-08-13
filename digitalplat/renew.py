@@ -1385,6 +1385,7 @@ class AutoLogin:
                             self.log("成功检测到 GitHub 登录按钮！", "SUCCESS")
                         except Exception as e:
                             self.log(f"等待 GitHub 按钮超时或未显现！", "WARN")
+                            self.log(page.url)
                             
                         resault=self.check_and_process_domain(page.url)
                         self.log(f"检测结果: {resault}", "INFO")
