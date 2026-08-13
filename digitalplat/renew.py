@@ -401,8 +401,8 @@ class AutoLogin:
                             if (diffDays < 120) {
                                 logResults.push(`${domainName}: 剩余 ${diffDays} 天 (< 120天)，正在触发续费...`);
                                 
-                                // 动态构建续费 URL 并发送 POST 请求
-                                const renewRes = await fetch(`https://dash.domain.digitalplat.org/_panel_api/api/domains/${domainName}/renew`, {
+                                // 动态构建续费 URL 并发送 POST 请求https://dashboard.digitalplat.org/_panel_api/api/domains/dzxmb.dpdns.org/renew
+                                const renewRes = await fetch(`https://dashboard.digitalplat.org/_panel_api/api/domains/${domainName}/renew`, {
                                     "headers": {
                                         "accept": "application/json, text/plain, */*",
                                         "accept-language": "zh-CN,zh;q=0.9",
