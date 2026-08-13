@@ -897,7 +897,7 @@ class AutoLogin:
                     p_url = self.dt_proxy
                     # ===== 新增：socks5 带认证 → gost =====
                     if (
-                        p_url.get("type") == "socks5"
+                        p_url.get("type") == "socks5h"
                         and p_url.get("username")
                         and p_url.get("password")
                     ):
