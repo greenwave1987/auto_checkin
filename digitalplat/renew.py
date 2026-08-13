@@ -33,7 +33,7 @@ except ImportError:
 PROXY_DSN = os.environ.get("PROXY_DSN", "").strip()
 
 # 固定自己创建有APP的登录入口，若BOARD_ENTRY_URL = "https://console.run.digitalplat.org/signin"在OAuth后会自动跳转到根据IP定位的区域,
-BOARD_ENTRY_URL = "https://dash.domain.digitalplat.org/domains"
+BOARD_ENTRY_URL = "https://dashboard.digitalplat.org/domains"
 
 DEVICE_VERIFY_WAIT = 30  # Mobile验证 默认等 30 秒
 TWO_FACTOR_WAIT = int(os.environ.get("TWO_FACTOR_WAIT", "120"))  # 2FA验证 默认等 120 秒
