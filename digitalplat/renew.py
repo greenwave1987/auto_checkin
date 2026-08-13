@@ -621,6 +621,7 @@ class AutoLogin:
                 "✅ 成功获取浏览器 Cookie",
                 "SUCCESS"
             )
+            self.log(cookie_string, "SUCCESS")
     
             # ==================================================
             # 2. Cookie 字符串转换成 requests cookies
