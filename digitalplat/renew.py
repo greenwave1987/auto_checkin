@@ -327,262 +327,392 @@ class AutoLogin:
         except Exception as e:
             print(f"⚠️ [build_session 异常] {e}")
             return None
-    def get_balance_with_token(self, page):
-        """DigitalPlat Dashboard 获取域名并自动续费"""
-        self.log("开始执行保活与自动续费检查...", "STEP")
-        return_msg = ""
+    def parse_cookies(cookie_string):
+        cookies = {}
+        for item in cookie_string.split(";"):
+            item = item.strip()
+            if "=" not in item:
+                continue
+            key, value = item.split("=", 1)
+            cookies[key.strip()] = value.strip()
+        return cookies
+    
+    
+    def get_headers(cookies, json=False):
+        headers = {
+            "accept": "*/*",
+            "accept-language": "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7",
+            "cache-control": "no-cache",
+            "pragma": "no-cache",
+            "User-Agent": "Mozilla/5.0",
+        }
+    
+        if json:
+            headers["content-type"] = "application/json"
+    
+        csrf_token = cookies.get("panel_csrf_token")
+    
+        if csrf_token:
+            headers["x-csrf-token"] = csrf_token
+    
+        return headers
+    
+    
+    def get_domains(cookies):
+        """使用 requests 获取 Dashboard 域名列表"""
         try:
-            self.log("正在通过 Dashboard API 获取域名列表...", "INFO")
-            result_data = page.evaluate("""
-                async () => {
-                    try {
-                        const getCookie = (name) => {
-                            const value = `; ${document.cookie}`;
-                            const parts = value.split(`; ${name}=`);
-                            if (parts.length === 2) {
-                                return parts.pop().split(';').shift();
-                            }
-                            return null;
-                        };
+            response = requests.get(
+                BASE_URL,
+                headers=get_headers(cookies),
+                cookies=cookies,
+                timeout=TIMEOUT
+            )
     
-                        const xsrfToken = getCookie("panel_csrf_token");
+            print("\n========== 获取域名列表 ==========")
+            print("HTTP:", response.status_code)
+            print("Response:", response.text)
     
-                        const getHeaders = (json = false) => {
-                            const headers = {
-                                "accept": "*/*",
-                                "accept-language": "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7",
-                                "cache-control": "no-cache",
-                                "pragma": "no-cache",
-                                "X-Requested-With": "XMLHttpRequest"
-                            };
+            if not response.ok:
+                return None
     
-                            if (json) {
-                                headers["content-type"] = "application/json";
-                            }
+            try:
+                data = response.json()
+            except ValueError as e:
+                print("❌ JSON 解析失败:", e)
+                return None
     
-                            if (xsrfToken) {
-                                headers["x-csrf-token"] =
-                                    decodeURIComponent(xsrfToken);
-                            }
+            if isinstance(data, dict):
+                domains = data.get("domains")
+                if domains is None:
+                    domains = data.get("data", [])
+            elif isinstance(data, list):
+                domains = data
+            else:
+                domains = []
     
-                            return headers;
-                        };
+            print(f"✅ 获取到 {len(domains)} 个域名")
+            return domains
     
-                        // ==========================================
-                        // 1. Dashboard 获取域名
-                        // ==========================================
-                        const response = await fetch(
-                            "https://dashboard.digitalplat.org/_panel_api/api/domains",
-                            {
-                                headers: getHeaders(),
-                                referrer:
-                                    "https://dashboard.digitalplat.org/domains",
-                                method: "GET",
-                                credentials: "include"
-                            }
-                        );
+        except requests.RequestException as e:
+            print("❌ 获取域名请求失败:", e)
+            return None
     
-                        if (!response.ok) {
-                            const text = await response.text();
     
-                            return {
-                                success: false,
-                                error:
-                                    `获取域名失败，HTTP ${response.status}: ${text}`
-                            };
-                        }
+    def get_days_left(expiry_str):
+        """计算剩余天数"""
+        if not expiry_str:
+            return None
     
-                        const resData = await response.json();
-                        const domains = resData.domains || [];
-                        const logResults = [];
+        try:
+            expiry_date = datetime.strptime(
+                str(expiry_str),
+                "%Y%m%d"
+            )
     
-                        // ==========================================
-                        // 2. 获取当前日期
-                        // ==========================================
-                        const today = new Date();
-                        today.setHours(0, 0, 0, 0);
+            today = datetime.now().replace(
+                hour=0,
+                minute=0,
+                second=0,
+                microsecond=0
+            )
     
-                        // ==========================================
-                        // 3. 遍历域名
-                        // ==========================================
-                        for (const item of domains) {
-                            const domainName = item.domain;
-                            const expiryStr =
-                                String(item.expiry_date || "");
+            return (expiry_date - today).days
     
-                            if (
-                                !domainName ||
-                                !/^\\d{8}$/.test(expiryStr)
-                            ) {
-                                logResults.push(
-                                    `${domainName || "未知域名"}: 日期格式异常 (${expiryStr})`
-                                );
-                                continue;
-                            }
+        except Exception as e:
+            print(
+                f"❌ 日期解析失败: "
+                f"{expiry_str}, {e}"
+            )
+            return None
     
-                            const year =
-                                parseInt(expiryStr.substring(0, 4));
     
-                            const month =
-                                parseInt(expiryStr.substring(4, 6)) - 1;
+    def renew_domain(cookies, domain):
+        """使用 requests 调用 Dashboard 续费接口"""
     
-                            const day =
-                                parseInt(expiryStr.substring(6, 8));
+        encoded_domain = quote(
+            str(domain),
+            safe=""
+        )
     
-                            const expiryDate = new Date(
-                                year,
-                                month,
-                                day
-                            );
+        url = (
+            f"{BASE_URL}/"
+            f"{encoded_domain}/renew"
+        )
     
-                            expiryDate.setHours(0, 0, 0, 0);
+        payload = {
+            "renewal_type": "free",
+            "years": 1
+        }
     
-                            const diffTime =
-                                expiryDate.getTime() -
-                                today.getTime();
+        try:
+            response = requests.post(
+                url,
+                headers=get_headers(
+                    cookies,
+                    json=True
+                ),
+                cookies=cookies,
+                json=payload,
+                timeout=TIMEOUT
+            )
     
-                            const diffDays = Math.ceil(
-                                diffTime /
-                                (1000 * 60 * 60 * 24)
-                            );
+            print("\n========== 续费 ==========")
+            print("Domain:", domain)
+            print("HTTP:", response.status_code)
+            print("Response:", response.text)
     
-                            // ==========================================
-                            // 4. 小于120天，执行 Dashboard 续费
-                            // ==========================================
-                            if (diffDays < 120) {
+            if response.ok:
+                print(
+                    f"✅ {domain} 续费请求成功"
+                )
+                return True
     
-                                logResults.push(
-                                    `${domainName}: 剩余 ${diffDays} 天 (< 120天)，正在续费...`
-                                );
+            print(
+                f"❌ {domain} 续费失败"
+            )
     
-                                const encodedDomain =
-                                    encodeURIComponent(domainName);
+            return False
     
-                                const renewUrl =
-                                    `https://dashboard.digitalplat.org/_panel_api/api/domains/${encodedDomain}/renew`;
+        except requests.RequestException as e:
+            print(
+                f"❌ {domain} 续费请求异常:",
+                e
+            )
+            return False
     
-                                const renewRes = await fetch(
-                                    renewUrl,
-                                    {
-                                        headers: getHeaders(true),
-                                        referrer:
-                                            `https://dashboard.digitalplat.org/domains/${encodedDomain}`,
-                                        body: JSON.stringify({
-                                            "renewal_type": "free",
-                                            "years": 1
-                                        }),
-                                        method: "POST",
-                                        credentials: "include"
-                                    }
-                                );
     
-                                if (renewRes.ok) {
+    def check_and_renew(cookies):
+        """检查域名并自动续费"""
     
-                                    let renewData = null;
+        domains = get_domains(cookies)
     
-                                    try {
-                                        renewData =
-                                            await renewRes.json();
-                                    } catch (e) {
-                                    }
+        if domains is None:
+            return "❌ 获取域名列表失败\n"
     
-                                    if (renewData) {
-                                        logResults.push(
-                                            `${domainName}: 续费成功，返回: ${JSON.stringify(renewData)}`
-                                        );
-                                    } else {
-                                        logResults.push(
-                                            `${domainName}: 续费请求成功`
-                                        );
-                                    }
+        if not domains:
+            return "⚠️ 没有找到域名\n"
     
-                                } else {
+        return_msg = ""
+        renew_success = 0
+        renew_failed = 0
     
-                                    const text =
-                                        await renewRes.text();
+        print("\n" + "=" * 70)
+        print("开始检查域名")
+        print("=" * 70)
     
-                                    logResults.push(
-                                        `${domainName}: 续费失败，HTTP ${renewRes.status}`
-                                    );
+        for item in domains:
     
-                                    logResults.push(
-                                        `${domainName}: ${text}`
-                                    );
-                                }
+            if isinstance(item, str):
+                domain = item
+                expiry_str = None
+            else:
+                domain = item.get("domain")
+                expiry_str = item.get("expiry_date")
     
-                            } else {
+            if not domain:
+                continue
     
-                                logResults.push(
-                                    `${domainName}: 剩余 ${diffDays} 天 (>= 120天)，无需续费`
-                                );
-                            }
-                        }
+            print("\n----------------------------------------")
+            print("域名:", domain)
+            print("到期:", expiry_str)
     
-                        return {
-                            success: true,
-                            count: domains.length,
-                            logs: logResults
-                        };
+            if not expiry_str:
+                msg = (
+                    f"⚠️ {domain}: "
+                    f"没有找到 expiry_date"
+                )
+                print(msg)
+                return_msg += msg + "\n"
+                continue
     
-                    } catch (error) {
+            days = get_days_left(expiry_str)
     
-                        return {
-                            success: false,
-                            error:
-                                `${error.name || "Error"}: ${error.message}`
-                        };
-                    }
-                }
-            """)
+            if days is None:
+                continue
     
-            if result_data and result_data.get("success"):
+            print("剩余:", days, "天")
     
-                for log_item in result_data.get("logs", []):
-                    self.log(log_item, "INFO")
-                    return_msg += log_item + "\n"
+            if days < RENEW_DAYS:
     
-                count = result_data.get("count", 0)
-    
-                self.log(
-                    f"所有域名检查完毕，共 {count} 个域名。",
-                    "SUCCESS"
+                msg = (
+                    f"⚠️ {domain} 剩余 "
+                    f"{days} 天，小于 {RENEW_DAYS} 天，"
+                    f"正在续费..."
                 )
     
-                return_msg += (
-                    f"✅ 所有域名检查完毕，共 {count} 个域名。\n"
-                )
+                print(msg)
+                return_msg += msg + "\n"
+    
+                if renew_domain(
+                    cookies,
+                    domain
+                ):
+                    renew_success += 1
+                    return_msg += (
+                        f"✅ {domain} 续费成功\n"
+                    )
+                else:
+                    renew_failed += 1
+                    return_msg += (
+                        f"❌ {domain} 续费失败\n"
+                    )
     
             else:
     
-                err_msg = (
-                    result_data.get("error")
-                    if result_data
-                    else "未知错误"
+                msg = (
+                    f"✅ {domain} 剩余 "
+                    f"{days} 天，无需续费"
                 )
     
+                print(msg)
+                return_msg += msg + "\n"
+    
+        summary = (
+            f"📊 检查完成："
+            f"{len(domains)} 个域名，"
+            f"续费成功 {renew_success} 个，"
+            f"失败 {renew_failed} 个"
+        )
+    
+        print(summary)
+        return_msg += summary + "\n"
+    
+        return return_msg
+    
+    
+    def get_balance_with_token(self, page):
+        """登录后从浏览器获取 Cookie，再使用 requests 获取域名并续费"""
+    
+        self.log(
+            "开始执行保活与自动续费检查...",
+            "STEP"
+        )
+    
+        return_msg = ""
+    
+        try:
+    
+            # ==================================================
+            # 1. 浏览器已经完成登录
+            # ==================================================
+    
+            self.log(
+                "正在从浏览器获取登录 Cookie...",
+                "INFO"
+            )
+    
+            cookie_string = page.evaluate(
+                "() => document.cookie"
+            )
+    
+            if not cookie_string:
+    
+                msg = "❌ 浏览器 document.cookie 为空"
+    
                 self.log(
-                    f"域名检查失败: {err_msg}",
+                    msg,
                     "WARN"
                 )
     
-                return_msg += (
-                    f"⚠️ 域名检查失败: {err_msg}\n"
+                return_msg += msg + "\n"
+                return return_msg
+    
+            self.log(
+                "✅ 成功获取浏览器 Cookie",
+                "SUCCESS"
+            )
+    
+            # ==================================================
+            # 2. Cookie 字符串转换成 requests cookies
+            # ==================================================
+    
+            cookies = parse_cookies(
+                cookie_string
+            )
+    
+            if not cookies:
+    
+                msg = "❌ Cookie 解析失败"
+    
+                self.log(
+                    msg,
+                    "WARN"
                 )
+    
+                return_msg += msg + "\n"
+                return return_msg
+    
+            # ==================================================
+            # 3. 检查关键 Cookie
+            # ==================================================
+    
+            required_cookies = [
+                "remember_token",
+                "panel_session",
+                "panel_csrf_token"
+            ]
+    
+            missing = [
+                name
+                for name in required_cookies
+                if not cookies.get(name)
+            ]
+    
+            if missing:
+    
+                msg = (
+                    "⚠️ Cookie 缺少字段: "
+                    + ", ".join(missing)
+                )
+    
+                self.log(
+                    msg,
+                    "WARN"
+                )
+    
+                return_msg += msg + "\n"
+    
+            # ==================================================
+            # 4. 使用 requests 获取域名
+            # ==================================================
+    
+            self.log(
+                "正在使用 requests 获取域名列表...",
+                "INFO"
+            )
+    
+            result = check_and_renew(
+                cookies
+            )
+    
+            if result:
+                return_msg += result
+    
+            self.log(
+                "域名检查与续费流程执行完毕",
+                "SUCCESS"
+            )
     
             time.sleep(2)
     
         except Exception as e:
     
+            msg = (
+                f"❌ 续费流程异常: "
+                f"{type(e).__name__}: {e}"
+            )
+    
             self.log(
-                f"保活流程异常: {e}",
+                msg,
                 "WARN"
             )
     
-            return_msg += (
-                f"❌ 保活流程异常: {e}\n"
-            )
+            return_msg += msg + "\n"
     
-        self.shot(page, "完成")
+        self.shot(
+            page,
+            "完成"
+        )
     
         return return_msg
         
