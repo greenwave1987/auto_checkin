@@ -9,6 +9,7 @@ import random
 import requests
 import datetime
 import subprocess
+from urllib.parse import quote
 
 from urllib.parse import urlparse
 from playwright.sync_api import sync_playwright
@@ -363,7 +364,7 @@ class AutoLogin:
         try:
             response = requests.get(
                 BASE_URL,
-                headers=get_headers(cookies),
+                headers=self.get_headers(cookies),
                 cookies=cookies,
                 timeout=TIMEOUT
             )
@@ -447,7 +448,7 @@ class AutoLogin:
         try:
             response = requests.post(
                 url,
-                headers=get_headers(
+                headers=self.get_headers(
                     cookies,
                     json=True
                 ),
@@ -484,7 +485,7 @@ class AutoLogin:
     def check_and_renew(self, cookies):
         """检查域名并自动续费"""
     
-        domains = get_domains(cookies)
+        domains = self.get_domains(cookies)
     
         if domains is None:
             return "❌ 获取域名列表失败\n"
@@ -525,7 +526,7 @@ class AutoLogin:
                 return_msg += msg + "\n"
                 continue
     
-            days = get_days_left(expiry_str)
+            days = self.get_days_left(expiry_str)
     
             if days is None:
                 continue
@@ -543,7 +544,7 @@ class AutoLogin:
                 print(msg)
                 return_msg += msg + "\n"
     
-                if renew_domain(
+                if self.renew_domain(
                     cookies,
                     domain
                 ):
@@ -1375,7 +1376,7 @@ class AutoLogin:
                     try:
                         page.goto(BOARD_ENTRY_URL, timeout=60000)
                         page.wait_for_load_state('domcontentloaded', timeout=60000)
-                        time.sleep(random.uniform(20, 40))
+                        time.sleep(random.uniform(60, 80))
                         # 2. 精准等待 GitHub 登录按钮在页面上出现
                         self.log("正在等待 GitHub 登录按钮渲染...", "INFO")
                         try:
