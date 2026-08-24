@@ -1,4 +1,4 @@
-name: Test Target URL Connectivity with Screenshot
+name: Test Target URL Connectivity with Proxy
 
 on:
   workflow_dispatch:
@@ -23,63 +23,12 @@ jobs:
           npm install playwright-extra puppeteer-extra-plugin-stealth playwright
           npx playwright install chromium --with-deps
 
-      - name: Capture Screenshot Bypass CF
-        run: |
-          node -e "
-          const { chromium } = require('playwright-extra');
-          const stealth = require('puppeteer-extra-plugin-stealth')();
-          chromium.use(stealth);
-
-          (async () => {
-            // 使用真实的 Chromium 浏览器并伪装参数
-            const browser = await chromium.launch({
-              headless: true,
-              args: [
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-blink-features=AutomationControlled'
-              ]
-            });
-            
-            const context = await browser.newContext({
-              userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-              viewport: { width: 1280, height: 720 },
-              locale: 'en-US'
-            });
-
-            const page = await context.newPage();
-            console.log('Navigating to website...');
-
-            try {
-              await page.goto('https://dashboard.digitalplat.org/', { waitUntil: 'domcontentloaded', timeout: 40000 });
-              
-              // 循环等待并尝试点击 Cloudflare 的 Checkbox 框（如果有 iframe 出现）
-              console.log('Waiting for Cloudflare verification...');
-              for (let i = 0; i < 10; i++) {
-                await page.waitForTimeout(2000);
-                const frames = page.frames();
-                for (const frame of frames) {
-                  if (frame.url().includes('cloudflare') || frame.url().includes('turnstile')) {
-                    const checkbox = await frame.$('input[type="checkbox"], .mark');
-                    if (checkbox) {
-                      console.log('Found Cloudflare checkbox, clicking...');
-                      await checkbox.click();
-                    }
-                  }
-                }
-              }
-
-              // 截图
-              await page.screenshot({ path: 'screenshot.png', fullPage: true });
-              console.log('Screenshot captured successfully!');
-            } catch (err) {
-              console.error('Error during execution:', err);
-              await page.screenshot({ path: 'screenshot.png' });
-            } finally {
-              await browser.close();
-            }
-          })();
-          "
+      - name: Capture Screenshot
+        env:
+          PROXY_SERVER: ${{ secrets.PROXY_SERVER }}
+          PROXY_USERNAME: ${{ secrets.PROXY_USERNAME }}
+          PROXY_PASSWORD: ${{ secrets.PROXY_PASSWORD }}
+        run: node capture.js
 
       - name: Upload Screenshot Artifact
         uses: actions/upload-artifact@v4
