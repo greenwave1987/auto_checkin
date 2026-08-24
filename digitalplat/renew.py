@@ -269,48 +269,6 @@ class AutoLogin:
         return []
     
     
-        
-    def start_gost_proxy(self, proxy):
-        """
-        使用 gost 将 socks5(带认证) 转为本地 http 代理
-        """
-        listen_port = random.randint(20000, 30000)
-        listen = f"http://127.0.0.1:{listen_port}"
-
-        auth = ""
-        if proxy.get("username") and proxy.get("password"):
-            auth = f"{proxy['username']}:{proxy['password']}@"
-
-        remote = f"socks5://{auth}{proxy['server']}:{proxy['port']}"
-
-        cmd = [
-            "./gost",
-            "-L", listen,
-            "-F", remote
-        ]
-
-        self.log(f"启动 Gost，listen: {listen}", "INFO")
-
-        proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
-        )
-
-        atexit.register(proc.terminate)
-
-        time.sleep(1.5)  # 给 gost 启动时间
-        # ----------------------------
-        # 2️⃣ 测试隧道是否可用
-        # ----------------------------
-        res = requests.get("https://api.ipify.org", proxies={"http": remote, "https": remote}, timeout=15)
-        self.log(f"隧道就绪，出口 IP: {res.text.strip()}", "INFO")
-
-        return {
-            "server": listen,
-            "process": proc
-        }
-
     
     def build_session(self,token):
         cookies=self.get_digitalplat_cookies()
@@ -1309,35 +1267,6 @@ class AutoLogin:
                 } 
                 launch_args["proxy"] = proxy_config
 
-            if self.dt_proxy and 0:
-                try:
-                    p_url = self.dt_proxy
-                    # ===== 新增：socks5 带认证 → gost =====
-                    if (
-                        p_url.get("username")
-                        and p_url.get("password")
-                    ):
-                        gost = self.start_gost_proxy(p_url)
-                        launch_args["proxy"] = {
-                            "server": gost["server"]
-                        }
-                        self.log(f"使用 Gost 本地代理: {gost['server']}", "SUCCESS")
-
-                    else:
-                        proxy_config = {
-                            "server": f"{p_url['type']}://{p_url['server']}:{p_url['port']}"
-                        }
-                        launch_args["proxy"] = proxy_config
-                        self.log(f"启用代理: {proxy_config['server'][:-6]}")
-
-                except Exception as e:
-                    self.log(f"代理配置解析失败: {e}", "ERROR")
-            
-            
-
-            
-                
-            
             browser = p.chromium.launch(**launch_args)
             
             if self.dt_local:
