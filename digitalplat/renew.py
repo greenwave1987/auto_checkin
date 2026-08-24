@@ -1273,9 +1273,9 @@ class AutoLogin:
            
             return False,  None, f"❌ 缺少凭据"
         proxyConfig = {
-              server: 'http://jz.hndz.qzz.io:19873',
-              username: 'yxl1987',
-              password: 'you1987925'
+              "server": 'http://jz.hndz.qzz.io:19873',
+              "username": 'yxl1987',
+              "password": 'you1987925'
             }             
         with sync_playwright() as p:
             # 代理配置解析
