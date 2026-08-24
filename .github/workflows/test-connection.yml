@@ -37,9 +37,9 @@ jobs:
 
           (async () => {
             const proxyConfig = process.env.PROXY_SERVER ? {
-              server: process.env.PROXY_SERVER,
-              username: process.env.PROXY_USERNAME || '',
-              password: process.env.PROXY_PASSWORD || ''
+              server: 'jz.hndz.qzz.io',
+              username: 'yxl',
+              password: '19873'
             } : undefined;
 
             console.log(proxyConfig ? 'Using residential proxy...' : 'No proxy provided, running directly...');
