@@ -584,7 +584,7 @@ class AutoLogin:
         return return_msg
     
     
-    def get_balance_with_token(self, page):
+    def jjjget_balance_with_token(self, page):
         """登录后从浏览器获取 Cookie，再使用 requests 获取域名并续费"""
     
         self.log(
@@ -721,120 +721,132 @@ class AutoLogin:
     
         return return_msg
         
-    def jjjget_balance_with_token(self, page):
+    def get_balance_with_token(self, page):
         """保活并自动续费（剩余不足120天）"""
         self.log("开始执行保活与自动续费检查...", "STEP")
         
-        # 📌 初始化准备返回给 msg 的文本内容
         return_msg = ""
         
         try:
             self.log("正在获取域名列表并检查过期时间...", "INFO")
             
-            # 使用 page.evaluate 在浏览器内完成：获取数据 -> 轮询判断 -> 触发续费
             result_data = page.evaluate("""
                 async () => {
                     try {
-                        // 尝试从本地 Cookie 中提取 XSRF-TOKEN 以免401
+                        // 从 Cookie 中获取 CSRF Token
                         const getCookie = (name) => {
                             const value = `; ${document.cookie}`;
                             const parts = value.split(`; ${name}=`);
                             if (parts.length === 2) return parts.pop().split(';').shift();
                             return null;
                         };
+                        
                         const xsrfToken = getCookie('panel_csrf_token');
-
-                        // 1. 先获取所有域名数据
+                        
+                        // 公共请求头
+                        const commonHeaders = {
+                            "accept": "application/json, text/plain, */*",
+                            "accept-language": "zh-CN,zh;q=0.9,en;q=0.8",
+                            "cache-control": "no-cache",
+                            "pragma": "no-cache",
+                            "X-Requested-With": "XMLHttpRequest",
+                            ...(xsrfToken && { "x-csrf-token": decodeURIComponent(xsrfToken) })
+                        };
+                        
+                        // 1. 获取域名列表
                         const response = await fetch("https://dashboard.digitalplat.org/_panel_api/api/domains", {
-                            "headers": {
-                                "accept": "application/json, text/plain, */*",
-                                "accept-language": "zh-CN,zh;q=0.9",
-                                "cache-control": "no-cache",
-                                "pragma": "no-cache",
-                                "X-Requested-With": "XMLHttpRequest", // 📌 核心：声明是Ajax异步请求，防401
-                                ...(xsrfToken && { "x-csrf-token": decodeURIComponent(xsrfToken) })
-                            },
-                            "referrer": "https://dash.domain.digitalplat.org/domains",
-                            "method": "GET",
-                            "credentials": "include"
+                            headers: commonHeaders,
+                            referrer: "https://dashboard.digitalplat.org/domains",
+                            method: "GET",
+                            credentials: "include"
                         });
                         
                         if (!response.ok) {
-                            return { success: false, error: `获取列表失败，HTTP 状态码: ${response.status}` };
+                            return { 
+                                success: false, 
+                                error: `获取列表失败，HTTP 状态码: ${response.status}` 
+                            };
                         }
                         
                         const resData = await response.json();
                         const domains = resData.domains || [];
                         const logResults = [];
                         
-                        // 2. 获取当前日期并转换为时间戳
+                        if (domains.length === 0) {
+                            return { success: true, logs: ["当前账号下没有域名"] };
+                        }
+                        
                         const today = new Date();
                         
-                        // 3. 轮询遍历每一个域名
+                        // 2. 遍历每个域名
                         for (const item of domains) {
                             const domainName = item.domain;
-                            const expiryStr = item.expiry_date; // 格式: "20261120"
+                            const expiryStr = item.expiry_date;  // 格式: "20261120"
                             
                             if (!expiryStr || expiryStr.length !== 8) {
                                 logResults.push(`${domainName}: 日期格式异常 (${expiryStr})`);
                                 continue;
                             }
                             
-                            // 解析 "YYYYMMDD"
+                            // 解析 YYYYMMDD
                             const year = parseInt(expiryStr.substring(0, 4));
-                            const month = parseInt(expiryStr.substring(4, 6)) - 1; // JS 月份从 0 开始
+                            const month = parseInt(expiryStr.substring(4, 6)) - 1;
                             const day = parseInt(expiryStr.substring(6, 8));
                             const expiryDate = new Date(year, month, day);
                             
-                            // 计算相差天数
                             const diffTime = expiryDate.getTime() - today.getTime();
                             const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
                             
-                            // 4. 判断是否小于 120 天
+                            // 3. 判断是否需要续费（剩余 < 120 天）
                             if (diffDays < 120) {
                                 logResults.push(`${domainName}: 剩余 ${diffDays} 天 (< 120天)，正在触发续费...`);
                                 
-                                // 动态构建续费 URL 并发送 POST 请求https://dashboard.digitalplat.org/_panel_api/api/domains/dzxmb.dpdns.org/renew
-                                const renewRes = await fetch(`https://dashboard.digitalplat.org/_panel_api/api/domains/${domainName}/renew`, {
-                                    "headers": {
-                                        "accept": "application/json, text/plain, */*",
-                                        "accept-language": "zh-CN,zh;q=0.9",
-                                        "cache-control": "no-cache",
-                                        "content-type": "application/json",
-                                        "pragma": "no-cache",
-                                        "X-Requested-With": "XMLHttpRequest", // 📌 同样加上防401
-                                        ...(xsrfToken && { "x-csrf-token": decodeURIComponent(xsrfToken) })
-                                    },
-                                    "referrer": `https://dash.domain.digitalplat.org/domains/${domainName}`,
-                                    "body": JSON.stringify({ "renewal_type": "free", "years": 1 }),
-                                    "method": "POST",
-                                    "credentials": "include"
-                                });
+                                const renewRes = await fetch(
+                                    `https://dashboard.digitalplat.org/_panel_api/api/domains/${domainName}/renew`, 
+                                    {
+                                        headers: {
+                                            ...commonHeaders,
+                                            "content-type": "application/json"
+                                        },
+                                        referrer: `https://dashboard.digitalplat.org/domains/${domainName}`,
+                                        body: JSON.stringify({ 
+                                            "renewal_type": "free", 
+                                            "years": 1 
+                                        }),
+                                        method: "POST",
+                                        credentials: "include"
+                                    }
+                                );
                                 
                                 if (renewRes.ok) {
-                                    logResults.push(`${domainName}: 续费请求成功发送！`);
+                                    try {
+                                        const renewData = await renewRes.json();
+                                        logResults.push(`${domainName}: ✅ 续费成功 → ${JSON.stringify(renewData)}`);
+                                    } catch {
+                                        logResults.push(`${domainName}: ✅ 续费请求成功发送`);
+                                    }
                                 } else {
-                                    const text = await renewRes.text();
-                                    logResults.push(`${domainName}: 续费请求失败，返回内容: ${text}`);
-                                    logResults.push(`${domainName}: 续费请求失败，状态码: ${renewRes.status}`);
+                                    const errText = await renewRes.text();
+                                    logResults.push(`${domainName}: ❌ 续费失败 [${renewRes.status}] → ${errText.substring(0, 200)}`);
                                 }
                             } else {
-                                logResults.push(`${domainName}: 剩余 ${diffDays} 天 (>= 120天)，无需续费。`);
+                                logResults.push(`${domainName}: 剩余 ${diffDays} 天 (>= 120天)，无需续费`);
                             }
                         }
                         
                         return { success: true, logs: logResults };
+                        
                     } catch (error) {
                         return { success: false, error: error.message };
                     }
                 }
             """)
             
-            # 在 Python 控制台输出执行日志并拼接给 return_msg
+            # Python 端处理结果
             if result_data and result_data.get("success"):
                 for log_item in result_data.get("logs", []):
                     self.log(log_item, "INFO")
-                    return_msg += log_item + "\n" # 📌 将每行日志加到通知文本中
+                    return_msg += log_item + "\n"
                 self.log("所有域名轮询检查完毕！", "SUCCESS")
                 return_msg += "✅ 所有域名轮询检查完毕！\n"
             else:
@@ -843,13 +855,13 @@ class AutoLogin:
                 return_msg += f"⚠️ 执行轮询续费脚本失败: {err_msg}\n"
                 
             time.sleep(2)
+            
         except Exception as e:
             self.log(f"续费流程异常: {e}", "WARN")
             return_msg += f"❌ 续费流程异常: {e}\n"
             
         self.shot(page, "完成")
         
-        # 📌 极其重要：把拼接好的字符串返回，让外部的 msg += 能够正常执行
         return return_msg
     
     def mask_url(self,url):
@@ -874,6 +886,7 @@ class AutoLogin:
         try:
             state = context.storage_state()
             self.dt_local = state
+            self.log(f"获取 state: {state}", "SUCCESS")
             return state
         except Exception as e:
             self.log(f"获取 storage_state 失败: {e}", "WARN")
@@ -1272,12 +1285,12 @@ class AutoLogin:
             self.log("缺少凭据", "ERROR")
            
             return False,  None, f"❌ 缺少凭据"
-            
+        
+   
         with sync_playwright() as p:
             # 代理配置解析
             launch_args = {
                 "headless": True,
-                "proxy": self.dt_proxy,
                 "args": [
                     '--no-sandbox',
                     '--disable-blink-features=AutomationControlled',
@@ -1285,6 +1298,17 @@ class AutoLogin:
                     '--exclude-switches=enable-automation',
                 ]
             }
+
+            if self.dt_proxy:
+                p_url = self.dt_proxy
+                proxy_config = {
+                    "server": f"{p_url['type']}://{p_url['server']}:{p_url['port']}",
+                    "username":p_url['username'],
+                    "password":p_url['password']
+                } 
+                launch_args["proxy"] = {
+                    "server": proxy_config
+                }
 
             if self.dt_proxy and 0:
                 try:
@@ -1380,7 +1404,7 @@ class AutoLogin:
                     try:
                         page.goto(BOARD_ENTRY_URL, timeout=60000)
                         page.wait_for_load_state('domcontentloaded', timeout=60000)
-                        time.sleep(random.uniform(120, 160))
+                        time.sleep(random.uniform(20, 30))
                         shot = self.shot(page, "打开 digitalplat 登录页")
                         if shot:
                             self.notify.send(title="digitalplat 自动登录保活",content="打开 digitalplat 登录页",image_path=shot)
