@@ -16,7 +16,7 @@ from playwright.sync_api import sync_playwright
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 # ==================== 基准数据对接 ====================
-BASE_URL = "https://dashboard.digitalplat.org/_panel_api/api/domains"
+BASE_URL = "https://dash.domain.digitalplat.org/_panel_api/api/domains"
 RENEW_DAYS = 120
 TIMEOUT = 15
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -36,8 +36,8 @@ except ImportError:
 # 格式: socks5://user:pass@host:port 或 http://user:pass@host:port
 PROXY_DSN = os.environ.get("PROXY_DSN", "").strip()
 
-# 固定自己创建有APP的登录入口，若BOARD_ENTRY_URL = "https://console.run.digitalplat.org/signin"在OAuth后会自动跳转到根据IP定位的区域,
-BOARD_ENTRY_URL = "https://dashboard.digitalplat.org/domains"
+# 固定自己创建有APP的登录入口，若BOARD_ENTRY_URL = "https://console.run..org/signin"在OAuth后会自动跳转到根据IP定位的区域,
+BOARD_ENTRY_URL = "https://dash.domain.digitalplat.org/dashboard"
 
 DEVICE_VERIFY_WAIT = 30  # Mobile验证 默认等 30 秒
 TWO_FACTOR_WAIT = int(os.environ.get("TWO_FACTOR_WAIT", "120"))  # 2FA验证 默认等 120 秒
