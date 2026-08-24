@@ -37,9 +37,9 @@ jobs:
 
           (async () => {
             const proxyConfig = {
-              server: 'jz.hndz.qzz.io',
-              username: 'yxl',
-              password: '19873'
+              server: 'http://jz.hndz.qzz.io:19873',
+              username: 'yxl1987',
+              password: 'you1987925'
             } 
 
             console.log(proxyConfig ? 'Using residential proxy...' : 'No proxy provided, running directly...');
