@@ -1380,6 +1380,9 @@ class AutoLogin:
                         page.goto(BOARD_ENTRY_URL, timeout=60000)
                         page.wait_for_load_state('domcontentloaded', timeout=60000)
                         time.sleep(random.uniform(120, 160))
+                        shot = self.shot(page, "打开 digitalplat 登录页")
+                            if shot:
+                                self.notify.send(title="digitalplat 自动登录保活",content="打开 digitalplat 登录页",image_path=shot)
                         # 2. 精准等待 GitHub 登录按钮在页面上出现
                         self.log("正在等待 GitHub 登录按钮渲染...", "INFO")
                         try:
