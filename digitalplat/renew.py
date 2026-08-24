@@ -1547,7 +1547,7 @@ def main():
     accounts = config.get_value("GH_INFO")
     
     # 读取代理信息
-    proxies = config.get_value("PROXY_INFO")
+    proxies = config.get_value("WZ_INFO")
 
     # 初始化 get_notifier
     notify=get_notifier()
