@@ -1272,11 +1272,16 @@ class AutoLogin:
             self.log("缺少凭据", "ERROR")
            
             return False,  None, f"❌ 缺少凭据"
-                    
+        proxyConfig = {
+              server: 'http://jz.hndz.qzz.io:19873',
+              username: 'yxl1987',
+              password: 'you1987925'
+            }             
         with sync_playwright() as p:
             # 代理配置解析
             launch_args = {
                 "headless": True,
+                "proxy": proxyConfig,
                 "args": [
                     '--no-sandbox',
                     '--disable-blink-features=AutomationControlled',
@@ -1285,7 +1290,7 @@ class AutoLogin:
                 ]
             }
 
-            if self.dt_proxy:
+            if self.dt_proxy and 0:
                 try:
                     p_url = self.dt_proxy
                     # ===== 新增：socks5 带认证 → gost =====
