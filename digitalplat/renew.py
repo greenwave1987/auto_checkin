@@ -1307,7 +1307,7 @@ class AutoLogin:
                     "password":p_url['password']
                 } 
                 launch_args["proxy"] = {
-                    "server": proxy_config
+                    "proxy": proxy_config
                 }
 
             if self.dt_proxy and 0:
