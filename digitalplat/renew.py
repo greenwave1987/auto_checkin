@@ -1379,7 +1379,7 @@ class AutoLogin:
                     try:
                         page.goto(BOARD_ENTRY_URL, timeout=60000)
                         page.wait_for_load_state('domcontentloaded', timeout=60000)
-                        time.sleep(random.uniform(60, 80))
+                        time.sleep(random.uniform(120, 160))
                         # 2. 精准等待 GitHub 登录按钮在页面上出现
                         self.log("正在等待 GitHub 登录按钮渲染...", "INFO")
                         try:
