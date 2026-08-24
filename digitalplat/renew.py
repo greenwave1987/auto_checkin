@@ -1302,7 +1302,8 @@ class AutoLogin:
             if self.dt_proxy:
                 p_url = self.dt_proxy
                 proxy_config = {
-                    "server": f"{p_url['type']}://{p_url['server']}:{p_url['port']}",
+                    ##"server": f"{p_url['type']}://{p_url['server']}:{p_url['port']}",
+                    "server": f"http://{p_url['server']}:{p_url['port']}",
                     "username":p_url['username'],
                     "password":p_url['password']
                 } 
