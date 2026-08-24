@@ -886,7 +886,7 @@ class AutoLogin:
         try:
             state = context.storage_state()
             self.dt_local = state
-            self.log(f"获取 state: {state}", "SUCCESS")
+            ##self.log(f"获取 state: {state}", "SUCCESS")
             return state
         except Exception as e:
             self.log(f"获取 storage_state 失败: {e}", "WARN")
