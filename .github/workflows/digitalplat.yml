@@ -22,11 +22,6 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install Gost
-        run: |
-          curl -L https://github.com/ginuerzh/gost/releases/download/v2.11.5/gost-linux-amd64-2.11.5.gz | gunzip > gost
-          chmod +x gost
-
       - name: Install Deps
         run: |
           pip install playwright requests pyotp pynacl requests[socks] cryptography
