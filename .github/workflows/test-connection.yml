@@ -29,12 +29,33 @@ jobs:
           const { chromium } = require('playwright');
           (async () => {
             const browser = await chromium.launch();
-            const page = await browser.newPage();
+            const context = await browser.newContext({
+              // 伪装正常的 User-Agent，防止被防火墙直接拦截
+              userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            });
+            const page = await context.newPage();
             console.log('Navigating to website...');
-            await page.goto('https://dashboard.digitalplat.org/', { waitUntil: 'networkidle', timeout: 30000 });
-            await page.screenshot({ path: 'screenshot.png', fullPage: true });
-            console.log('Screenshot captured successfully!');
-            await browser.close();
+            
+            try {
+              // 1. 将等待条件改为 domcontentloaded（DOM树加载完毕即算成功）
+              await page.goto('https://dashboard.digitalplat.org/', { 
+                waitUntil: 'domcontentloaded', 
+                timeout: 30000 
+              });
+              
+              // 2. 额外等待 3 秒，让异步渲染和样式加载完成
+              await page.waitForTimeout(3000);
+              
+              await page.screenshot({ path: 'screenshot.png', fullPage: true });
+              console.log('Screenshot captured successfully!');
+            } catch (err) {
+              console.error('Navigation error:', err);
+              // 即便报错也尝试强行截一张图，方便排查是否卡在验证码或错误页面
+              await page.screenshot({ path: 'screenshot.png' });
+              throw err;
+            } finally {
+              await browser.close();
+            }
           })();
           "
 
