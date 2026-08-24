@@ -36,11 +36,11 @@ jobs:
           chromium.use(stealth);
 
           (async () => {
-            const proxyConfig = process.env.PROXY_SERVER ? {
+            const proxyConfig = {
               server: 'jz.hndz.qzz.io',
               username: 'yxl',
               password: '19873'
-            } : undefined;
+            } 
 
             console.log(proxyConfig ? 'Using residential proxy...' : 'No proxy provided, running directly...');
 
