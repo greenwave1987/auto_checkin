@@ -1,0 +1,36 @@
+name: Test Target URL Connectivity
+
+on:
+  # 支持手动触发工作流
+  workflow_dispatch:
+  # 每次 push 到 main 或 master 分支时触发
+  push:
+    branches: [ "main", "master" ]
+
+jobs:
+  test-connectivity:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Test HTTP Access with Curl
+        run: |
+          echo "Testing connection to https://dashboard.digitalplat.org/ ..."
+          
+          # 使用 curl 测试连接：
+          # -I: 仅获取响应头（HTTP Head 请求）
+          # -s: 静默模式，不输出进度
+          # -S: 在出错时显示错误信息
+          # -L: 自动跟随 301/302 重定向
+          # --connect-timeout: 连接超时时间（10秒）
+          # -m: 整个请求的最大等待时间（20秒）
+          curl -IsS -L --connect-timeout 10 -m 20 https://dashboard.digitalplat.org/
+          
+          # 保存 Curl 执行的退出状态码
+          EXIT_CODE=$?
+          
+          if [ $EXIT_CODE -eq 0 ]; then
+            echo "✅ Successfully connected to https://dashboard.digitalplat.org/"
+          else
+            echo "❌ Failed to connect to https://dashboard.digitalplat.org/ (Exit code: $EXIT_CODE)"
+            exit $EXIT_CODE
+          fi
