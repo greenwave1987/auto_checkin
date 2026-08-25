@@ -299,7 +299,20 @@ class AutoLogin:
                 msg=f"异常:{e}"
                 self.log(msg,"ERROR")
             finally:
-                browser.close()
+                try:
+                    if context:
+                        context.close()
+                except Exception:
+                    pass
+                try:
+                    if browser:
+                        browser.close()
+                except Exception:
+                    pass
+                try:
+                    p.stop()
+                except Exception:
+                    pass
         return ok,new_local,msg
 
     def parse_cookies(self,cookie_string):
