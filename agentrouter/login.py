@@ -199,6 +199,7 @@ class AutoLogin:
                                 "accept": "application/json, text/plain, */*",
                                 "accept-language": "en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7",
                                 "cache-control": "no-store",
+                                "new-api-user": "503381",
                                 "pragma": "no-cache",
                                 "sec-ch-ua": "\\"Not=A?Brand\\";v=\\"99\\", \\"Google Chrome\\";v=\\"151\\", \\"Chromium\\";v=\\"151\\"",
                                 "sec-ch-ua-mobile": "?0",
@@ -208,9 +209,11 @@ class AutoLogin:
                                 "sec-fetch-site": "same-origin",
                                 "sec-gpc": "1"
                             },
-                            referrer: "https://agentrouter.org/console",
+                            referrer: "https://agentrouter.org/console/topup",
                             body: null,
-                            method: "GET"
+                            method: "GET",
+                            mode: "cors",
+                            credentials: "include"
                         });
                         
                         if (!response.ok) {
@@ -240,12 +243,16 @@ class AutoLogin:
                 quota = user_data.get("quota", 0)
                 used_quota = user_data.get("used_quota", 0)
                 
+                # 可选：换算为约定的额度显示 (如原始 quota / 500000)
+                quota_usd = round(quota / 500000, 2)
+                used_usd = round(used_quota / 500000, 2)
+                
                 info_text = (
                     f"ID: {user_id} | "
                     f"Name: {display_name} | "
                     f"GitHub: {github_id} | "
-                    f"Quota: {quota} | "
-                    f"Used: {used_quota}"
+                    f"Quota: ${quota_usd} ({quota}) | "
+                    f"Used: ${used_usd}"
                 )
                 
                 self.log(f"✅ 保活成功: {info_text}", "SUCCESS")
