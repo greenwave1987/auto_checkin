@@ -123,10 +123,11 @@ class AutoLogin:
         return f
     
     def click(self, page, desc=""):
+        """增强版点击：监控请求/页面跳转/弹窗，防止无效点击"""
         self.log(f"🔍 尝试查找并点击: {desc}", "INFO")
         try:
             page.wait_for_load_state("domcontentloaded", timeout=15000)
-            page.wait_for_timeout(3000)
+            page.wait_for_timeout(2000)
         except Exception:
             pass
     
@@ -138,34 +139,53 @@ class AutoLogin:
             'a[href="/auth/login/github"]',
             'a[href*="/auth/login/github"]',
             '[data-provider="github"]',
-            '//button[contains(.,"Continue with GitHub")]',
-            '//button[.//span[contains(@aria-label,"github")]]'
+            '//button[contains(.,"Continue with GitHub")]'
         ]
     
         for frame in frames:
             for sel in selectors:
                 try:
                     el = frame.locator(sel).first
-                    el.wait_for(state="visible", timeout=3000)
+                    if not el.is_visible(timeout=3000):
+                        continue
+                        
                     self.log(f"找到按钮: {sel}", "SUCCESS")
-                    time.sleep(random.uniform(0.5, 1.2))
+                    time.sleep(random.uniform(0.5, 1.0))
                     
                     try:
                         el.hover()
                     except Exception:
                         pass
     
-                    time.sleep(random.uniform(0.2, 0.5))
-                    el.click(force=True, timeout=5000)
-                    self.log(f"已点击: {desc}", "SUCCESS")
-                    time.sleep(random.uniform(5, 8))
-                    return True
-                except PlaywrightTimeoutError:
-                    continue
+                    # 优先检测是否会触发页面导航或网络请求
+                    try:
+                        with page.expect_navigation(timeout=10000):
+                            el.click(force=True, timeout=5000)
+                        self.log(f"✅ 点击成功并成功触发页面导航跳转", "SUCCESS")
+                        return True
+                    except PlaywrightTimeoutError:
+                        self.log("⚠️ 物理点击未触发 Navigation，尝试通过 dispatchEvent 发送 DOM 点击事件...", "WARN")
+                        
+                        # 如果是新窗口弹窗 (Popup) 类型的登录
+                        try:
+                            with page.expect_popup(timeout=5000) as popup_info:
+                                el.dispatch_event('click')
+                            popup_page = popup_info.value
+                            self.log(f"✅ 检测到新窗口弹窗: {popup_page.url}", "SUCCESS")
+                            return True
+                        except PlaywrightTimeoutError:
+                            # 触发普通 JS 事件后检查 URL 是否变动
+                            el.dispatch_event('click')
+                            time.sleep(3)
+                            if "login" not in page.url.lower():
+                                self.log(f"✅ 事件触发成功，当前 URL: {page.url}", "SUCCESS")
+                                return True
+                            
                 except Exception as e:
-                    self.log(f"{sel} 点击失败: {e}", "DEBUG")
+                    self.log(f"{sel} 点击流程异常: {e}", "DEBUG")
+                    continue
     
-        self.log(f"❌ 找不到按钮: {desc}", "ERROR")
+        self.log(f"❌ 找不到或无法激活按钮: {desc}", "ERROR")
         return False
 
     def get_balance_with_token(self, page):
@@ -321,7 +341,7 @@ class AutoLogin:
             return "signin"
         if "callback" in domain:
             return "redirect"
-        if domain.endswith('agentrouter.org/console'):
+        if domain.endswith('agentrouter.org/console') or domain.endswith('agentrouter.org/dashboard'):
             return "logged"
         return "invalid"
     
@@ -346,7 +366,6 @@ class AutoLogin:
                 ]
             }
 
-            # 恢复代理配置逻辑
             if self.ag_proxy and isinstance(self.ag_proxy, dict):
                 p_url = self.ag_proxy
                 proxy_config = {
@@ -398,115 +417,55 @@ class AutoLogin:
                         
                 self.log("步骤1: 打开 agentrouter 登录页", "STEP")
 
-                for i in range(10):
+                for i in range(5):
                     try:
                         page.goto(BOARD_ENTRY_URL, timeout=60000)
                         page.wait_for_load_state('domcontentloaded', timeout=60000)
-                        time.sleep(random.uniform(20, 30))
-                        shot = self.shot(page, "打开 agentrouter 登录页")
-                        if shot:
-                            self.notify.send(title="agentrouter 自动登录保活", content="打开 agentrouter 登录页", image_path=shot)
+                        time.sleep(3)
                         
-                        self.log("正在等待 GitHub 登录按钮渲染...", "INFO")
-                        try:
-                            github_selectors = [
-                                'button:has-text("Continue with GitHub")',
-                                'button:has([aria-label="github_logo"])',
-                                'button:has-text("GitHub")',
-                                'a[href*="/auth/login/github"]'
-                            ]
-                        
-                            found = False
-                            for selector in github_selectors:
-                                try:
-                                    page.wait_for_selector(selector, timeout=10000, state="visible")
-                                    self.log(f"成功检测到 GitHub 登录按钮: {selector}", "SUCCESS")
-                                    found = True
-                                    break
-                                except Exception:
-                                    continue
-                        
-                            if not found:
-                                raise Exception("未找到 GitHub 登录按钮")
-                        
-                        except Exception as e:
-                            self.log(f"等待 GitHub 按钮失败: {e}", "WARN")
-                            self.log(f"当前URL: {page.url}", "WARN")
-                            
                         resault = self.check_and_process_domain(page.url)
-                        self.log(f"检测结果: {resault}", "INFO")
-                        self.shot(page, "找不到 GitHub 按钮")
+                        self.log(f"页面状态检测: {resault} ({page.url})", "INFO")
                         
-                        if resault == "invalid":
-                            self.log(f"[1.{i}]: 非域名: {page.url}", "WARN")
-                            continue
                         if resault == "logged":
-                            self.log(f"[1.{i}]: 已登录: {page.url}", "SUCCESS")
+                            self.log("已有有效登录态，跳过手动点击", "SUCCESS")
                             break
+                        
                         if resault == "signin":
-                            self.log(f"[1.{i}]: 需登录: {page.url}", "INFO")
                             self.log("步骤2: 点击 GitHub", "STEP")
+                            self.shot(page, "准备点击GitHub")
                             
-                            if not self.click(page, desc="GitHub 登录按钮"):
-                                shot = self.shot(page, "找不到 GitHub 按钮")
-                                if shot:
-                                    self.notify.send(title="agentrouter 自动登录保活", content="找不到 GitHub 按钮", image_path=shot)
-                                self.log(f"[2.{i}]: 找不到 GitHub 按钮", "WARN")
-                                continue
-                            else:
-                                for j in range(10):
-                                    resault = self.check_and_process_domain(page.url)
-                                    if resault == "signin":
-                                        self.log(f"[2.{i}.{j}]: 未跳转: {page.url}", "INFO")
-                                        if not self.click(page, desc="GitHub 登录按钮"):
-                                            shot = self.shot(page, "找不到 GitHub 按钮")
-                                            if shot:
-                                                self.notify.send(title="agentrouter 自动登录保活", content="找不到 GitHub 按钮", image_path=shot)
-                                            self.log(f"[2.{i}.{j}]: 找不到 GitHub 按钮", "WARN")
-                                        time.sleep(random.uniform(20, 30))
-                                        continue
-                                    if resault == "logged":
-                                        self.log(f"[2.{i}.{j}]: 已登录: {page.url}", "SUCCESS")
-                                        break
-                                    if resault == "redirect":
-                                        self.log(f"[2.{i}.{j}]: 正在重定向: {self.mask_url(page.url)}", "INFO")
-                                        self.log("正在检测 GitHub 账号是否绑定...", "INFO")
+                            if self.click(page, desc="GitHub 登录按钮"):
+                                # 点击成功后，精确等待页面 URL 离开登录页
+                                try:
+                                    self.log("等待 OAuth 跳转完成...", "INFO")
+                                    page.wait_for_url(lambda u: "login" not in u.lower(), timeout=30000)
+                                    self.log(f"跳转完成，当前 URL: {self.mask_url(page.url)}", "SUCCESS")
+                                    
+                                    # 检测未绑定错误
+                                    not_bound_selector = 'p.text-slate-600:has-text("This GitHub account is not bound")'
+                                    if page.locator(not_bound_selector).is_visible(timeout=3000):
+                                        self.log("❌ 账号未绑定 GitHub！", "ERROR")
+                                        shot = self.shot(page, "GitHub未绑定")
+                                        if shot:
+                                            self.notify.send(title="agentrouter 登录失败", content="账号未绑定 GitHub", image_path=shot)
+                                        return False, None, "❌ 账号未绑定 GitHub！"
                                         
-                                        not_bound_selector = 'p.text-slate-600:has-text("This GitHub account is not bound")'
-                                        try:
-                                            if page.locator(not_bound_selector).is_visible(timeout=5000):
-                                                self.log("❌ 登录失败：该 GitHub 账号未绑定到 agentrouter！", "ERROR")
-                                                shot = self.shot(page, "GitHub未绑定提示")
-                                                if shot:
-                                                    self.notify.send(
-                                                        title="agentrouter 登录异常", 
-                                                        content=f"❌ 账号 {self.gh_username} 未绑定：请先手动用密码登录并在设置中绑定 GitHub！", 
-                                                        image_path=shot
-                                                    )
-                                                return False, None, "❌ GitHub 账号未绑定到平台，请手动绑定！"
-                                        except Exception:
-                                            self.log("未检测到未绑定错误提示，继续正常流程...", "SUCCESS")
-                                            
-                                        try:
-                                            page.wait_for_url("https://*.agentrouter.org", timeout=60000)
-                                            self.log(f"URL 已跳转: {page.url}", "SUCCESS")
-                                            break
-                                        except PlaywrightTimeoutError:
-                                            self.log(f"等待 URL 跳转超时: {page.url}", "ERROR")
-                                        continue
-                                    if "github.com/login" in page.url:
-                                        self.log(f"[2.{i}.{j}]: github登录过期，{page.url}", "ERROR")
-                                        return False, None, "github登录过期！"   
+                                    break # 成功跳出
+                                except PlaywrightTimeoutError:
+                                    self.log(f"⚠️ 点击响应超时，URL 未改变: {page.url}", "WARN")
+                                    continue
+                            else:
+                                self.log("点击失败，准备下一次重试", "WARN")
+                                time.sleep(5)
+                                continue
+                                
                     except Exception as e:
-                        if i < 10:
-                            self.log(f"异常: {e}", "ERROR")
-                            self.log(f"[1.{i}]: 未打开登录页，重试", "WARN")
-                            time.sleep(random.uniform(10, 15))
-                        else:
-                            self.log(f"[1.{i}]: 访问 {page.url} 失败！", "ERROR")
-                            browser.close()
-                            return False, None, f"访问 {BOARD_ENTRY_URL} 失败！"   
-                         
+                        self.log(f"第 {i+1} 次尝试登录异常: {e}", "ERROR")
+                        time.sleep(5)
+
+                # 执行续费保活
+                renew_msg = self.get_balance_with_token(page)
+                
                 self.log("步骤3: 更新 local_storage", "STEP")
                 storage_state = self.get_storage(context)
                 
@@ -519,11 +478,12 @@ class AutoLogin:
                     storage_state_b64 = base64.b64encode(final_json.encode("utf-8")).decode("utf-8")
                     ok = True
                     new_local = storage_state_b64
+                    msg = renew_msg
                 else:
                     self.log("未获取到 storage_state", "WARN")
                 
                 if self.shots:
-                    self.notify.send(title="agentrouter 自动登录保活", content=f"✅ {self.gh_username}成功！", image_path=self.shots[-1])
+                    self.notify.send(title="agentrouter 自动登录保活", content=f"✅ {self.gh_username} 成功！\n{renew_msg}", image_path=self.shots[-1])
             except Exception as e:
                 self.log(f"异常: {e}", "ERROR")
                 self.shot(page, "异常")
