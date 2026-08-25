@@ -1519,7 +1519,7 @@ def main():
     # 使用 zip 实现一一对应
     for account, proxy  in zip(accounts, proxies):
         username=account['username']
-        if username!=='greenwave1987':
+        if username!='greenwave1987':
             continue
         print("\n" + "="*50)
         print(f"\n🚀 开始处理账号: {mask_name(username)}\n  🌐 使用代理: {proxy['server'][:-4]}***\n")
