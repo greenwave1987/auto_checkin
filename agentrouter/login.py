@@ -163,40 +163,28 @@ class AutoLogin:
         return f
     
     def click(self, page, desc=""):
-        """
-        专用于 Chakra UI / SPA / iframe 登录按钮
-        """
         self.log(f"🔍 尝试查找并点击: {desc}", "INFO")
     
-        # 1️⃣ 等页面真正稳定（比 networkidle 更可靠）
         try:
-            page.wait_for_load_state("domcontentloaded", timeout=15000)
-            page.wait_for_timeout(2000)
+            page.wait_for_load_state(
+                "domcontentloaded",
+                timeout=15000
+            )
+            page.wait_for_timeout(3000)
         except:
             pass
     
-        # 2️⃣ 收集主页面 + 所有 iframe
-        frames = [page.main_frame]
-        frames += page.frames
+        frames = page.frames
     
         selectors = [
-            # 🚀 【新增最高优先级】针对当前系统的超精准 href 选择器，秒杀一切
-            'a[href="/auth/login/github"]',
-            
-            # 原有的兜底规则
+            'button:has([aria-label="github_logo"])',
+            'button:has-text("Continue with GitHub")',
             'button:has-text("GitHub")',
-            'a:has-text("GitHub")',
+            'a[href="/auth/login/github"]',
+            'a[href*="/auth/login/github"]',
             '[data-provider="github"]',
-            
-            # Chakra Button
-            'button.chakra-button',
-    
-            # 带 GitHub svg 的按钮
-            'button:has(svg)',
-    
-            # XPath 兜底
-            '//button[.//text()[contains(., "GitHub")]]',
-            '//button[.//*[name()="svg"]]'
+            '//button[contains(.,"Continue with GitHub")]',
+            '//button[.//span[contains(@aria-label,"github")]]'
         ]
     
         for frame in frames:
@@ -204,25 +192,59 @@ class AutoLogin:
                 try:
                     el = frame.locator(sel).first
     
-                    # 💡 注意：将最精准的前几条快速过一遍，建议降低单个规则的等待超时（从5s降到2s），提升整体扫描效率
-                    el.wait_for(state="visible", timeout=2000)
+                    el.wait_for(
+                        state="visible",
+                        timeout=3000
+                    )
     
-                    # 模拟人类
-                    time.sleep(random.uniform(0.5, 1.2))
-                    el.hover()
-                    time.sleep(random.uniform(0.2, 0.4))
-                    el.click(force=True)
+                    self.log(
+                        f"找到按钮: {sel}",
+                        "SUCCESS"
+                    )
     
-                    self.log(f"已点击: {desc}", "SUCCESS")
-                    time.sleep(random.uniform(30, 40))
+                    time.sleep(
+                        random.uniform(0.5,1.2)
+                    )
+    
+                    try:
+                        el.hover()
+                    except:
+                        pass
+    
+                    time.sleep(
+                        random.uniform(0.2,0.5)
+                    )
+    
+                    el.click(
+                        force=True,
+                        timeout=5000
+                    )
+    
+                    self.log(
+                        f"已点击: {desc}",
+                        "SUCCESS"
+                    )
+    
+                    time.sleep(
+                        random.uniform(5,8)
+                    )
+    
                     return True
     
                 except PlaywrightTimeoutError:
-                    self.log(f"• 尝试点击失败: {sel}", "DEBUG")
-                except Exception as e:
-                    self.log(f"• 点击异常: {sel} -> {e}", "DEBUG")
+                    continue
     
-        self.log(f"❌ 找不到按钮: {desc}", "ERROR")
+                except Exception as e:
+                    self.log(
+                        f"{sel} 点击失败: {e}",
+                        "DEBUG"
+                    )
+    
+        self.log(
+            f"❌ 找不到按钮: {desc}",
+            "ERROR"
+        )
+    
         return False
         
     def get_agentrouter_cookies(self):
