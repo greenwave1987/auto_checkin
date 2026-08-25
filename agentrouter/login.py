@@ -1333,7 +1333,7 @@ class AutoLogin:
                         page.goto(BOARD_ENTRY_URL, timeout=60000)
                         page.wait_for_load_state('domcontentloaded', timeout=60000)
                         time.sleep(random.uniform(20, 30))
-                        #shot = self.shot(page, "打开 agentrouter 登录页")
+                        shot = self.shot(page, "打开 agentrouter 登录页")
                         if shot:
                             self.notify.send(title="agentrouter 自动登录保活",content="打开 agentrouter 登录页",image_path=shot)
                         # 2. 精准等待 GitHub 登录按钮在页面上出现
