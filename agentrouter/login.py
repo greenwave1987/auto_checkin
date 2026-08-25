@@ -186,7 +186,7 @@ class AutoLogin:
         return False
 
     def get_balance_with_token(self, page):
-        """执行 /api/user/self 接口进行保活并结构化解析用户信息"""
+        """从 localStorage 读取 user.id 并执行 /api/user/self 接口进行保活"""
         self.log("开始执行保活请求 (/api/user/self)...", "STEP")
         return_msg = ""
         
@@ -194,21 +194,41 @@ class AutoLogin:
             result_data = page.evaluate("""
                 async () => {
                     try {
+                        // 1. 从 localStorage 中读取 user 信息并解析 ID
+                        let apiUserId = "";
+                        const rawUser = localStorage.getItem("user");
+                        if (rawUser) {
+                            try {
+                                const parsedUser = JSON.parse(rawUser);
+                                apiUserId = parsedUser.id ? String(parsedUser.id) : "";
+                            } catch (e) {
+                                console.error("解析 localStorage 中的 user 失败:", e);
+                            }
+                        }
+    
+                        // 2. 构建请求头
+                        const headers = {
+                            "accept": "application/json, text/plain, */*",
+                            "accept-language": "en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7",
+                            "cache-control": "no-store",
+                            "pragma": "no-cache",
+                            "sec-ch-ua": "\\"Not=A?Brand\\";v=\\"99\\", \\"Google Chrome\\";v=\\"151\\", \\"Chromium\\";v=\\"151\\"",
+                            "sec-ch-ua-mobile": "?0",
+                            "sec-ch-ua-platform": "\\"Windows\\"",
+                            "sec-fetch-dest": "empty",
+                            "sec-fetch-mode": "cors",
+                            "sec-fetch-site": "same-origin",
+                            "sec-gpc": "1"
+                        };
+    
+                        // 如果成功获取到 id，则动态写入 new-api-user
+                        if (apiUserId) {
+                            headers["new-api-user"] = apiUserId;
+                        }
+    
+                        // 3. 发起请求
                         const response = await fetch("https://agentrouter.org/api/user/self", {
-                            headers: {
-                                "accept": "application/json, text/plain, */*",
-                                "accept-language": "en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7",
-                                "cache-control": "no-store",
-                                "new-api-user": "503381",
-                                "pragma": "no-cache",
-                                "sec-ch-ua": "\\"Not=A?Brand\\";v=\\"99\\", \\"Google Chrome\\";v=\\"151\\", \\"Chromium\\";v=\\"151\\"",
-                                "sec-ch-ua-mobile": "?0",
-                                "sec-ch-ua-platform": "\\"Windows\\"",
-                                "sec-fetch-dest": "empty",
-                                "sec-fetch-mode": "cors",
-                                "sec-fetch-site": "same-origin",
-                                "sec-gpc": "1"
-                            },
+                            headers: headers,
                             referrer: "https://agentrouter.org/console/topup",
                             body: null,
                             method: "GET",
@@ -224,7 +244,7 @@ class AutoLogin:
                         }
                         
                         const resData = await response.json();
-                        return { success: true, data: resData };
+                        return { success: true, data: resData, fetchedUserId: apiUserId };
                         
                     } catch (error) {
                         return { success: false, error: error.message };
@@ -235,6 +255,7 @@ class AutoLogin:
             if result_data and result_data.get("success"):
                 response_json = result_data.get("data", {})
                 user_data = response_json.get("data", {})
+                fetched_id = result_data.get("fetchedUserId", "")
                 
                 # 提取关键信息
                 user_id = user_data.get("id", "未知")
@@ -243,12 +264,12 @@ class AutoLogin:
                 quota = user_data.get("quota", 0)
                 used_quota = user_data.get("used_quota", 0)
                 
-                # 可选：换算为约定的额度显示 (如原始 quota / 500000)
+                # 计算美金额度 (quota / 500000)
                 quota_usd = round(quota / 500000, 2)
                 used_usd = round(used_quota / 500000, 2)
                 
                 info_text = (
-                    f"ID: {user_id} | "
+                    f"ID: {user_id} (Header Local ID: {fetched_id}) | "
                     f"Name: {display_name} | "
                     f"GitHub: {github_id} | "
                     f"Quota: ${quota_usd} ({quota}) | "
