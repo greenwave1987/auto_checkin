@@ -1217,7 +1217,7 @@ class AutoLogin:
         #domain = domain.rstrip('/')
         self.log(f"检查网址: {domain}")
         # 检查是否为 signin 页面
-        if domain.endswith('digitalplat.org/auth/login'):
+        if domain.endswith('agentrouter.org/login'):
             return "signin"
     
         # 检查是否包含 callback（OAuth 重定向）
@@ -1225,7 +1225,7 @@ class AutoLogin:
             return "redirect"
     
         # 检查是否是正常已登录的区域域名
-        if domain.endswith('.digitalplat.org/domains'):
+        if domain.endswith('agentrouter.org/console'):
             return "logged"
     
         # 其他情况
