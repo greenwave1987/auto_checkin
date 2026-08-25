@@ -387,7 +387,7 @@ class AutoLogin:
                             if self.click(page, desc="GitHub 登录按钮"):
                                 try:
                                     self.log("等待 OAuth 跳转完成...", "INFO")
-                                    page.wait_for_url(lambda u: "login" not in u.lower(), timeout=30000)
+                                    page.wait_for_url(lambda u: "login" not in u.lower(), timeout=60000)
                                     self.log(f"跳转完成，当前 URL: {self.mask_url(page.url)}", "SUCCESS")
                                     
                                     not_bound_selector = 'p.text-slate-600:has-text("This GitHub account is not bound")'
