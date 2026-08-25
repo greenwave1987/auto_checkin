@@ -94,11 +94,11 @@ class AutoLogin:
         else:
             self.ag_local = ag_local_val
         
-        self.ag_proxy = config.get('ag_proxy', '').strip() if isinstance(config.get('ag_proxy', ''), str) else config.get('ag_proxy')
-        self.proxy_url = test_proxy(self.ag_proxy)
+        self.ag_proxy = config.get('ag_proxy')
+        self.proxy_url = test_proxy(self.ag_proxy) if self.ag_proxy else None
         if not self.proxy_url:
             self.ag_proxy = config.get('wz_proxy')
-            self.proxy_url = test_proxy(self.ag_proxy)
+            self.proxy_url = test_proxy(self.ag_proxy) if self.ag_proxy else None
             
         self.notify = config.get('notify')
         self.shots = []
@@ -345,6 +345,17 @@ class AutoLogin:
                     '--exclude-switches=enable-automation',
                 ]
             }
+
+            # 恢复代理配置逻辑
+            if self.ag_proxy and isinstance(self.ag_proxy, dict):
+                p_url = self.ag_proxy
+                proxy_config = {
+                    "server": f"http://{p_url['server']}:{p_url['port']}",
+                    "username": p_url.get('username', ''),
+                    "password": p_url.get('password', '')
+                } 
+                launch_args["proxy"] = proxy_config
+                self.log(f"🌐 启用代理配置: {p_url['server']}:{p_url['port']}", "INFO")
 
             browser = p.chromium.launch(**launch_args)
             
