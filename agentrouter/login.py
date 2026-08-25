@@ -5,460 +5,617 @@ import json
 import time
 import base64
 import random
-import requests
-import datetime
-from urllib.parse import quote,urlparse
+from urllib.parse import urlparse
 from playwright.sync_api import sync_playwright
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
-BASE_URL="https://agentrouter.org"
-RENEW_DAYS=120
-TIMEOUT=15
-BOARD_ENTRY_URL="https://agentrouter.org/login"
-DEVICE_VERIFY_WAIT=30
-TWO_FACTOR_WAIT=int(os.environ.get("TWO_FACTOR_WAIT","120"))
-BASE_DIR=os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0,BASE_DIR)
+
+# ==================== 基准数据对接 ====================
+BASE_URL = "https://agentrouter.org"
+RENEW_DAYS = 120
+TIMEOUT = 15
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, BASE_DIR)
+
 from engine.notify import TelegramNotifier
 try:
-    from engine.main import ConfigReader,SecretUpdater,test_proxy
+    from engine.main import ConfigReader, SecretUpdater, test_proxy
 except ImportError:
     class ConfigReader:
-        def get_value(self,key):
-            return os.environ.get(key)
+        def get_value(self, key): return os.environ.get(key)
     class SecretUpdater:
-        def __init__(self,*args,**kwargs):
-            pass
-        def update(self,value):
-            return False
-        def load(self):
-            return {}
-    def test_proxy(proxy):
-        return proxy
-_notifier=None
-config=None
+        def __init__(self, name=None, config_reader=None): pass
+        def update(self, value): return False
+
+# ==================== 配置 ====================
+PROXY_DSN = os.environ.get("PROXY_DSN", "").strip()
+BOARD_ENTRY_URL = "https://agentrouter.org/login"
+
+_notifier = None
+config = None
+
 def get_notifier():
-    global _notifier,config
+    global _notifier, config
     if config is None:
-        config=ConfigReader()
+        config = ConfigReader()
     if _notifier is None:
-        _notifier=TelegramNotifier(config)
+        _notifier = TelegramNotifier(config)
     return _notifier
-def mask_name(name):
-    if not name:
-        return "***"
+
+# ==================== 工具函数 ====================
+def mask_name(name: str):
     return f"{name[:2]}***{name[-2:]}"
+
 def slim_storage_state(state):
-    if not isinstance(state,dict):
+    """精简 storage_state，只保留核心登录凭据"""
+    if not isinstance(state, dict):
         return state
-    state["cookies"]=[c for c in state.get("cookies",[]) if "agentrouter.org" in c.get("domain","") or "github.com" in c.get("domain","")]
-    keep=[
-        "session",
-        "access_token",
-        "refresh_token",
-        "auth",
-        "user",
-        "lastLoginUpdateTime",
-        "i18nextLng"
-    ]
-    for o in state.get("origins",[]):
-        o["localStorage"]=[
-            x for x in o.get("localStorage",[])
-            if x.get("name") in keep
+
+    if "cookies" in state:
+        state["cookies"] = [
+            c for c in state["cookies"] 
+            if "agentrouter.org" in c.get("domain", "")
         ]
+
+    if "origins" in state:
+        new_origins = []
+        essential_keys = ["session", "lastLoginUpdateTime", "i18nextLng"]
+        
+        for o in state["origins"]:
+            storage = o.get("localStorage", [])
+            slim_storage = [
+                item for item in storage 
+                if item.get("name") in essential_keys
+            ]
+            o["localStorage"] = slim_storage
+            new_origins.append(o)
+        
+        state["origins"] = new_origins
+
     return state
+
 class AutoLogin:
-    def __init__(self,info):
-        self.gh_username=info.get("gh_username","")
-        self.gh_session=info.get("gh_session","")
-        self.ag_local=info.get("ag_local")
-        self.ag_proxy=test_proxy(info.get("ag_proxy"))
-        if not self.ag_proxy:
-            self.ag_proxy=test_proxy(info.get("wz_proxy"))
-        self.notify=info.get("notify")
-        self.logs=[]
-        self.shots=[]
-        self.n=0
-        self.secret=SecretUpdater("GH_SESSION",config_reader=config)
-    def log(self,msg,level="INFO"):
-        icon={"INFO":"ℹ️","SUCCESS":"✅","ERROR":"❌","WARN":"⚠️","STEP":"🔹"}.get(level,"•")
-        print(f"{icon} {msg}",flush=True)
-    def shot(self,page,name):
-        self.n+=1
-        path=f"{self.n:02d}_{name}.png"
+    """自动登录，注入 GH_SESSION 获取并同步 agentrouter LocalStorage"""
+    
+    def __init__(self, config):
+        self.host = urlparse(BOARD_ENTRY_URL).netloc
+        self.gh_username = config.get('gh_username')
+        
+        gh_sess = config.get('gh_session', '')
+        if isinstance(gh_sess, str):
+            self.gh_session = gh_sess.strip()
+        elif isinstance(gh_sess, list):
+            self.gh_session = gh_sess[0] if gh_sess else ''
+        else:
+            self.gh_session = ''
+        
+        ag_local_val = config.get('ag_local', '')
+        if isinstance(ag_local_val, str):
+            self.ag_local = ag_local_val.strip()
+        else:
+            self.ag_local = ag_local_val
+        
+        self.ag_proxy = config.get('ag_proxy', '').strip() if isinstance(config.get('ag_proxy', ''), str) else config.get('ag_proxy')
+        self.proxy_url = test_proxy(self.ag_proxy)
+        if not self.proxy_url:
+            self.ag_proxy = config.get('wz_proxy')
+            self.proxy_url = test_proxy(self.ag_proxy)
+            
+        self.notify = config.get('notify')
+        self.shots = []
+        self.logs = []
+        self.n = 0
+        self.region_base_url = 'https://ap-northeast-1.run.agentrouter.org'
+        
+    def log(self, msg, level="INFO"):
+        icons = {"INFO": "ℹ️", "SUCCESS": "✅", "ERROR": "❌", "WARN": "⚠️", "STEP": "🔹"}
+        line = f"{icons.get(level, '•')} {msg}"
+        print(line, flush=True)
+        self.logs.append(line)
+    
+    def shot(self, page, name):
+        self.n += 1
+        f = f"{self.n:02d}_{name}.png"
         try:
-            page.screenshot(path=path)
-            self.shots.append(path)
-        except:
+            page.screenshot(path=f)
+            self.shots.append(f)
+        except Exception:
             pass
-        return path
-    def click(self,page,desc=""):
-        self.log(f"🔍 尝试查找并点击:{desc}")
+        return f
+    
+    def click(self, page, desc=""):
+        self.log(f"🔍 尝试查找并点击: {desc}", "INFO")
         try:
-            page.wait_for_load_state("domcontentloaded",timeout=15000)
-        except:
+            page.wait_for_load_state("domcontentloaded", timeout=15000)
+            page.wait_for_timeout(3000)
+        except Exception:
             pass
-        page.wait_for_timeout(3000)
-        selectors=[
-            'a[href*="/auth/login/github"]',
-            'a[href*="github"]',
+    
+        frames = page.frames
+        selectors = [
+            'button:has([aria-label="github_logo"])',
             'button:has-text("Continue with GitHub")',
+            'button:has-text("GitHub")',
+            'a[href="/auth/login/github"]',
+            'a[href*="/auth/login/github"]',
             '[data-provider="github"]',
-            'button:has([aria-label="github_logo"])'
+            '//button[contains(.,"Continue with GitHub")]',
+            '//button[.//span[contains(@aria-label,"github")]]'
         ]
-        for sel in selectors:
-            try:
-                el=page.locator(sel).first
-                el.wait_for(state="visible",timeout=3000)
-                self.log(f"找到按钮:{sel}","SUCCESS")
+    
+        for frame in frames:
+            for sel in selectors:
                 try:
-                    with page.expect_navigation(timeout=10000):
-                        el.click(timeout=8000)
-                    self.log(f"导航成功:{page.url}","SUCCESS")
+                    el = frame.locator(sel).first
+                    el.wait_for(state="visible", timeout=3000)
+                    self.log(f"找到按钮: {sel}", "SUCCESS")
+                    time.sleep(random.uniform(0.5, 1.2))
+                    
+                    try:
+                        el.hover()
+                    except Exception:
+                        pass
+    
+                    time.sleep(random.uniform(0.2, 0.5))
+                    el.click(force=True, timeout=5000)
+                    self.log(f"已点击: {desc}", "SUCCESS")
+                    time.sleep(random.uniform(5, 8))
                     return True
-                except:
-                    pass
-                try:
-                    with page.expect_popup(timeout=5000) as pop:
-                        el.click(timeout=5000)
-                    self.log(f"发现popup:{pop.value.url}","SUCCESS")
-                    return True
-                except:
-                    pass
-                try:
-                    el.evaluate("(e)=>e.click()")
-                    page.wait_for_timeout(5000)
-                    if page.url!=BOARD_ENTRY_URL:
-                        self.log(f"JS点击跳转:{page.url}","SUCCESS")
-                        return True
-                except:
-                    pass
-            except:
-                continue
-        self.log("找不到GitHub按钮","ERROR")
+                except PlaywrightTimeoutError:
+                    continue
+                except Exception as e:
+                    self.log(f"{sel} 点击失败: {e}", "DEBUG")
+    
+        self.log(f"❌ 找不到按钮: {desc}", "ERROR")
         return False
-    def check_url(self,url):
-        if "github.com/login/oauth" in url:
-            return "github"
-        if "github.com" in url:
-            return "github"
-        if "agentrouter.org/login" in url:
+
+    def get_balance_with_token(self, page):
+        """保活并自动续费（剩余不足120天）"""
+        self.log("开始执行保活与自动续费检查...", "STEP")
+        return_msg = ""
+        
+        try:
+            self.log("正在获取域名列表并检查过期时间...", "INFO")
+            
+            result_data = page.evaluate("""
+                async () => {
+                    try {
+                        const getCookie = (name) => {
+                            const value = `; ${document.cookie}`;
+                            const parts = value.split(`; ${name}=`);
+                            if (parts.length === 2) return parts.pop().split(';').shift();
+                            return null;
+                        };
+                        
+                        const xsrfToken = getCookie('panel_csrf_token');
+                        const commonHeaders = {
+                            "accept": "application/json, text/plain, */*",
+                            "accept-language": "zh-CN,zh;q=0.9,en;q=0.8",
+                            "cache-control": "no-cache",
+                            "pragma": "no-cache",
+                            "X-Requested-With": "XMLHttpRequest",
+                            ...(xsrfToken && { "x-csrf-token": decodeURIComponent(xsrfToken) })
+                        };
+                        
+                        const response = await fetch("https://dashboard.agentrouter.org/_panel_api/api/domains", {
+                            headers: commonHeaders,
+                            referrer: "https://dashboard.agentrouter.org/domains",
+                            method: "GET",
+                            credentials: "include"
+                        });
+                        
+                        if (!response.ok) {
+                            return { 
+                                success: false, 
+                                error: `获取列表失败，HTTP 状态码: ${response.status}` 
+                            };
+                        }
+                        
+                        const resData = await response.json();
+                        const domains = resData.domains || [];
+                        const logResults = [];
+                        
+                        if (domains.length === 0) {
+                            return { success: true, logs: ["当前账号下没有域名"] };
+                        }
+                        
+                        const today = new Date();
+                        
+                        for (const item of domains) {
+                            const domainName = item.domain;
+                            const expiryStr = item.expiry_date;
+                            
+                            if (!expiryStr || expiryStr.length !== 8) {
+                                logResults.push(`${domainName}: 日期格式异常 (${expiryStr})`);
+                                continue;
+                            }
+                            
+                            const year = parseInt(expiryStr.substring(0, 4));
+                            const month = parseInt(expiryStr.substring(4, 6)) - 1;
+                            const day = parseInt(expiryStr.substring(6, 8));
+                            const expiryDate = new Date(year, month, day);
+                            
+                            const diffTime = expiryDate.getTime() - today.getTime();
+                            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                            
+                            if (diffDays < 120) {
+                                logResults.push(`${domainName}: 剩余 ${diffDays} 天 (< 120天)，正在触发续费...`);
+                                
+                                const renewRes = await fetch(
+                                    `https://dashboard.agentrouter.org/_panel_api/api/domains/${domainName}/renew`, 
+                                    {
+                                        headers: {
+                                            ...commonHeaders,
+                                            "content-type": "application/json"
+                                        },
+                                        referrer: `https://dashboard.agentrouter.org/domains/${domainName}`,
+                                        body: JSON.stringify({ 
+                                            "renewal_type": "free", 
+                                            "years": 1 
+                                        }),
+                                        method: "POST",
+                                        credentials: "include"
+                                    }
+                                );
+                                
+                                if (renewRes.ok) {
+                                    try {
+                                        const renewData = await renewRes.json();
+                                        logResults.push(`${domainName}: ✅ 续费成功 → ${JSON.stringify(renewData)}`);
+                                    } catch {
+                                        logResults.push(`${domainName}: ✅ 续费请求成功发送`);
+                                    }
+                                } else {
+                                    const errText = await renewRes.text();
+                                    logResults.push(`${domainName}: ❌ 续费失败 [${renewRes.status}] → ${errText.substring(0, 200)}`);
+                                }
+                            } else {
+                                logResults.push(`${domainName}: 剩余 ${diffDays} 天 (>= 120天)，无需续费`);
+                            }
+                        }
+                        
+                        return { success: true, logs: logResults };
+                        
+                    } catch (error) {
+                        return { success: false, error: error.message };
+                    }
+                }
+            """)
+            
+            if result_data and result_data.get("success"):
+                for log_item in result_data.get("logs", []):
+                    self.log(log_item, "INFO")
+                    return_msg += log_item + "\n"
+                self.log("所有域名轮询检查完毕！", "SUCCESS")
+                return_msg += "✅ 所有域名轮询检查完毕！\n"
+            else:
+                err_msg = result_data.get("error") if result_data else "未知错误"
+                self.log(f"执行轮询续费脚本失败: {err_msg}", "WARN")
+                return_msg += f"⚠️ 执行轮询续费脚本失败: {err_msg}\n"
+                
+            time.sleep(2)
+            
+        except Exception as e:
+            self.log(f"续费流程异常: {e}", "WARN")
+            return_msg += f"❌ 续费流程异常: {e}\n"
+            
+        self.shot(page, "完成")
+        return return_msg
+    
+    def mask_url(self, url):
+        url = re.sub(r'code=[^&]+', 'code=***', url)
+        url = re.sub(r'state=[^&]+', 'state=***', url)
+        return url
+    
+    def get_storage(self, context):
+        """提取 storage_state"""
+        try:
+            state = context.storage_state()
+            self.ag_local = state
+            return state
+        except Exception as e:
+            self.log(f"获取 storage_state 失败: {e}", "WARN")
+            return None
+
+    def check_and_process_domain(self, domain):
+        if domain.endswith('agentrouter.org/login'):
             return "signin"
-        if "agentrouter.org" in url:
+        if "callback" in domain:
+            return "redirect"
+        if domain.endswith('agentrouter.org/console'):
             return "logged"
         return "invalid"
-
-    def get_storage(self,context):
-        try:
-            state=context.storage_state()
-            return base64.b64encode(
-                json.dumps(
-                    slim_storage_state(state),
-                    ensure_ascii=False
-                ).encode()
-            ).decode()
-        except Exception as e:
-            self.log(f"获取storage失败:{e}","WARN")
-            return None
-    def add_github_session(self,context):
-        if not self.gh_session:
-            return
-        try:
-            context.add_cookies([
-                {
-                    "name":"user_session",
-                    "value":self.gh_session,
-                    "domain":"github.com",
-                    "path":"/"
-                },
-                {
-                    "name":"logged_in",
-                    "value":"yes",
-                    "domain":"github.com",
-                    "path":"/"
-                }
-            ])
-            self.log("已加载GitHub Session","SUCCESS")
-        except Exception as e:
-            self.log(f"加载Session失败:{e}","WARN")
-    def wait_device(self,page):
-        self.log("等待设备验证","WARN")
-        for i in range(DEVICE_VERIFY_WAIT):
-            time.sleep(1)
-            if "device-verification" not in page.url and "verified-device" not in page.url:
-                self.log("设备验证通过","SUCCESS")
-                return True
-        return False
-    def wait_mobile_2fa(self,page):
-        self.log("等待GitHub Mobile确认","WARN")
-        shot=self.shot(page,"mobile_2fa")
-        if self.notify:
-            self.notify.send(
-                title="agentrouter登录",
-                content="请打开GitHub APP批准登录",
-                image_path=shot
-            )
-        for i in range(TWO_FACTOR_WAIT):
-            time.sleep(1)
-            if "two-factor" not in page.url:
-                self.log("Mobile验证通过","SUCCESS")
-                return True
-            if i%30==0 and i:
-                try:
-                    page.reload(timeout=30000)
-                except:
-                    pass
-        return False
-    def oauth_wait(self,page):
-        for i in range(60):
-            url=page.url
-            status=self.check_url(url)
-            self.log(f"OAuth检测:{status}:{url}")
-            if status=="logged":
-                return True
-            if "github.com/login/oauth" in url:
-                try:
-                    page.wait_for_load_state(
-                        "networkidle",
-                        timeout=10000
-                    )
-                except:
-                    pass
-            if "two-factor/mobile" in url:
-                if not self.wait_mobile_2fa(page):
-                    return False
-            if "device-verification" in url:
-                if not self.wait_device(page):
-                    return False
-            time.sleep(1)
-        return False
+    
     def run(self):
-        ok=False
-        new_local=None
-        msg=""
-        self.log(f"用户名:{mask_name(self.gh_username)}")
-        self.log(f"Session:{'有' if self.gh_session else '无'}")
-        if not self.gh_username or not self.gh_session:
-            return False,None,"缺少GitHub信息"
+        ok, new_local, msg = False, None, ""
+        self.log(f"用户名: {mask_name(self.gh_username)}")
+        self.log(f"Session: {'有' if self.gh_session else '无'}")
+        self.log(f"登录入口: {BOARD_ENTRY_URL}")
+        
+        if not self.gh_username:
+            self.log("缺少凭据", "ERROR")
+            return False, None, "❌ 缺少凭据"
+        
         with sync_playwright() as p:
-            args={
-                "headless":True,
-                "args":[
-                    "--no-sandbox",
-                    "--disable-blink-features=AutomationControlled"
+            launch_args = {
+                "headless": True,
+                "args": [
+                    '--no-sandbox',
+                    '--disable-blink-features=AutomationControlled',
+                    '--disable-infobars',
+                    '--exclude-switches=enable-automation',
                 ]
             }
-            if self.ag_proxy:
-                args["proxy"]={
-                    "server":f"http://{self.ag_proxy['server']}:{self.ag_proxy['port']}",
-                    "username":self.ag_proxy.get("username"),
-                    "password":self.ag_proxy.get("password")
-                }
-            browser=p.chromium.launch(**args)
-            context=browser.new_context(
-                storage_state=self.ag_local if self.ag_local else None,
-                viewport={
-                    "width":1920,
-                    "height":1080
-                },
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/128"
-            )
-            self.add_github_session(context)
-            page=context.new_page()
-            page.add_init_script("""
-            Object.defineProperty(navigator,'webdriver',{get:()=>undefined});
-            window.chrome={runtime:{}};
-            Object.defineProperty(navigator,'languages',{get:()=>['zh-CN','zh']});
-            """)
-            try:
-                self.log("打开登录页面","STEP")
-                page.goto(
-                    BOARD_ENTRY_URL,
-                    timeout=60000
-                )
-                page.wait_for_load_state(
-                    "domcontentloaded",
-                    timeout=60000
-                )
-                time.sleep(5)
-                status=self.check_url(page.url)
-                if status=="signin":
-                    if not self.click(page,"GitHub登录"):
-                        return False,None,"点击GitHub失败"
-                    if not self.oauth_wait(page):
-                        return False,None,"OAuth失败"
-                elif status!="logged":
-                    return False,None,f"未知状态:{page.url}"
-                self.log("登录成功","SUCCESS")
-                new_local=self.get_storage(context)
-                if new_local:
-                    ok=True
-                    msg="登录成功，storage已更新"
-                else:
-                    msg="登录成功但storage为空"
-            except Exception as e:
-                msg=f"异常:{e}"
-                self.log(msg,"ERROR")
-            finally:
-                try:
-                    if context:
-                        context.close()
-                except Exception:
-                    pass
-                try:
-                    if browser:
-                        browser.close()
-                except Exception:
-                    pass
-                try:
-                    p.stop()
-                except Exception:
-                    pass
-        return ok,new_local,msg
 
-    def parse_cookies(self,cookie_string):
-        result={}
-        for item in cookie_string.split(";"):
-            if "=" in item:
-                k,v=item.strip().split("=",1)
-                result[k]=v
-        return result
-    def get_headers(self,cookies,json_type=False):
-        headers={
-            "accept":"application/json, text/plain, */*",
-            "user-agent":"Mozilla/5.0",
-            "cache-control":"no-cache"
-        }
-        if json_type:
-            headers["content-type"]="application/json"
-        csrf=cookies.get("panel_csrf_token")
-        if csrf:
-            headers["x-csrf-token"]=csrf
-        return headers
-    def get_domains(self,cookies):
-        try:
-            r=requests.get(
-                "https://dashboard.agentrouter.org/_panel_api/api/domains",
-                headers=self.get_headers(cookies),
-                cookies=cookies,
-                timeout=TIMEOUT
-            )
-            if not r.ok:
-                return []
-            data=r.json()
-            return data.get("domains",[])
-        except Exception as e:
-            self.log(f"获取域名失败:{e}","WARN")
-            return []
-    def renew_domain(self,cookies,domain):
-        try:
-            url=f"https://dashboard.agentrouter.org/_panel_api/api/domains/{quote(domain,safe='')}/renew"
-            r=requests.post(
-                url,
-                headers=self.get_headers(cookies,True),
-                cookies=cookies,
-                json={
-                    "renewal_type":"free",
-                    "years":1
-                },
-                timeout=TIMEOUT
-            )
-            self.log(f"{domain}续费:{r.status_code}")
-            return r.ok
-        except Exception as e:
-            self.log(f"{domain}续费异常:{e}","WARN")
-            return False
-    def check_renew(self,cookies):
-        result=[]
-        domains=self.get_domains(cookies)
-        if not domains:
-            return "没有域名"
-        today=datetime.datetime.now()
-        for item in domains:
-            domain=item.get("domain")
-            expiry=item.get("expiry_date")
-            if not domain or not expiry:
-                continue
-            try:
-                date=datetime.datetime.strptime(
-                    expiry,
-                    "%Y%m%d"
+            browser = p.chromium.launch(**launch_args)
+            
+            if self.ag_local:
+                context = browser.new_context(
+                    storage_state=self.ag_local,
+                    viewport={'width': 1920, 'height': 1080},
+                    user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
                 )
-                days=(date-today).days
-            except:
-                continue
-            if days<RENEW_DAYS:
-                if self.renew_domain(cookies,domain):
-                    result.append(
-                        f"✅ {domain}续费成功"
-                    )
-                else:
-                    result.append(
-                        f"❌ {domain}续费失败"
-                    )
             else:
-                result.append(
-                    f"✅ {domain}剩余{days}天"
+                context = browser.new_context(
+                    viewport={'width': 1920, 'height': 1080},
+                    user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
                 )
-        return "\n".join(result)
+            
+            page = context.new_page()
+            page.add_init_script("""
+                Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+                Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+                Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+                window.chrome = { runtime: {} };
+                const originalQuery = window.navigator.permissions.query;
+                window.navigator.permissions.query = (parameters) => (
+                    parameters.name === 'notifications' ?
+                    Promise.resolve({ state: Notification.permission }) :
+                    originalQuery(parameters)
+                );
+            """)
+
+            try:
+                if self.gh_session:
+                    try:
+                        context.add_cookies([
+                            {'name': 'user_session', 'value': self.gh_session, 'domain': 'github.com', 'path': '/'},
+                            {'name': 'logged_in', 'value': 'yes', 'domain': 'github.com', 'path': '/'}
+                        ])
+                        self.log("已加载 Session Cookie", "SUCCESS")
+                    except Exception:
+                        self.log("加载 Cookie 失败", "WARN")
+                        
+                self.log("步骤1: 打开 agentrouter 登录页", "STEP")
+
+                for i in range(10):
+                    try:
+                        page.goto(BOARD_ENTRY_URL, timeout=60000)
+                        page.wait_for_load_state('domcontentloaded', timeout=60000)
+                        time.sleep(random.uniform(20, 30))
+                        shot = self.shot(page, "打开 agentrouter 登录页")
+                        if shot:
+                            self.notify.send(title="agentrouter 自动登录保活", content="打开 agentrouter 登录页", image_path=shot)
+                        
+                        self.log("正在等待 GitHub 登录按钮渲染...", "INFO")
+                        try:
+                            github_selectors = [
+                                'button:has-text("Continue with GitHub")',
+                                'button:has([aria-label="github_logo"])',
+                                'button:has-text("GitHub")',
+                                'a[href*="/auth/login/github"]'
+                            ]
+                        
+                            found = False
+                            for selector in github_selectors:
+                                try:
+                                    page.wait_for_selector(selector, timeout=10000, state="visible")
+                                    self.log(f"成功检测到 GitHub 登录按钮: {selector}", "SUCCESS")
+                                    found = True
+                                    break
+                                except Exception:
+                                    continue
+                        
+                            if not found:
+                                raise Exception("未找到 GitHub 登录按钮")
+                        
+                        except Exception as e:
+                            self.log(f"等待 GitHub 按钮失败: {e}", "WARN")
+                            self.log(f"当前URL: {page.url}", "WARN")
+                            
+                        resault = self.check_and_process_domain(page.url)
+                        self.log(f"检测结果: {resault}", "INFO")
+                        self.shot(page, "找不到 GitHub 按钮")
+                        
+                        if resault == "invalid":
+                            self.log(f"[1.{i}]: 非域名: {page.url}", "WARN")
+                            continue
+                        if resault == "logged":
+                            self.log(f"[1.{i}]: 已登录: {page.url}", "SUCCESS")
+                            break
+                        if resault == "signin":
+                            self.log(f"[1.{i}]: 需登录: {page.url}", "INFO")
+                            self.log("步骤2: 点击 GitHub", "STEP")
+                            
+                            if not self.click(page, desc="GitHub 登录按钮"):
+                                shot = self.shot(page, "找不到 GitHub 按钮")
+                                if shot:
+                                    self.notify.send(title="agentrouter 自动登录保活", content="找不到 GitHub 按钮", image_path=shot)
+                                self.log(f"[2.{i}]: 找不到 GitHub 按钮", "WARN")
+                                continue
+                            else:
+                                for j in range(10):
+                                    resault = self.check_and_process_domain(page.url)
+                                    if resault == "signin":
+                                        self.log(f"[2.{i}.{j}]: 未跳转: {page.url}", "INFO")
+                                        if not self.click(page, desc="GitHub 登录按钮"):
+                                            shot = self.shot(page, "找不到 GitHub 按钮")
+                                            if shot:
+                                                self.notify.send(title="agentrouter 自动登录保活", content="找不到 GitHub 按钮", image_path=shot)
+                                            self.log(f"[2.{i}.{j}]: 找不到 GitHub 按钮", "WARN")
+                                        time.sleep(random.uniform(20, 30))
+                                        continue
+                                    if resault == "logged":
+                                        self.log(f"[2.{i}.{j}]: 已登录: {page.url}", "SUCCESS")
+                                        break
+                                    if resault == "redirect":
+                                        self.log(f"[2.{i}.{j}]: 正在重定向: {self.mask_url(page.url)}", "INFO")
+                                        self.log("正在检测 GitHub 账号是否绑定...", "INFO")
+                                        
+                                        not_bound_selector = 'p.text-slate-600:has-text("This GitHub account is not bound")'
+                                        try:
+                                            if page.locator(not_bound_selector).is_visible(timeout=5000):
+                                                self.log("❌ 登录失败：该 GitHub 账号未绑定到 agentrouter！", "ERROR")
+                                                shot = self.shot(page, "GitHub未绑定提示")
+                                                if shot:
+                                                    self.notify.send(
+                                                        title="agentrouter 登录异常", 
+                                                        content=f"❌ 账号 {self.gh_username} 未绑定：请先手动用密码登录并在设置中绑定 GitHub！", 
+                                                        image_path=shot
+                                                    )
+                                                return False, None, "❌ GitHub 账号未绑定到平台，请手动绑定！"
+                                        except Exception:
+                                            self.log("未检测到未绑定错误提示，继续正常流程...", "SUCCESS")
+                                            
+                                        try:
+                                            page.wait_for_url("https://*.agentrouter.org", timeout=60000)
+                                            self.log(f"URL 已跳转: {page.url}", "SUCCESS")
+                                            break
+                                        except PlaywrightTimeoutError:
+                                            self.log(f"等待 URL 跳转超时: {page.url}", "ERROR")
+                                        continue
+                                    if "github.com/login" in page.url:
+                                        self.log(f"[2.{i}.{j}]: github登录过期，{page.url}", "ERROR")
+                                        return False, None, "github登录过期！"   
+                    except Exception as e:
+                        if i < 10:
+                            self.log(f"异常: {e}", "ERROR")
+                            self.log(f"[1.{i}]: 未打开登录页，重试", "WARN")
+                            time.sleep(random.uniform(10, 15))
+                        else:
+                            self.log(f"[1.{i}]: 访问 {page.url} 失败！", "ERROR")
+                            browser.close()
+                            return False, None, f"访问 {BOARD_ENTRY_URL} 失败！"   
+                         
+                self.log("步骤3: 更新 local_storage", "STEP")
+                storage_state = self.get_storage(context)
+                
+                if storage_state:
+                    self.log("开始为数据瘦身...")
+                    slimmest_local = slim_storage_state(storage_state)
+                    final_json = json.dumps(slimmest_local, ensure_ascii=False)
+                    self.log(f"瘦身完成，最终数据大小: {len(final_json) / 1024:.2f} KB")
+                    
+                    storage_state_b64 = base64.b64encode(final_json.encode("utf-8")).decode("utf-8")
+                    ok = True
+                    new_local = storage_state_b64
+                else:
+                    self.log("未获取到 storage_state", "WARN")
+                
+                if self.shots:
+                    self.notify.send(title="agentrouter 自动登录保活", content=f"✅ {self.gh_username}成功！", image_path=self.shots[-1])
+            except Exception as e:
+                self.log(f"异常: {e}", "ERROR")
+                self.shot(page, "异常")
+                import traceback
+                traceback.print_exc()
+                if self.shots:
+                    self.notify.send(title="agentrouter 自动登录保活", content=f"❌ {self.gh_username}:{str(e)}", image_path=self.shots[-1])
+                msg = f"访问 {page.url} 失败！"   
+            finally:
+                if browser:
+                    browser.close()
+                return ok, new_local, msg
+
 def main():
     global config
     if config is None:
-        config=ConfigReader()
-    notify=get_notifier()
-    gh_secret=SecretUpdater(
-        "GH_SESSION",
-        config_reader=config
-    )
-    local_secret=SecretUpdater(
-        "AGENTROUTER_LOCALS",
-        config_reader=config
-    )
-    sessions=gh_secret.load() or {}
-    locals_data=local_secret.load() or {}
-    accounts=config.get_value("GH_INFO") or []
-    proxies=config.get_value("WZ_INFO") or []
-    results=[]
-    for account,proxy in zip(accounts,proxies):
-        username=account.get("username")
-        print("="*50)
-        print(f"处理账号:{mask_name(username)}")
-        info={
-            "gh_username":username,
-            "gh_session":sessions.get(username,""),
-            "ag_local":None,
-            "ag_proxy":proxy,
-            "wz_proxy":proxies[-1],
-            "notify":notify
-        }
-        old_local=locals_data.get(username)
-        if old_local:
-            try:
-                info["ag_local"]=json.loads(
-                    base64.b64decode(old_local).decode()
-                )
-            except Exception:
-                pass
-        if not info["gh_session"]:
-            results.append(
-                f"⚠️ {username}缺少Session"
-            )
+        config = ConfigReader()
+    
+    results = []
+    accounts = config.get_value("GH_INFO")
+    proxies = config.get_value("WZ_INFO")
+
+    notify = get_notifier()
+    gh_secret = SecretUpdater("GH_SESSION", config_reader=config)
+    gh_sessions = gh_secret.load() or {}
+    
+    secret = SecretUpdater("AGENTROUTER_LOCALS", config_reader=config)
+    ag_locals = secret.load() 
+
+    if not accounts:
+        print("❌ 错误: 未配置 LEAFLOW_ACCOUNTS")
+        return
+    if not proxies:
+        print("📢 警告: 未配置 proxy ，将直连")
+
+    print(f"📊 检测到 {len(accounts)} 个账号和 {len(proxies)} 个代理")
+
+    for account, proxy in zip(accounts, proxies):
+        username = account['username']
+        if username != 'greenwave1987':
             continue
+        print("\n" + "="*50)
+        print(f"\n🚀 开始处理账号: {mask_name(username)}\n  🌐 使用代理: {proxy['server'][:-4]}***\n")
+        print("="*50 + "\n")
+        
+        results.append(f"🚀 账号：{mask_name(username)}\n    🌐 使用代理: {proxy['server'][:-4]}***\n")
+        ag_info = {
+            'gh_username': username,
+            'ag_proxy': proxy,
+            'notify': notify,
+            'wz_proxy': proxies[-1]
+        }
+
+        if isinstance(gh_sessions, dict):
+            gh_session = gh_sessions.get(username, '')
+            if isinstance(gh_session, list):
+                gh_session = gh_session[0] if gh_session else ''
+            ag_info['gh_session'] = gh_session
+        else:
+            print("⚠️ gh_sessions 格式错误！")
+            ag_info['gh_session'] = ''
+
+        if not gh_session:
+            print("⚠️ 缺少对应账号的 gh_session ，退出！")
+            continue
+        
+        if isinstance(ag_locals, dict):
+            ag_local = ag_locals.get(username, '')
+            if ag_local:
+                try:
+                    ag_info['ag_local'] = json.loads(base64.b64decode(ag_local).decode("utf-8"))
+                    print("✅ 已加载 storage_state")
+                except Exception as e:
+                    print(f"❌ 加载 storage_state 失败: {e}")
+        else:
+            print(f"⚠️ ag_locals 格式错误！{ag_locals}")
+            ag_locals = {}
+            ag_info['ag_local'] = []
+
         try:
-            bot=AutoLogin(info)
-            ok,new_local,msg=bot.run()
-            if ok and new_local:
-                locals_data[username]=new_local
-            results.append(
-                f"{username}:{msg}"
-            )
+            auto_login = AutoLogin(ag_info)
+            ok, new_local, msg = auto_login.run()
+    
+            if ok:
+                print("    ✅ 执行成功")
+                results.append(f"    ✅ {msg}\n")
+                if new_local:
+                    print("    ✅ 保存新 new_local")
+                    ag_locals[username] = new_local
+            else:
+                print("    ⚠️ 执行失败，不保存 cookie")
+                results.append(f"    ⚠️ 执行失败:{msg}\n")
+    
         except Exception as e:
-            results.append(
-                f"{username}:异常 {e}"
-            )
-    local_secret.update(locals_data)
+            print(f"    ❌ 执行异常: {e}")
+            results.append(f"    ❌ 执行异常: {e}")
+
+    print(f"ag_locals数据大小: {len(json.dumps(ag_locals)) / 1024:.2f} KB")
+    secret.update(ag_locals)
     notify.send(
-        title="agentrouter自动登录保活汇总",
+        title="agentrouter 自动登录保活汇总",
         content="\n".join(results)
     )
-if __name__=="__main__":
+
+if __name__ == "__main__":
     main()
