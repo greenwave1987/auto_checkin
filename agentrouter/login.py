@@ -1430,6 +1430,7 @@ class AutoLogin:
                                                 self.notify.send(title="agentrouter 自动登录保活",content="找不到 GitHub 按钮",image_path=shot)
                                             self.log(f"[2.{i}.{j}]: 找不到 GitHub 按钮", "WARN")
                                             self.shot(page, "找不到 GitHub 按钮")
+                                        time.sleep(random.uniform(20, 30))
                                         continue
                                     if resault=="logged":
                                         self.log(f"[2.{i}.{j}]: 已登录: {page.url}", "SUCCESS")
