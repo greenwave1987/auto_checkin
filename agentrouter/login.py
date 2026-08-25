@@ -210,9 +210,7 @@ class AutoLogin:
                             },
                             referrer: "https://agentrouter.org/console",
                             body: null,
-                            method: "GET",
-                            mode: "cors",
-                            credentials: "include"
+                            method: "GET"
                         });
                         
                         if (!response.ok) {
