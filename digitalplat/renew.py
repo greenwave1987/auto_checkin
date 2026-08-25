@@ -1339,13 +1339,43 @@ class AutoLogin:
                         # 2. 精准等待 GitHub 登录按钮在页面上出现
                         self.log("正在等待 GitHub 登录按钮渲染...", "INFO")
                         try:
-                            # 盯防 href 包含 /auth/login/github 的 a 标签
-                            github_btn_selector = 'a[href="/auth/login/github"]'
-                            page.wait_for_selector(github_btn_selector, timeout=60000, state="visible")
-                            self.log("成功检测到 GitHub 登录按钮！", "SUCCESS")
+                            github_selectors = [
+                                'button:has-text("Continue with GitHub")',
+                                'button:has([aria-label="github_logo"])',
+                                'button:has-text("GitHub")',
+                                'a[href*="/auth/login/github"]'
+                            ]
+                        
+                            found = False
+                        
+                            for selector in github_selectors:
+                                try:
+                                    page.wait_for_selector(
+                                        selector,
+                                        timeout=10000,
+                                        state="visible"
+                                    )
+                                    self.log(
+                                        f"成功检测到 GitHub 登录按钮: {selector}",
+                                        "SUCCESS"
+                                    )
+                                    found = True
+                                    break
+                                except:
+                                    continue
+                        
+                            if not found:
+                                raise Exception("未找到 GitHub 登录按钮")
+                        
                         except Exception as e:
-                            self.log(f"等待 GitHub 按钮超时或未显现！", "WARN")
-                            self.log(page.url)
+                            self.log(
+                                f"等待 GitHub 按钮失败: {e}",
+                                "WARN"
+                            )
+                            self.log(
+                                f"当前URL: {page.url}",
+                                "WARN"
+                            )
                             
                         resault=self.check_and_process_domain(page.url)
                         self.log(f"检测结果: {resault}", "INFO")
