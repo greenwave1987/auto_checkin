@@ -156,8 +156,7 @@ class AutoLogin:
                         el.hover()
                     except Exception:
                         pass
-    
-                    # 优先检测是否会触发页面导航或网络请求
+
                     try:
                         with page.expect_navigation(timeout=10000):
                             el.click(force=True, timeout=5000)
@@ -166,7 +165,6 @@ class AutoLogin:
                     except PlaywrightTimeoutError:
                         self.log("⚠️ 物理点击未触发 Navigation，尝试通过 dispatchEvent 发送 DOM 点击事件...", "WARN")
                         
-                        # 如果是新窗口弹窗 (Popup) 类型的登录
                         try:
                             with page.expect_popup(timeout=5000) as popup_info:
                                 el.dispatch_event('click')
@@ -174,7 +172,6 @@ class AutoLogin:
                             self.log(f"✅ 检测到新窗口弹窗: {popup_page.url}", "SUCCESS")
                             return True
                         except PlaywrightTimeoutError:
-                            # 触发普通 JS 事件后检查 URL 是否变动
                             el.dispatch_event('click')
                             time.sleep(3)
                             if "login" not in page.url.lower():
@@ -189,111 +186,44 @@ class AutoLogin:
         return False
 
     def get_balance_with_token(self, page):
-        """保活并自动续费（剩余不足120天）"""
-        self.log("开始执行保活与自动续费检查...", "STEP")
+        """执行 /api/user/self 接口进行保活并结构化解析用户信息"""
+        self.log("开始执行保活请求 (/api/user/self)...", "STEP")
         return_msg = ""
         
         try:
-            self.log("正在获取域名列表并检查过期时间...", "INFO")
-            
             result_data = page.evaluate("""
                 async () => {
                     try {
-                        const getCookie = (name) => {
-                            const value = `; ${document.cookie}`;
-                            const parts = value.split(`; ${name}=`);
-                            if (parts.length === 2) return parts.pop().split(';').shift();
-                            return null;
-                        };
-                        
-                        const xsrfToken = getCookie('panel_csrf_token');
-                        const commonHeaders = {
-                            "accept": "application/json, text/plain, */*",
-                            "accept-language": "zh-CN,zh;q=0.9,en;q=0.8",
-                            "cache-control": "no-cache",
-                            "pragma": "no-cache",
-                            "X-Requested-With": "XMLHttpRequest",
-                            ...(xsrfToken && { "x-csrf-token": decodeURIComponent(xsrfToken) })
-                        };
-                        
-                        const response = await fetch("https://dashboard.agentrouter.org/_panel_api/api/domains", {
-                            headers: commonHeaders,
-                            referrer: "https://dashboard.agentrouter.org/domains",
+                        const response = await fetch("https://agentrouter.org/api/user/self", {
+                            headers: {
+                                "accept": "application/json, text/plain, */*",
+                                "accept-language": "en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7",
+                                "cache-control": "no-store",
+                                "pragma": "no-cache",
+                                "sec-ch-ua": "\\"Not=A?Brand\\";v=\\"99\\", \\"Google Chrome\\";v=\\"151\\", \\"Chromium\\";v=\\"151\\"",
+                                "sec-ch-ua-mobile": "?0",
+                                "sec-ch-ua-platform": "\\"Windows\\"",
+                                "sec-fetch-dest": "empty",
+                                "sec-fetch-mode": "cors",
+                                "sec-fetch-site": "same-origin",
+                                "sec-gpc": "1"
+                            },
+                            referrer: "https://agentrouter.org/console",
+                            body: null,
                             method: "GET",
+                            mode: "cors",
                             credentials: "include"
                         });
                         
                         if (!response.ok) {
                             return { 
                                 success: false, 
-                                error: `获取列表失败，HTTP 状态码: ${response.status}` 
+                                error: `请求失败，HTTP 状态码: ${response.status}` 
                             };
                         }
                         
                         const resData = await response.json();
-                        const domains = resData.domains || [];
-                        const logResults = [];
-                        
-                        if (domains.length === 0) {
-                            return { success: true, logs: ["当前账号下没有域名"] };
-                        }
-                        
-                        const today = new Date();
-                        
-                        for (const item of domains) {
-                            const domainName = item.domain;
-                            const expiryStr = item.expiry_date;
-                            
-                            if (!expiryStr || expiryStr.length !== 8) {
-                                logResults.push(`${domainName}: 日期格式异常 (${expiryStr})`);
-                                continue;
-                            }
-                            
-                            const year = parseInt(expiryStr.substring(0, 4));
-                            const month = parseInt(expiryStr.substring(4, 6)) - 1;
-                            const day = parseInt(expiryStr.substring(6, 8));
-                            const expiryDate = new Date(year, month, day);
-                            
-                            const diffTime = expiryDate.getTime() - today.getTime();
-                            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                            
-                            if (diffDays < 120) {
-                                logResults.push(`${domainName}: 剩余 ${diffDays} 天 (< 120天)，正在触发续费...`);
-                                
-                                const renewRes = await fetch(
-                                    `https://dashboard.agentrouter.org/_panel_api/api/domains/${domainName}/renew`, 
-                                    {
-                                        headers: {
-                                            ...commonHeaders,
-                                            "content-type": "application/json"
-                                        },
-                                        referrer: `https://dashboard.agentrouter.org/domains/${domainName}`,
-                                        body: JSON.stringify({ 
-                                            "renewal_type": "free", 
-                                            "years": 1 
-                                        }),
-                                        method: "POST",
-                                        credentials: "include"
-                                    }
-                                );
-                                
-                                if (renewRes.ok) {
-                                    try {
-                                        const renewData = await renewRes.json();
-                                        logResults.push(`${domainName}: ✅ 续费成功 → ${JSON.stringify(renewData)}`);
-                                    } catch {
-                                        logResults.push(`${domainName}: ✅ 续费请求成功发送`);
-                                    }
-                                } else {
-                                    const errText = await renewRes.text();
-                                    logResults.push(`${domainName}: ❌ 续费失败 [${renewRes.status}] → ${errText.substring(0, 200)}`);
-                                }
-                            } else {
-                                logResults.push(`${domainName}: 剩余 ${diffDays} 天 (>= 120天)，无需续费`);
-                            }
-                        }
-                        
-                        return { success: true, logs: logResults };
+                        return { success: true, data: resData };
                         
                     } catch (error) {
                         return { success: false, error: error.message };
@@ -302,23 +232,38 @@ class AutoLogin:
             """)
             
             if result_data and result_data.get("success"):
-                for log_item in result_data.get("logs", []):
-                    self.log(log_item, "INFO")
-                    return_msg += log_item + "\n"
-                self.log("所有域名轮询检查完毕！", "SUCCESS")
-                return_msg += "✅ 所有域名轮询检查完毕！\n"
+                response_json = result_data.get("data", {})
+                user_data = response_json.get("data", {})
+                
+                # 提取关键信息
+                user_id = user_data.get("id", "未知")
+                display_name = user_data.get("display_name", "未知")
+                github_id = user_data.get("github_id", "未绑定")
+                quota = user_data.get("quota", 0)
+                used_quota = user_data.get("used_quota", 0)
+                
+                info_text = (
+                    f"ID: {user_id} | "
+                    f"Name: {display_name} | "
+                    f"GitHub: {github_id} | "
+                    f"Quota: {quota} | "
+                    f"Used: {used_quota}"
+                )
+                
+                self.log(f"✅ 保活成功: {info_text}", "SUCCESS")
+                return_msg = f"✅ 保活成功 [{info_text}]\n"
             else:
                 err_msg = result_data.get("error") if result_data else "未知错误"
-                self.log(f"执行轮询续费脚本失败: {err_msg}", "WARN")
-                return_msg += f"⚠️ 执行轮询续费脚本失败: {err_msg}\n"
+                self.log(f"❌ 保活请求失败: {err_msg}", "WARN")
+                return_msg = f"⚠️ 保活请求失败: {err_msg}\n"
                 
             time.sleep(2)
             
         except Exception as e:
-            self.log(f"续费流程异常: {e}", "WARN")
-            return_msg += f"❌ 续费流程异常: {e}\n"
+            self.log(f"保活流程异常: {e}", "WARN")
+            return_msg = f"❌ 保活流程异常: {e}\n"
             
-        self.shot(page, "完成")
+        self.shot(page, "完成保活请求")
         return return_msg
     
     def mask_url(self, url):
@@ -435,13 +380,11 @@ class AutoLogin:
                             self.shot(page, "准备点击GitHub")
                             
                             if self.click(page, desc="GitHub 登录按钮"):
-                                # 点击成功后，精确等待页面 URL 离开登录页
                                 try:
                                     self.log("等待 OAuth 跳转完成...", "INFO")
                                     page.wait_for_url(lambda u: "login" not in u.lower(), timeout=30000)
                                     self.log(f"跳转完成，当前 URL: {self.mask_url(page.url)}", "SUCCESS")
                                     
-                                    # 检测未绑定错误
                                     not_bound_selector = 'p.text-slate-600:has-text("This GitHub account is not bound")'
                                     if page.locator(not_bound_selector).is_visible(timeout=3000):
                                         self.log("❌ 账号未绑定 GitHub！", "ERROR")
@@ -450,7 +393,7 @@ class AutoLogin:
                                             self.notify.send(title="agentrouter 登录失败", content="账号未绑定 GitHub", image_path=shot)
                                         return False, None, "❌ 账号未绑定 GitHub！"
                                         
-                                    break # 成功跳出
+                                    break
                                 except PlaywrightTimeoutError:
                                     self.log(f"⚠️ 点击响应超时，URL 未改变: {page.url}", "WARN")
                                     continue
@@ -463,7 +406,7 @@ class AutoLogin:
                         self.log(f"第 {i+1} 次尝试登录异常: {e}", "ERROR")
                         time.sleep(5)
 
-                # 执行续费保活
+                # 执行保活请求
                 renew_msg = self.get_balance_with_token(page)
                 
                 self.log("步骤3: 更新 local_storage", "STEP")
