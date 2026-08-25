@@ -1279,7 +1279,7 @@ class AutoLogin:
                 ]
             }
 
-            if self.ag_proxy and 0:
+            if self.ag_proxy:
                 p_url = self.ag_proxy
                 proxy_config = {
                     ##"server": f"{p_url['type']}://{p_url['server']}:{p_url['port']}",
