@@ -71,7 +71,7 @@ def slim_storage_state(state):
                 new_origins.append(o)
         
         state["origins"] = new_origins
-    
+    print(json.dumps(state, indent=2, ensure_ascii=False))
     return state
 
 class AutoLogin:
