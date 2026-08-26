@@ -48,7 +48,8 @@ def slim_storage_state(state):
     """精简 storage_state，只保留核心登录凭据"""
     if not isinstance(state, dict):
         return state
-    print(state)
+    # 使用 json.dumps 格式化打印整个字典结构
+    print(json.dumps(state, indent=2, ensure_ascii=False))
     if "cookies" in state:
         state["cookies"] = [
             c for c in state["cookies"] 
