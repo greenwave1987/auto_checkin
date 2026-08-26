@@ -492,7 +492,7 @@ def main():
 
     for account, proxy in zip(accounts, proxies):
         username = account['username']
-        if username != 'greenwave1987':
+        if username == 'you5102':
             continue
         print("\n" + "="*50)
         print(f"\n🚀 开始处理账号: {mask_name(username)}\n  🌐 使用代理: {proxy['server'][:-4]}***\n")
