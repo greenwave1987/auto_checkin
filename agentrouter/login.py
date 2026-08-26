@@ -61,7 +61,7 @@ def slim_storage_state(state):
         essential_keys = ["session", "user"]
         
         for o in state["origins"]:
-            if "agentrouter.org" in o.get("domain", "")
+            if "agentrouter.org" in o.get("domain", ""):
                 storage = o.get("localStorage", [])
                 slim_storage = [
                     item for item in storage 
