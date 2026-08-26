@@ -44,24 +44,29 @@ def get_notifier():
 def mask_name(name: str):
     return f"{name[:2]}***{name[-2:]}"
 
+import json
+
 def slim_storage_state(state):
     """精简 storage_state，只保留核心登录凭据"""
     if not isinstance(state, dict):
         return state
-    # 使用 json.dumps 格式化打印整个字典结构
-    #print(json.dumps(state, indent=2, ensure_ascii=False))
+
+    # 1. 过滤 Cookies
     if "cookies" in state:
         state["cookies"] = [
             c for c in state["cookies"] 
             if "agentrouter.org" in c.get("domain", "")
         ]
 
+    # 2. 过滤 localStorage (origins)
     if "origins" in state:
         new_origins = []
         essential_keys = ["session", "user"]
         
         for o in state["origins"]:
-            if "agentrouter.org" in o.get("domain", ""):
+            # 关键修复：Playwright 字段名是 origin (如 "https://agentrouter.org")
+            target_origin = o.get("origin", "")
+            if "agentrouter.org" in target_origin:
                 storage = o.get("localStorage", [])
                 slim_storage = [
                     item for item in storage 
@@ -71,7 +76,8 @@ def slim_storage_state(state):
                 new_origins.append(o)
         
         state["origins"] = new_origins
-    print(json.dumps(state, indent=2, ensure_ascii=False))
+
+    #print(json.dumps(state, indent=2, ensure_ascii=False))
     return state
 
 class AutoLogin:
