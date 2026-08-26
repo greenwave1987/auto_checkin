@@ -48,7 +48,7 @@ def slim_storage_state(state):
     """精简 storage_state，只保留核心登录凭据"""
     if not isinstance(state, dict):
         return state
-
+    print(state)
     if "cookies" in state:
         state["cookies"] = [
             c for c in state["cookies"] 
@@ -69,7 +69,7 @@ def slim_storage_state(state):
             new_origins.append(o)
         
         state["origins"] = new_origins
-    print(state)
+    
     return state
 
 class AutoLogin:
