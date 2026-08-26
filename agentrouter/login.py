@@ -11,7 +11,6 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 # ==================== 基准数据对接 ====================
 BASE_URL = "https://agentrouter.org"
-RENEW_DAYS = 120
 TIMEOUT = 15
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE_DIR)
@@ -70,7 +69,7 @@ def slim_storage_state(state):
             new_origins.append(o)
         
         state["origins"] = new_origins
-
+    print(state)
     return state
 
 class AutoLogin:
