@@ -122,11 +122,12 @@ class AutoLogin:
         return f
     
     def click(self, page, desc=""):
-        """增强版点击：监控请求/页面跳转/弹窗，防止无效点击"""
+        """增强版点击：兼容主页跳转、Popup弹窗与SPA异步路由"""
         self.log(f"🔍 尝试查找并点击: {desc}", "INFO")
+        
         try:
             page.wait_for_load_state("domcontentloaded", timeout=15000)
-            page.wait_for_timeout(2000)
+            page.wait_for_timeout(1000)
         except Exception:
             pass
     
@@ -145,37 +146,49 @@ class AutoLogin:
             for sel in selectors:
                 try:
                     el = frame.locator(sel).first
-                    if not el.is_visible(timeout=3000):
+                    if not el.is_visible(timeout=2000):
                         continue
                         
                     self.log(f"找到按钮: {sel}", "SUCCESS")
-                    time.sleep(random.uniform(0.5, 1.0))
+                    time.sleep(random.uniform(0.3, 0.6))
                     
                     try:
                         el.hover()
                     except Exception:
                         pass
-
+    
+                    # 同时监听 Popup 弹窗与页面导航事件
+                    with page.expect_popup(timeout=5000) as popup_info:
+                        try:
+                            # 使用 Playwright 原生物理点击（移除强行 expect_navigation 避免误触发超时）
+                            el.click(force=True, timeout=3000)
+                        except Exception:
+                            # 物理点击失败时降级使用 JS dispatchEvent
+                            el.dispatch_event('click')
+                    
+                    # 场景 1：成功捕获到 Popup 新窗口
+                    popup_page = popup_info.value
+                    self.log(f"✅ 检测到 OAuth 弹窗: {popup_page.url}", "SUCCESS")
+                    
+                    # 等待弹窗自动完成重定向（例如 GitHub 授权后自动关闭或跳转返回）
                     try:
-                        with page.expect_navigation(timeout=10000):
-                            el.click(force=True, timeout=5000)
-                        self.log(f"✅ 点击成功并成功触发页面导航跳转", "SUCCESS")
+                        popup_page.wait_for_load_state("networkidle", timeout=10000)
+                    except Exception:
+                        pass
+                    return True
+    
+                except PlaywrightTimeoutError:
+                    # 场景 2：未触发 Popup，检查主页面是否发生 URL 变更或导航
+                    try:
+                        page.wait_for_url(lambda u: "login" not in u.lower(), timeout=5000)
+                        self.log(f"✅ 主页面 URL 已变更: {page.url}", "SUCCESS")
                         return True
                     except PlaywrightTimeoutError:
-                        self.log("⚠️ 物理点击未触发 Navigation，尝试通过 dispatchEvent 发送 DOM 点击事件...", "WARN")
-                        
-                        try:
-                            with page.expect_popup(timeout=5000) as popup_info:
-                                el.dispatch_event('click')
-                            popup_page = popup_info.value
-                            self.log(f"✅ 检测到新窗口弹窗: {popup_page.url}", "SUCCESS")
+                        # 场景 3：DOM 事件后触发的延迟跳转/刷新
+                        time.sleep(2)
+                        if "login" not in page.url.lower():
+                            self.log(f"✅ 事件触发成功，当前 URL: {page.url}", "SUCCESS")
                             return True
-                        except PlaywrightTimeoutError:
-                            el.dispatch_event('click')
-                            time.sleep(3)
-                            if "login" not in page.url.lower():
-                                self.log(f"✅ 事件触发成功，当前 URL: {page.url}", "SUCCESS")
-                                return True
                             
                 except Exception as e:
                     self.log(f"{sel} 点击流程异常: {e}", "DEBUG")
