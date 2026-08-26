@@ -49,7 +49,7 @@ def slim_storage_state(state):
     if not isinstance(state, dict):
         return state
     # 使用 json.dumps 格式化打印整个字典结构
-    print(json.dumps(state, indent=2, ensure_ascii=False))
+    #print(json.dumps(state, indent=2, ensure_ascii=False))
     if "cookies" in state:
         state["cookies"] = [
             c for c in state["cookies"] 
@@ -58,16 +58,17 @@ def slim_storage_state(state):
 
     if "origins" in state:
         new_origins = []
-        essential_keys = ["session", "lastLoginUpdateTime", "i18nextLng"]
+        essential_keys = ["session", "user"]
         
         for o in state["origins"]:
-            storage = o.get("localStorage", [])
-            slim_storage = [
-                item for item in storage 
-                if item.get("name") in essential_keys
-            ]
-            o["localStorage"] = slim_storage
-            new_origins.append(o)
+            if "agentrouter.org" in o.get("domain", "")
+                storage = o.get("localStorage", [])
+                slim_storage = [
+                    item for item in storage 
+                    if item.get("name") in essential_keys
+                ]
+                o["localStorage"] = slim_storage
+                new_origins.append(o)
         
         state["origins"] = new_origins
     
