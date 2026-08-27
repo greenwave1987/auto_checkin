@@ -500,7 +500,9 @@ def main():
     gh_sessions = gh_secret.load() or {}
     
     secret = SecretUpdater("AGENTROUTER_LOCALS", config_reader=config)
-    ag_locals = secret.load() 
+    #ag_locals = secret.load()
+    print("⚠️ 注意: 不加载ag_locals，重新登陆才可获得奖励！")
+    ag_locals = {}
 
     if not accounts:
         print("❌ 错误: 未配置 LEAFLOW_ACCOUNTS")
