@@ -59,8 +59,12 @@ APP_HOST = "domain.stackryze.com"
 DEVICE_VERIFY_WAIT = 30  # Mobile验证 默认等 30 秒
 TWO_FACTOR_WAIT = int(os.environ.get("TWO_FACTOR_WAIT", "120"))  # 2FA验证 默认等 120 秒
 
-# Cloudflare 盾最长等待秒数（首次打开可能卡 "Performing security verification" 转圈很久）
-CF_WAIT = int(os.environ.get("CF_WAIT", "180"))
+# Cloudflare 盾最长等待秒数（卡 "Performing security verification" 转圈时耐心等）
+CF_WAIT = int(os.environ.get("CF_WAIT", "240"))
+
+# 是否无头运行：Actions 数据中心 IP 上 headless 过 CF 盾率低，
+# 建议 xvfb-run + HEADLESS=false（有头模式过盾快得多）
+HEADLESS = os.environ.get("HEADLESS", "true").lower() not in ("false", "0", "no")
 
 NOTIFY_TITLE = "stackryze 自动登录保活"
 
@@ -237,6 +241,8 @@ class AutoLogin:
     def click(self, page, desc="", selectors=None):
         """
         专用于 SPA / React 页面按钮（主页面 + 所有 iframe 全扫描）
+        ⚠️ 页面按钮带入场动画（opacity:0 → 1），不能用 wait_for(visible)，
+           改等 attached + force=True 强制点击
         """
         self.log(f"🔍 尝试查找并点击: {desc}", "INFO")
 
@@ -244,8 +250,9 @@ class AutoLogin:
         try:
             page.wait_for_load_state("domcontentloaded", timeout=15000)
             page.wait_for_timeout(2000)
-        except:
-            pass
+        except Exception as e:
+            self.log(f"• 页面未就绪: {e}", "DEBUG")
+            return False
 
         # 2️⃣ 收集主页面 + 所有 iframe
         frames = [page.main_frame]
@@ -261,6 +268,8 @@ class AutoLogin:
                 'button[type="button"]:has-text("GitHub")',
                 'button:has-text("GitHub")',
                 'a:has-text("GitHub")',
+                # text 引擎兜底（wait_cloudflare 实测能匹配到）
+                f'text="{SSO_BTN_TEXT}"',
                 # XPath 兜底
                 f'//span[normalize-space()="{SSO_BTN_TEXT}"]',
                 '//button[normalize-space()="GitHub"]',
@@ -270,13 +279,12 @@ class AutoLogin:
             for sel in selectors:
                 try:
                     el = frame.locator(sel).first
-                    el.wait_for(state="visible", timeout=2000)
+                    # 等元素挂载到 DOM（不要求可见，跳过动画影响）
+                    el.wait_for(state="attached", timeout=3000)
 
-                    # 模拟人类
+                    # 模拟人类：不用 hover（不可见元素 hover 会卡 actionability 等待）
                     time.sleep(random.uniform(0.5, 1.2))
-                    el.hover()
-                    time.sleep(random.uniform(0.2, 0.4))
-                    el.click(force=True)
+                    el.click(force=True)  # force 跳过可见性/稳定性检查
 
                     self.log(f"已点击: {desc}", "SUCCESS")
                     return True
@@ -284,6 +292,10 @@ class AutoLogin:
                 except PlaywrightTimeoutError:
                     self.log(f"• 尝试点击失败: {sel}", "DEBUG")
                 except Exception as e:
+                    if "closed" in str(e).lower():
+                        # 页面已关闭/崩溃，直接退出让上层重试
+                        self.log(f"• 页面已关闭，终止本轮点击: {e}", "WARN")
+                        return False
                     self.log(f"• 点击异常: {sel} -> {e}", "DEBUG")
 
         self.log(f"❌ 找不到按钮: {desc}", "ERROR")
