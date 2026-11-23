@@ -122,6 +122,14 @@ def slim_storage_state(state):
     return state
 
 
+class _DictConfig:
+    """dict 适配器：让 dt_info 这类 dict 也能传给需要 ConfigReader 的组件"""
+    def __init__(self, d):
+        self._d = d if isinstance(d, dict) else {}
+    def get_value(self, key):
+        return self._d.get(key)
+
+
 def build_proxy_config(proxy):
     """
     把代理配置统一转成 Playwright 的 proxy 参数
@@ -188,7 +196,12 @@ class AutoLogin:
             self.proxy_url = test_proxy(self.dt_proxy)
 
         self.notify = config.get('notify')
-        self.secret = SecretUpdater("GH_SESSION", config_reader=config)
+        # engine 版 SecretUpdater 要求 ConfigReader 对象（有 get_value）；
+        # dt_info 是 dict，需要包一层适配器
+        self.secret = SecretUpdater(
+            "GH_SESSION",
+            config_reader=config if hasattr(config, 'get_value') else _DictConfig(config)
+        )
         self.shots = []
         self.logs = []
         self.n = 0
