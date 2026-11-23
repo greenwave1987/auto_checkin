@@ -151,15 +151,24 @@ def build_proxy_config(proxy):
                 cfg["username"] = proxy["username"]
             if proxy.get("password"):
                 cfg["password"] = proxy["password"]
-            return cfg
-        # 字符串 DSN
-        dsn = proxy if "://" in proxy else "http://" + proxy
-        u = urlparse(dsn)
-        cfg = {"server": f"{u.scheme or 'http'}://{u.hostname}:{u.port or 80}"}
-        if u.username:
-            cfg["username"] = u.username
-        if u.password:
-            cfg["password"] = u.password
+        else:
+            # 字符串 DSN
+            dsn = proxy if "://" in proxy else "http://" + proxy
+            u = urlparse(dsn)
+            cfg = {"server": f"{u.scheme or 'http'}://{u.hostname}:{u.port or 80}"}
+            if u.username:
+                cfg["username"] = u.username
+            if u.password:
+                cfg["password"] = u.password
+
+        # ⚠️ Playwright 的 socks5 代理不支持账号密码认证（Chrome/Chromium 均会拒绝启动），
+        #    socks5 时强制剥离认证字段；需要认证请用 http 代理
+        if cfg["server"].lower().startswith("socks"):
+            for k in ("username", "password"):
+                if cfg.get(k):
+                    print(f"⚠️ socks5 代理不支持认证，已忽略 {k}")
+                cfg.pop(k, None)
+
         return cfg
     except Exception as e:
         print(f"⚠️ [build_proxy_config 异常] {e}")
