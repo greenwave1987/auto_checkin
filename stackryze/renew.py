@@ -140,10 +140,13 @@ def build_proxy_config(proxy):
     try:
         if isinstance(proxy, dict):
             server = proxy.get("server") or proxy.get("host") or ""
-            # 尊重代理类型：WZ_INFO 可能是 {'type': 'socks5', 'server': 'host', 'port': 1080}
-            ptype = proxy.get("type") or "http"
+            # ⚠️ 实测结论：WZ_INFO 里标 'socks5' 的代理，实际走的是 HTTP CONNECT 协议
+            #    （engine 的 requests 检测和 Playwright http:// 前缀都能通），
+            #    而真正的 socks5:// 会 ERR_SOCKS_CONNECTION_FAILED，
+            #    且 Playwright 的 socks5 不支持账密认证。
+            #    所以 dict 形式的代理一律按 http 代理处理（支持认证，兼容性最好）
             if server and "://" not in server:
-                server = f"{ptype}://{server}"
+                server = f"http://{server}"
             if server and proxy.get("port"):
                 server = f"{server}:{proxy['port']}"
             cfg = {"server": server}
@@ -162,11 +165,11 @@ def build_proxy_config(proxy):
                 cfg["password"] = u.password
 
         # ⚠️ Playwright 的 socks5 代理不支持账号密码认证（Chrome/Chromium 均会拒绝启动），
-        #    socks5 时强制剥离认证字段；需要认证请用 http 代理
+        #    字符串 DSN 明确写 socks5:// 时剥离认证字段并提示
         if cfg["server"].lower().startswith("socks"):
             for k in ("username", "password"):
                 if cfg.get(k):
-                    print(f"⚠️ socks5 代理不支持认证，已忽略 {k}")
+                    print(f"⚠️ socks5 代理不支持认证，已忽略 {k}；如需认证请改用 http 代理")
                 cfg.pop(k, None)
 
         return cfg
