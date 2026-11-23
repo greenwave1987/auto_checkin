@@ -140,8 +140,10 @@ def build_proxy_config(proxy):
     try:
         if isinstance(proxy, dict):
             server = proxy.get("server") or proxy.get("host") or ""
+            # 尊重代理类型：WZ_INFO 可能是 {'type': 'socks5', 'server': 'host', 'port': 1080}
+            ptype = proxy.get("type") or "http"
             if server and "://" not in server:
-                server = f"http://{server}"
+                server = f"{ptype}://{server}"
             if server and proxy.get("port"):
                 server = f"{server}:{proxy['port']}"
             cfg = {"server": server}
