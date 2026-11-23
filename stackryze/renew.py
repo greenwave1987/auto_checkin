@@ -59,8 +59,8 @@ APP_HOST = "domain.stackryze.com"
 DEVICE_VERIFY_WAIT = 30  # Mobile验证 默认等 30 秒
 TWO_FACTOR_WAIT = int(os.environ.get("TWO_FACTOR_WAIT", "120"))  # 2FA验证 默认等 120 秒
 
-# Cloudflare 盾最长等待秒数（真实 Chrome 一般 10s 内通过）
-CF_WAIT = int(os.environ.get("CF_WAIT", "90"))
+# Cloudflare 盾最长等待秒数（首次打开可能卡 "Performing security verification" 转圈很久）
+CF_WAIT = int(os.environ.get("CF_WAIT", "180"))
 
 NOTIFY_TITLE = "stackryze 自动登录保活"
 
@@ -404,6 +404,14 @@ class AutoLogin:
             time.sleep(1)
             if i % 15 == 0 and i:
                 self.log(f"  等待 Cloudflare/页面渲染... ({i}s)")
+            # 卡在 "Performing security verification" 转圈时，轻刷新重新触发验证
+            if i % 45 == 0 and i > 0:
+                try:
+                    page.reload(timeout=30000)
+                    page.wait_for_load_state('domcontentloaded', timeout=30000)
+                    self.log(f"  ({i}s) 仍在盾页，轻刷新重试", "INFO")
+                except:
+                    pass
         return False
 
     def wait_device(self, page):
