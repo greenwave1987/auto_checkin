@@ -196,12 +196,10 @@ class AutoLogin:
             self.proxy_url = test_proxy(self.dt_proxy)
 
         self.notify = config.get('notify')
-        # engine 版 SecretUpdater 要求 ConfigReader 对象（有 get_value）；
-        # dt_info 是 dict，需要包一层适配器
-        self.secret = SecretUpdater(
-            "GH_SESSION",
-            config_reader=config if hasattr(config, 'get_value') else _DictConfig(config)
-        )
+        # ⚠️ engine 版 SecretUpdater 需要全局 ConfigReader（内部会读 GH_INFO 等全局配置），
+        #    不能传账号级 dt_info dict
+        cr = config.get('config_reader')
+        self.secret = SecretUpdater("GH_SESSION", config_reader=cr) if cr else None
         self.shots = []
         self.logs = []
         self.n = 0
@@ -380,6 +378,10 @@ class AutoLogin:
             return
 
         self.log(f"新 Cookie: {value[:15]}...{value[-8:]}", "SUCCESS")
+
+        if self.secret is None:
+            self.log("SecretUpdater 不可用，跳过自动回写", "WARN")
+            return
 
         # 自动更新 Secret
         if self.secret.update('GH_SESSION', value):
@@ -1107,6 +1109,7 @@ def main():
         # dt_info['gh_password'] = account.get('password')
         dt_info['dt_proxy'] = proxy
         dt_info['notify'] = notify
+        dt_info['config_reader'] = config  # 全局 ConfigReader，供 AutoLogin 内 SecretUpdater 使用
         dt_info['wz_proxy'] = (proxies or [])[-1] if proxies else None
 
         if isinstance(gh_sessions, dict):
@@ -1156,6 +1159,8 @@ def main():
 
         except Exception as e:
             print(f"    ❌ 执行异常: {e}")
+            import traceback
+            traceback.print_exc()
             results.append(f"    ❌ 执行异常: {e}")
 
     # 写入
