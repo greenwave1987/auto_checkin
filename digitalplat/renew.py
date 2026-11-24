@@ -164,229 +164,67 @@ class AutoLogin:
     
     def click(self, page, desc=""):
         """
-        点击 DigitalPlat 的 GitHub 登录入口。
-        如果跳转到 GitHub Help landing 页面，则继续点击其中的
-        Sign in with GitHub 按钮，避免只停留在 help.github.com 页面。
+        专用于 Chakra UI / SPA / iframe 登录按钮
         """
         self.log(f"🔍 尝试查找并点击: {desc}", "INFO")
-
-        def click_help_github_button(target_page):
-            """点击 help.github.com/request/landing 页面中的 Sign in with GitHub。"""
-            self.log(f"检测到 GitHub Help 登录页面: {target_page.url}", "INFO")
-            try:
-                target_page.wait_for_load_state("domcontentloaded", timeout=15000)
-            except Exception:
-                pass
-
-            try:
-                target_page.wait_for_timeout(1500)
-            except Exception:
-                pass
-
-            # 优先按可访问名称定位真正的 button，而不是只点击内部 span。
-            candidates = [
-                target_page.get_by_role(
-                    "button",
-                    name=re.compile(r"^Sign in with GitHub$", re.I)
-                ),
-                target_page.locator(
-                    'button:has(span[data-component="text"])'
-                ).filter(has_text=re.compile(r"Sign in with GitHub", re.I)),
-                target_page.locator(
-                    'span[data-component="text"].prc-Button-Label-FWkx3'
-                ).filter(has_text=re.compile(r"Sign in with GitHub", re.I))
-            ]
-
-            for index, locator in enumerate(candidates):
-                try:
-                    locator.first.wait_for(state="visible", timeout=5000)
-                    button = locator.first
-
-                    # 第三个候选是 span，向上找到最近的 button 再点击。
-                    if index == 2:
-                        parent_button = button.locator("xpath=ancestor::button[1]")
-                        if parent_button.count() > 0:
-                            button = parent_button.first
-
-                    self.log(
-                        f"找到 GitHub Help 登录按钮，候选定位方式 {index + 1}",
-                        "SUCCESS"
-                    )
-                    self.shot(target_page, "GitHub_Help登录按钮")
-
-                    try:
-                        button.scroll_into_view_if_needed(timeout=5000)
-                    except Exception:
-                        pass
-
-                    try:
-                        button.click(timeout=15000)
-                    except Exception as click_error:
-                        self.log(
-                            f"普通点击失败，尝试备用点击: {click_error}",
-                            "WARN"
-                        )
-                        button.click(timeout=10000, force=True)
-
-                    self.log("已点击 Sign in with GitHub", "SUCCESS")
-
-                    # 兼容整页跳转、SPA 跳转和新标签页。
-                    old_url = target_page.url
-                    for wait_index in range(30):
-                        try:
-                            target_page.wait_for_timeout(1000)
-                        except Exception:
-                            time.sleep(1)
-
-                        if target_page.url != old_url:
-                            self.log(
-                                f"GitHub Help 登录按钮点击后 URL: {target_page.url}",
-                                "SUCCESS"
-                            )
-                            return True
-
-                        try:
-                            pages = target_page.context.pages
-                            for opened_page in pages:
-                                if opened_page is not target_page:
-                                    self.log(
-                                        f"检测到新打开的页面: {opened_page.url}",
-                                        "INFO"
-                                    )
-                                    if "github.com" in opened_page.url:
-                                        self.log(
-                                            "GitHub 登录页面已在新标签页打开",
-                                            "SUCCESS"
-                                        )
-                                        return True
-                        except Exception:
-                            pass
-
-                        if wait_index in (9, 19):
-                            self.log(
-                                f"等待 GitHub 登录跳转... ({wait_index + 1}/30秒)",
-                                "INFO"
-                            )
-
-                    self.log(
-                        f"点击后页面仍未跳转，当前 URL: {target_page.url}",
-                        "WARN"
-                    )
-                    self.shot(target_page, "GitHub_Help点击后未跳转")
-                    return True
-
-                except PlaywrightTimeoutError:
-                    continue
-                except Exception as e:
-                    self.log(f"GitHub Help 按钮定位/点击异常: {e}", "WARN")
-
-            self.log(
-                "未找到 Sign in with GitHub 按钮，请检查页面截图和 DOM",
-                "ERROR"
-            )
-            self.shot(target_page, "GitHub_Help未找到按钮")
-            return False
-
-        # 如果进入 click() 时已经位于 GitHub Help 页面，直接点击目标按钮。
-        if "help.github.com/request/landing" in page.url:
-            return click_help_github_button(page)
-
+    
+        # 1️⃣ 等页面真正稳定（比 networkidle 更可靠）
         try:
             page.wait_for_load_state("domcontentloaded", timeout=15000)
-            page.wait_for_timeout(1500)
-        except Exception:
+            page.wait_for_timeout(2000)
+        except:
             pass
-
-        # 主页面及 iframe 均进行检查，去重避免重复扫描主 frame。
-        frames = list(dict.fromkeys(page.frames))
-
+    
+        # 2️⃣ 收集主页面 + 所有 iframe
+        frames = [page.main_frame]
+        frames += page.frames
+    
         selectors = [
+            # 🚀 【新增最高优先级】针对当前系统的超精准 href 选择器，秒杀一切
             'a[href="/auth/login/github"]',
+            
+            # 原有的兜底规则
             'button:has-text("GitHub")',
             'a:has-text("GitHub")',
             '[data-provider="github"]',
+            
+            # Chakra Button
             'button.chakra-button',
+    
+            # 带 GitHub svg 的按钮
             'button:has(svg)',
+    
+            # XPath 兜底
             '//button[.//text()[contains(., "GitHub")]]',
             '//button[.//*[name()="svg"]]'
         ]
-
+    
         for frame in frames:
             for sel in selectors:
                 try:
                     el = frame.locator(sel).first
+    
+                    # 💡 注意：将最精准的前几条快速过一遍，建议降低单个规则的等待超时（从5s降到2s），提升整体扫描效率
                     el.wait_for(state="visible", timeout=2000)
-
-                    # 对于文本选择器，避免误点没有 GitHub 文本的普通按钮。
-                    if "github" in sel.lower() and sel not in (
-                        'a[href="/auth/login/github"]',
-                        '[data-provider="github"]'
-                    ):
-                        try:
-                            if "github" not in el.inner_text(timeout=1500).lower():
-                                continue
-                        except Exception:
-                            continue
-
-                    time.sleep(random.uniform(0.3, 0.7))
-                    try:
-                        el.scroll_into_view_if_needed(timeout=3000)
-                    except Exception:
-                        pass
-                    el.click(timeout=10000)
-
-                    self.log(f"已点击 DigitalPlat 登录入口: {desc}", "SUCCESS")
-
-                    # 点击后持续观察是否进入 GitHub Help landing 页面。
-                    # 不能点击后固定休眠 30~40 秒，否则会错过后续按钮处理时机。
-                    for wait_index in range(40):
-                        try:
-                            page.wait_for_timeout(1000)
-                        except Exception:
-                            time.sleep(1)
-
-                        if "help.github.com/request/landing" in page.url:
-                            self.log(
-                                "检测到跳转至 help.github.com/request/landing",
-                                "SUCCESS"
-                            )
-                            return click_help_github_button(page)
-
-                        if (
-                            "github.com/login" in page.url
-                            or "github.com/sessions/" in page.url
-                            or "digitalplat.org" in page.url
-                        ):
-                            if page.url.endswith("/auth/login"):
-                                continue
-                            self.log(f"登录入口跳转到: {page.url}", "INFO")
-                            return True
-
-                        if wait_index in (9, 19, 29):
-                            self.log(
-                                f"等待登录入口跳转... ({wait_index + 1}/40秒)",
-                                "INFO"
-                            )
-
-                    self.log(
-                        f"点击后等待跳转超时，当前 URL: {page.url}",
-                        "WARN"
-                    )
-                    self.shot(page, "GitHub入口点击后未跳转")
+    
+                    # 模拟人类
+                    time.sleep(random.uniform(0.5, 1.2))
+                    el.hover()
+                    time.sleep(random.uniform(0.2, 0.4))
+                    el.click(force=True)
+    
+                    self.log(f"已点击: {desc}", "SUCCESS")
+                    time.sleep(random.uniform(30, 40))
                     return True
-
+    
                 except PlaywrightTimeoutError:
-                    self.log(f"• 未找到可见元素: {sel}", "DEBUG")
+                    self.log(f"• 尝试点击失败: {sel}", "DEBUG")
                 except Exception as e:
                     self.log(f"• 点击异常: {sel} -> {e}", "DEBUG")
-
-        # 最后再直接检查 Help 页面按钮，兼容 URL 在扫描过程中发生变化的情况。
-        if "help.github.com/request/landing" in page.url:
-            return click_help_github_button(page)
-
+    
         self.log(f"❌ 找不到按钮: {desc}", "ERROR")
         return False
-
+        
     def get_digitalplat_cookies(self):
         """
         从 storage_state 中提取 domain 包含 digitalplat.org 的 cookies
@@ -1378,10 +1216,6 @@ class AutoLogin:
         # 去掉末尾斜杠
         #domain = domain.rstrip('/')
         self.log(f"检查网址: {domain}")
-        # GitHub Help 登录中转页：也需要执行登录按钮点击流程
-        if "help.github.com/request/landing" in domain:
-            return "signin"
-
         # 检查是否为 signin 页面
         if domain.endswith('digitalplat.org/auth/login'):
             return "signin"
@@ -1505,20 +1339,12 @@ class AutoLogin:
                         # 2. 精准等待 GitHub 登录按钮在页面上出现
                         self.log("正在等待 GitHub 登录按钮渲染...", "INFO")
                         try:
-                            if "help.github.com/request/landing" in page.url:
-                                # 此页面的按钮不是 DigitalPlat 的 /auth/login/github 链接
-                                page.get_by_role(
-                                    "button",
-                                    name=re.compile(r"^Sign in with GitHub$", re.I)
-                                ).wait_for(state="visible", timeout=15000)
-                                self.log("成功检测到 GitHub Help 的 Sign in with GitHub 按钮！", "SUCCESS")
-                            else:
-                                # 盯防 href 包含 /auth/login/github 的 a 标签
-                                github_btn_selector = 'a[href="/auth/login/github"]'
-                                page.wait_for_selector(github_btn_selector, timeout=60000, state="visible")
-                                self.log("成功检测到 GitHub 登录按钮！", "SUCCESS")
+                            # 盯防 href 包含 /auth/login/github 的 a 标签
+                            github_btn_selector = 'a[href="/auth/login/github"]'
+                            page.wait_for_selector(github_btn_selector, timeout=60000, state="visible")
+                            self.log("成功检测到 GitHub 登录按钮！", "SUCCESS")
                         except Exception as e:
-                            self.log(f"等待 GitHub 按钮超时或未显现！: {e}", "WARN")
+                            self.log(f"等待 GitHub 按钮超时或未显现！", "WARN")
                             self.log(page.url)
                             
                         resault=self.check_and_process_domain(page.url)
