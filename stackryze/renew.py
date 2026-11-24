@@ -10,13 +10,12 @@ import requests
 import datetime
 import subprocess
 from urllib.parse import quote
-
 from urllib.parse import urlparse
 from playwright.sync_api import sync_playwright
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 # ==================== 基准数据对接 ====================
-BASE_URL = "https://dashboard.digitalplat.org/_panel_api/api/domains"
+BASE_URL = "https://api-domains.stackryze.com/subdomains"
 RENEW_DAYS = 120
 TIMEOUT = 15
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -33,31 +32,24 @@ except ImportError:
         def load(self): return {}
 
 # ==================== 配置 ====================
-# 代理配置 (留空则不使用)
 PROXY_DSN = os.environ.get("PROXY_DSN", "").strip()
+BOARD_ENTRY_URL = "https://auth.stackryze.com/en/login"
 
-# 固定自己创建有APP的登录入口
-BOARD_ENTRY_URL = "https://dashboard.digitalplat.org/domains"
+DEVICE_VERIFY_WAIT = 30 
+TWO_FACTOR_WAIT = int(os.environ.get("TWO_FACTOR_WAIT", "120")) 
 
-DEVICE_VERIFY_WAIT = 30  # Mobile验证 默认等 30 秒
-TWO_FACTOR_WAIT = int(os.environ.get("TWO_FACTOR_WAIT", "120"))  # 2FA验证 默认等 120 秒
-
-# 初始化
 _notifier = None
 config = None
 
 def get_notifier():
     global _notifier, config
-    if config is None:
-        config = ConfigReader()
-    if _notifier is None:
-        _notifier = TelegramNotifier(config)
+    if config is None: config = ConfigReader()
+    if _notifier is None: _notifier = TelegramNotifier(config)
     return _notifier
 
 # ==================== 工具函数 ====================
 def mask_email(email: str):
-    if "@" not in email:
-        return "***"
+    if "@" not in email: return "***"
     name, domain = email.split("@", 1)
     return f"{name[:2]}***{name[-2:]}@{domain}"
 
@@ -71,36 +63,22 @@ def mask_password(pwd: str):
     return "*" * 6 + f"({len(pwd)})"
 
 def slim_storage_state(state):
-    """精简 storage_state，只保留核心登录凭据，防止超过 GitHub 64KB 限制"""
-    if not isinstance(state, dict):
-        return state
-
-    # 1. 精简 Cookies：只保留 .digitalplat.org 的
+    if not isinstance(state, dict): return state
     if "cookies" in state:
-        state["cookies"] = [
-            c for c in state["cookies"]
-            if "digitalplat.org" in c.get("domain", "")
-        ]
-
-    # 2. 精简 Origins：只保留核心 key，剔除没用的 UI 状态
+        state["cookies"] = [c for c in state["cookies"] if "stackryze.com" in c.get("domain", "")]
     if "origins" in state:
         new_origins = []
         essential_keys = ["session", "lastLoginUpdateTime", "i18nextLng"]
-
         for o in state["origins"]:
             storage = o.get("localStorage", [])
             slim_storage = [item for item in storage if item.get("name") in essential_keys]
             o["localStorage"] = slim_storage
             new_origins.append(o)
-
         state["origins"] = new_origins
-
     return state
 
 
 class AutoLogin:
-    """自动登录"""
-
     def __init__(self, config):
         self.host = urlparse(BOARD_ENTRY_URL).netloc
         self.gh_username = config.get('gh_username')
@@ -145,7 +123,8 @@ class AutoLogin:
         try:
             page.screenshot(path=f)
             self.shots.append(f)
-        except: pass
+        except:
+            pass
         return f
 
     def click(self, page, desc=""):
@@ -156,32 +135,77 @@ class AutoLogin:
             try:
                 target_page.wait_for_load_state("domcontentloaded", timeout=15000)
                 target_page.wait_for_timeout(1500)
-            except: pass
+            except Exception:
+                pass
 
             candidates = [
                 target_page.get_by_role("button", name=re.compile(r"^Sign in with GitHub$", re.I)),
                 target_page.locator('button:has(span[data-component="text"])').filter(has_text=re.compile(r"Sign in with GitHub", re.I)),
+                target_page.locator('span[data-component="text"].prc-Button-Label-FWkx3').filter(has_text=re.compile(r"Sign in with GitHub", re.I))
             ]
+
             for index, locator in enumerate(candidates):
                 try:
                     locator.first.wait_for(state="visible", timeout=5000)
                     button = locator.first
-                    try: button.scroll_into_view_if_needed(timeout=5000)
-                    except: pass
-                    try: button.click(timeout=15000)
-                    except: button.click(timeout=10000, force=True)
-                    
+
+                    if index == 2:
+                        parent_button = button.locator("xpath=ancestor::button[1]")
+                        if parent_button.count() > 0:
+                            button = parent_button.first
+
+                    self.log(f"找到 GitHub Help 登录按钮，候选定位方式 {index + 1}", "SUCCESS")
+                    self.shot(target_page, "GitHub_Help登录按钮")
+
+                    try:
+                        button.scroll_into_view_if_needed(timeout=5000)
+                    except Exception:
+                        pass
+
+                    try:
+                        button.click(timeout=15000)
+                    except Exception as click_error:
+                        self.log(f"普通点击失败，尝试备用点击: {click_error}", "WARN")
+                        button.click(timeout=10000, force=True)
+
                     self.log("已点击 Sign in with GitHub", "SUCCESS")
+
                     old_url = target_page.url
-                    for _ in range(15): 
-                        try: target_page.wait_for_timeout(1000)
-                        except: time.sleep(1)
-                        if target_page.url != old_url: return True
-                        for opened_page in target_page.context.pages:
-                            if opened_page is not target_page and "github.com" in opened_page.url: return True
+                    for wait_index in range(30):
+                        try:
+                            target_page.wait_for_timeout(1000)
+                        except Exception:
+                            time.sleep(1)
+
+                        if target_page.url != old_url:
+                            self.log(f"GitHub Help 登录按钮点击后 URL: {target_page.url}", "SUCCESS")
+                            return True
+
+                        try:
+                            pages = target_page.context.pages
+                            for opened_page in pages:
+                                if opened_page is not target_page:
+                                    self.log(f"检测到新打开的页面: {opened_page.url}", "INFO")
+                                    if "github.com" in opened_page.url:
+                                        self.log("GitHub 登录页面已在新标签页打开", "SUCCESS")
+                                        return True
+                        except Exception:
+                            pass
+
+                        if wait_index in (9, 19):
+                            self.log(f"等待 GitHub 登录跳转... ({wait_index + 1}/30秒)", "INFO")
+
+                    self.log(f"点击后页面仍未跳转，当前 URL: {target_page.url}", "WARN")
+                    self.shot(target_page, "GitHub_Help点击后未跳转")
                     return True
-                except PlaywrightTimeoutError: continue
-                except Exception: pass
+
+                except PlaywrightTimeoutError:
+                    continue
+                except Exception as e:
+                    self.log(f"GitHub Help 按钮定位/点击异常: {e}", "WARN")
+
+            self.log("未找到 Sign in with GitHub 按钮，请检查页面截图和 DOM", "ERROR")
+            self.shot(target_page, "GitHub_Help未找到按钮")
             return False
 
         if "help.github.com/request/landing" in page.url:
@@ -190,7 +214,8 @@ class AutoLogin:
         try:
             page.wait_for_load_state("domcontentloaded", timeout=15000)
             page.wait_for_timeout(1500)
-        except: pass
+        except Exception:
+            pass
 
         frames = list(dict.fromkeys(page.frames))
         selectors = [
@@ -212,42 +237,59 @@ class AutoLogin:
 
                     if "github" in sel.lower() and sel not in ('a[href="/auth/login/github"]', '[data-provider="github"]'):
                         try:
-                            if "github" not in el.inner_text(timeout=1500).lower(): continue
-                        except: continue
+                            if "github" not in el.inner_text(timeout=1500).lower():
+                                continue
+                        except Exception:
+                            continue
 
                     time.sleep(random.uniform(0.3, 0.7))
-                    try: el.scroll_into_view_if_needed(timeout=3000)
-                    except: pass
+                    try:
+                        el.scroll_into_view_if_needed(timeout=3000)
+                    except Exception:
+                        pass
                     el.click(timeout=10000)
 
-                    self.log(f"已点击 DigitalPlat 登录入口: {desc}", "SUCCESS")
+                    self.log(f"已点击 stackryze 登录入口: {desc}", "SUCCESS")
 
                     for wait_index in range(40):
-                        try: page.wait_for_timeout(1000)
-                        except: time.sleep(1)
+                        try:
+                            page.wait_for_timeout(1000)
+                        except Exception:
+                            time.sleep(1)
 
                         if "help.github.com/request/landing" in page.url:
+                            self.log("检测到跳转至 help.github.com/request/landing", "SUCCESS")
                             return click_help_github_button(page)
 
-                        if ("github.com/login" in page.url or "github.com/sessions/" in page.url or "digitalplat.org" in page.url):
+                        if ("github.com/login" in page.url or "github.com/sessions/" in page.url or "stackryze.com" in page.url):
                             if page.url.endswith("/auth/login"):
                                 continue
+                            self.log(f"登录入口跳转到: {page.url}", "INFO")
                             return True
+
+                        if wait_index in (9, 19, 29):
+                            self.log(f"等待登录入口跳转... ({wait_index + 1}/40秒)", "INFO")
+
+                    self.log(f"点击后等待跳转超时，当前 URL: {page.url}", "WARN")
+                    self.shot(page, "GitHub入口点击后未跳转")
                     return True
 
-                except PlaywrightTimeoutError: pass
-                except Exception: pass
+                except PlaywrightTimeoutError:
+                    self.log(f"• 未找到可见元素: {sel}", "DEBUG")
+                except Exception as e:
+                    self.log(f"• 点击异常: {sel} -> {e}", "DEBUG")
 
         if "help.github.com/request/landing" in page.url:
             return click_help_github_button(page)
 
+        self.log(f"❌ 找不到按钮: {desc}", "ERROR")
         return False
 
-    def get_digitalplat_cookies(self):
+    def get_stackryze_cookies(self):
         if not isinstance(self.dt_local, dict): return []
         cookies = self.dt_local.get("cookies", [])
         if not isinstance(cookies, list): return []
-        return [c for c in cookies if isinstance(c, dict) and "domain" in c and "digitalplat.org" in c["domain"]]
+        return [c for c in cookies if isinstance(c, dict) and "domain" in c and "stackryze.com" in c["domain"]]
 
     def parse_cookies(self, cookie_string):
         cookies = {}
@@ -274,13 +316,25 @@ class AutoLogin:
     def get_domains(self, cookies):
         try:
             response = requests.get(BASE_URL, headers=self.get_headers(cookies), cookies=cookies, timeout=TIMEOUT)
+            print("\n========== 获取域名列表 ==========")
+            print("HTTP:", response.status_code)
+            print("Response:", response.text)
             if not response.ok: return None
             try: data = response.json()
-            except ValueError: return None
-            if isinstance(data, dict): return data.get("domains", data.get("data", []))
-            elif isinstance(data, list): return data
-            return []
-        except requests.RequestException: return None
+            except ValueError as e:
+                print("❌ JSON 解析失败:", e)
+                return None
+            if isinstance(data, dict):
+                domains = data.get("domains", data.get("data", []))
+            elif isinstance(data, list):
+                domains = data
+            else:
+                domains = []
+            print(f"✅ 获取到 {len(domains)} 个域名")
+            return domains
+        except requests.RequestException as e:
+            print("❌ 获取域名请求失败:", e)
+            return None
 
     def get_days_left(self, expiry_str):
         if not expiry_str: return None
@@ -288,7 +342,9 @@ class AutoLogin:
             expiry_date = datetime.datetime.strptime(str(expiry_str), "%Y%m%d")
             today = datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
             return (expiry_date - today).days
-        except Exception: return None
+        except Exception as e:
+            print(f"❌ 日期解析失败: {expiry_str}, {e}")
+            return None
 
     def renew_domain(self, cookies, domain):
         encoded_domain = quote(str(domain), safe="")
@@ -296,14 +352,17 @@ class AutoLogin:
         payload = {"renewal_type": "free", "years": 1}
         try:
             response = requests.post(url, headers=self.get_headers(cookies, json=True), cookies=cookies, json=payload, timeout=TIMEOUT)
-            print(f"\n========== 续费 ==========\nDomain: {domain}\nHTTP: {response.status_code}\nResponse: {response.text}")
+            print("\n========== 续费 ==========")
+            print("Domain:", domain)
+            print("HTTP:", response.status_code)
+            print("Response:", response.text)
             if response.ok:
                 print(f"✅ {domain} 续费请求成功")
                 return True
             print(f"❌ {domain} 续费失败")
             return False
         except requests.RequestException as e:
-            print(f"❌ {domain} 续费请求异常: {e}")
+            print(f"❌ {domain} 续费请求异常:", e)
             return False
 
     def check_and_renew(self, cookies):
@@ -315,6 +374,10 @@ class AutoLogin:
         renew_success = 0
         renew_failed = 0
 
+        print("\n" + "=" * 70)
+        print("开始检查域名")
+        print("=" * 70)
+
         for item in domains:
             if isinstance(item, str):
                 domain = item
@@ -324,10 +387,14 @@ class AutoLogin:
                 expiry_str = item.get("expiry_date")
 
             if not domain: continue
-            if not expiry_str: continue
+            if not expiry_str:
+                return_msg += f"⚠️ {domain}: 没有找到 expiry_date\n"
+                continue
 
             days = self.get_days_left(expiry_str)
             if days is None: continue
+
+            print("域名:", domain, "| 剩余:", days, "天")
 
             if days < RENEW_DAYS:
                 return_msg += f"⚠️ {domain} 剩余 {days} 天，小于 {RENEW_DAYS} 天，正在续费...\n"
@@ -365,9 +432,9 @@ class AutoLogin:
                             "X-Requested-With": "XMLHttpRequest",
                             ...(xsrfToken && { "x-csrf-token": decodeURIComponent(xsrfToken) })
                         };
-                        const response = await fetch("https://dashboard.digitalplat.org/_panel_api/api/domains", {
+                        const response = await fetch("https://api-domains.stackryze.com/subdomains", {
                             headers: commonHeaders,
-                            referrer: "https://dashboard.digitalplat.org/domains",
+                            referrer: "https://domain.stackryze.com/",
                             method: "GET",
                             credentials: "include"
                         });
@@ -386,28 +453,19 @@ class AutoLogin:
                             const month = parseInt(expiryStr.substring(4, 6)) - 1;
                             const day = parseInt(expiryStr.substring(6, 8));
                             const expiryDate = new Date(year, month, day);
-                            const diffTime = expiryDate.getTime() - today.getTime();
-                            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                            const diffDays = Math.ceil((expiryDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 
                             if (diffDays < 120) {
                                 logResults.push(`${domainName}: 剩余 ${diffDays} 天 (< 120天)，正在触发续费...`);
-                                const renewRes = await fetch(`https://dashboard.digitalplat.org/_panel_api/api/domains/${domainName}/renew`, {
+                                const renewRes = await fetch(`https://api-domains.stackryze.com/subdomains/${domainName}/renew`, {
                                     headers: { ...commonHeaders, "content-type": "application/json" },
-                                    referrer: `https://dashboard.digitalplat.org/domains/${domainName}`,
+                                    referrer: `https://domain.stackryze.com/`,
                                     body: JSON.stringify({ "renewal_type": "free", "years": 1 }),
-                                    method: "POST", credentials: "include"
+                                    method: "POST",
+                                    credentials: "include"
                                 });
-                                if (renewRes.ok) {
-                                    try {
-                                        const renewData = await renewRes.json();
-                                        logResults.push(`${domainName}: ✅ 续费成功 → ${JSON.stringify(renewData)}`);
-                                    } catch {
-                                        logResults.push(`${domainName}: ✅ 续费请求成功发送`);
-                                    }
-                                } else {
-                                    const errText = await renewRes.text();
-                                    logResults.push(`${domainName}: ❌ 续费失败 [${renewRes.status}] → ${errText.substring(0, 200)}`);
-                                }
+                                if (renewRes.ok) logResults.push(`${domainName}: ✅ 续费成功`);
+                                else logResults.push(`${domainName}: ❌ 续费失败 [${renewRes.status}]`);
                             } else {
                                 logResults.push(`${domainName}: 剩余 ${diffDays} 天 (>= 120天)，无需续费`);
                             }
@@ -422,18 +480,22 @@ class AutoLogin:
                 for log_item in result_data.get("logs", []):
                     self.log(log_item, "INFO")
                     return_msg += log_item + "\n"
+                self.log("所有域名轮询检查完毕！", "SUCCESS")
+                return_msg += "✅ 所有域名轮询检查完毕！\n"
             else:
                 err_msg = result_data.get("error") if result_data else "未知错误"
+                self.log(f"执行轮询续费脚本失败: {err_msg}", "WARN")
                 return_msg += f"⚠️ 执行轮询续费脚本失败: {err_msg}\n"
         except Exception as e:
             return_msg += f"❌ 续费流程异常: {e}\n"
+        self.shot(page, "完成")
         return return_msg
 
     def wait_device(self, page):
         self.log(f"需要设备验证，等待 {DEVICE_VERIFY_WAIT} 秒...", "WARN")
         self.shot(page, "设备验证")
-        self.notify.send(title="digitalplat 自动登录保活", content=f"⚠️ <b>需要设备验证</b>\n请在 {DEVICE_VERIFY_WAIT} 秒内批准")
-        if self.shots: self.notify.send(title="digitalplat 自动登录保活", content="设备验证页面", image_path=self.shots[-1])
+        self.notify.send(title="stackryze 自动登录保活", content=f"⚠️ <b>需要设备验证</b>\n请在 {DEVICE_VERIFY_WAIT} 秒内批准")
+        if self.shots: self.notify.send(title="stackryze 自动登录保活", content="设备验证页面", image_path=self.shots[-1])
 
         for i in range(DEVICE_VERIFY_WAIT):
             time.sleep(1)
@@ -449,8 +511,8 @@ class AutoLogin:
     def wait_two_factor_mobile(self, page):
         self.log(f"需要两步验证（GitHub Mobile），等待 {TWO_FACTOR_WAIT} 秒...", "WARN")
         shot = self.shot(page, "两步验证_mobile")
-        self.notify.send(title="digitalplat 自动登录保活", content=f"⚠️ <b>需要两步验证</b>\n请打开手机 GitHub App 批准")
-        if shot: self.notify.send(title="digitalplat 自动登录保活", content="两步验证页面", image_path=shot)
+        self.notify.send(title="stackryze 自动登录保活", content=f"⚠️ <b>需要两步验证</b>\n请打开手机 GitHub App 批准")
+        if shot: self.notify.send(title="stackryze 自动登录保活", content="两步验证页面", image_path=shot)
 
         for i in range(TWO_FACTOR_WAIT):
             time.sleep(1)
@@ -500,7 +562,7 @@ class AutoLogin:
             shot = self.shot(page, "OAuth_授权页")
             if shot:
                 self.notify.send(
-                    title="digitalplat 自动登录保活", 
+                    title="stackryze 自动登录保活", 
                     content=f"⚠️ 进入 OAuth 授权页，正在尝试点击\n当前 URL: {page.url[:80]}...", 
                     image_path=shot
                 )
@@ -527,12 +589,12 @@ class AutoLogin:
                     self.log("⚠️ 点击授权后页面未跳转，可能未成功点击或页面卡住", "WARN")
                     shot = self.shot(page, "OAuth_点击后未跳转")
                     if shot:
-                        self.notify.send(title="digitalplat 异常", content="OAuth 点击后未跳转，请查看截图", image_path=shot)
+                        self.notify.send(title="stackryze 异常", content="OAuth 点击后未跳转，请查看截图", image_path=shot)
             else:
                 self.log("❌ 未找到 OAuth 授权按钮", "ERROR")
                 shot = self.shot(page, "OAuth_未找到按钮")
                 if shot:
-                    self.notify.send(title="digitalplat 异常", content="OAuth 页面未找到授权按钮，请查看截图", image_path=shot)
+                    self.notify.send(title="stackryze 异常", content="OAuth 页面未找到授权按钮，请查看截图", image_path=shot)
 
     def jclick(self, page, selectors, desc=""):
         for sel in selectors:
@@ -545,8 +607,68 @@ class AutoLogin:
             except: continue
         return False
 
+    def handle_select_account(self, page):
+        """专门处理 GitHub OAuth 的 select_account 页面"""
+        self.log("检测到 GitHub 账号选择/继续页面...", "STEP")
+        
+        shot = self.shot(page, "账号选择页面")
+        if shot:
+            self.notify.send(
+                title="stackryze 自动登录保活", 
+                content="检测到 GitHub 账号选择页，正在尝试自动点击 Continue", 
+                image_path=shot
+            )
+
+        try:
+            page.wait_for_timeout(3000)
+            
+            selectors = [
+                'input.btn.btn-sm.btn-primary.m-0[value="Continue"]',
+                'input[aria-label^="Continue as"]',
+                'button:has-text("Continue")',
+                'input[type="submit"][value*="Continue"]',
+                'button:has-text("Authorize")'
+            ]
+            
+            clicked = False
+            for sel in selectors:
+                try:
+                    el = page.locator(sel).first
+                    if el.is_visible(timeout=3000):
+                        try:
+                            el.click(timeout=5000)
+                        except:
+                            try:
+                                el.click(timeout=5000, force=True)
+                            except:
+                                page.evaluate(f"document.querySelector('{sel}').click()")
+                        
+                        self.log(f"已自动点击继续/授权按钮 (选择器: {sel})", "SUCCESS")
+                        clicked = True
+                        break
+                except: pass
+                
+            if clicked:
+                self.log("等待跳转到 OAuth 授权页...", "INFO")
+                old_url = page.url
+                for _ in range(15):
+                    try: page.wait_for_timeout(1000)
+                    except: time.sleep(1)
+                    if page.url != old_url:
+                        self.log(f"成功跳转: {page.url[:60]}...", "SUCCESS")
+                        return True
+                
+                self.log("⚠️ 点击后页面未跳转，可能需要重试", "WARN")
+                shot = self.shot(page, "select_account_点击后未跳转")
+                if shot:
+                    self.notify.send(title="stackryze 异常", content="账号选择页点击后未跳转，请查看截图", image_path=shot)
+                return False
+        except Exception as e:
+            self.log(f"处理账号选择页异常: {e}", "WARN")
+        return False
+
     def check_and_process_domain(self, domain):
-        self.log(f"检查网址: {domain}", "DEBUG")
+        self.log(f"检查网址状态: {domain}", "DEBUG")
         
         if "githubstatus.com" in domain or "github.com/features" in domain:
             return "invalid"
@@ -559,16 +681,16 @@ class AutoLogin:
         if "github.com/login/oauth/authorize" in domain:
             return "oauth"
             
-        if "digitalplat.org" in domain and "login" in domain: 
+        if "stackryze.com" in domain and "login" in domain: 
             return "signin"
             
         if "github.com/login" in domain or "github.com/sessions/" in domain: 
             return "github_login"
         
-        if "digitalplat.org" in domain and "callback" in domain: 
+        if "stackryze.com" in domain and "callback" in domain: 
             return "redirect"
         
-        if "digitalplat.org" in domain and "domains" in domain: 
+        if "stackryze.com" in domain and "my-domains" in domain: 
             return "logged"
         
         return "invalid"
@@ -583,6 +705,7 @@ class AutoLogin:
         if not self.gh_username: return False, None, "❌ 缺少凭据"
 
         with sync_playwright() as p:
+            # 完美融合你提供的 Chromium 配置
             launch_args = {
                 "headless": True,
                 "args": [
@@ -604,7 +727,6 @@ class AutoLogin:
                 }
 
             browser = p.chromium.launch(**launch_args)
-
             context = browser.new_context(
                 storage_state=self.dt_local if self.dt_local else None,
                 viewport={'width': 1920, 'height': 1080},
@@ -631,7 +753,7 @@ class AutoLogin:
                     ])
                     self.log("已加载 Session Cookie", "SUCCESS")
 
-                self.log("步骤1: 打开 digitalplat 登录页", "STEP")
+                self.log("步骤1: 打开 stackryze 登录页", "STEP")
 
                 for i in range(10):
                     try:
@@ -639,8 +761,8 @@ class AutoLogin:
                         page.wait_for_load_state('domcontentloaded', timeout=60000)
                         time.sleep(random.uniform(3, 6))
                         
-                        shot = self.shot(page, "打开 digitalplat 登录页")
-                        if shot: self.notify.send(title="digitalplat 自动登录保活", content="打开 digitalplat 登录页", image_path=shot)
+                        shot = self.shot(page, "打开 stackryze 登录页")
+                        if shot: self.notify.send(title="stackryze 自动登录保活", content="打开 stackryze 登录页", image_path=shot)
 
                         while True:
                             current_url = page.url
@@ -649,7 +771,7 @@ class AutoLogin:
                                 shot = self.shot(page, "URL变化")
                                 if shot:
                                     self.notify.send(
-                                        title="digitalplat 自动登录保活",
+                                        title="stackryze 自动登录保活",
                                         content=f"🌐 页面跳转啦！\n当前 URL: {current_url[:100]}...",
                                         image_path=shot
                                     )
@@ -668,16 +790,7 @@ class AutoLogin:
                                 break  
 
                             if resault == "select_account":
-                                # 处理 GitHub 账号选择页
-                                self.log("处理账号选择页...", "STEP")
-                                success = self.jclick(page, [
-                                    'input.btn.btn-sm.btn-primary.m-0[value="Continue"]',
-                                    'input[aria-label^="Continue as"]',
-                                    'button:has-text("Continue")',
-                                    'input[type="submit"][value*="Continue"]'
-                                ], "账号选择继续")
-                                if success:
-                                    time.sleep(3)
+                                self.handle_select_account(page)
                                 continue
 
                             if resault == "signin":
@@ -694,7 +807,7 @@ class AutoLogin:
                                 self.log(f"需要登录 GitHub: {page.url}", "INFO")
                                 if not self.login_github(page, context):
                                     shot = self.shot(page, "GitHub登录失败")
-                                    if shot: self.notify.send(title="digitalplat 登录异常", content="GitHub 登录失败", image_path=shot)
+                                    if shot: self.notify.send(title="stackryze 登录异常", content="GitHub 登录失败", image_path=shot)
                                     return False, None, "❌ GitHub 登录失败"
                                 self.oauth(page)  
                                 continue
@@ -702,7 +815,7 @@ class AutoLogin:
                             if resault == "redirect":
                                 self.log(f"正在等待回调重定向...", "INFO")
                                 try:
-                                    page.wait_for_url("https://*.digitalplat.org", timeout=30000)
+                                    page.wait_for_url("https://*.stackryze.com", timeout=30000)
                                 except PlaywrightTimeoutError:
                                     pass
                                 continue
@@ -728,11 +841,11 @@ class AutoLogin:
                 msg += self.get_balance_with_token(page)
                 
                 if self.shots:
-                    self.notify.send(title="digitalplat 自动登录保活", content=f"✅ {self.gh_username}成功！", image_path=self.shots[-1])
+                    self.notify.send(title="stackryze 自动登录保活", content=f"✅ {self.gh_username}成功！", image_path=self.shots[-1])
             except Exception as e:
                 self.log(f"异常: {e}", "ERROR")
                 self.shot(page, "异常")
-                if self.shots: self.notify.send(title="digitalplat 自动登录保活", content=f"❌ {self.gh_username}:{str(e)}", image_path=self.shots[-1])
+                if self.shots: self.notify.send(title="stackryze 自动登录保活", content=f"❌ {self.gh_username}:{str(e)}", image_path=self.shots[-1])
                 msg = f"异常: {e}"
             finally:
                 browser.close()
@@ -750,7 +863,7 @@ def main():
     notify = get_notifier()
     gh_secret = SecretUpdater("GH_SESSION", config_reader=config)
     gh_sessions = gh_secret.load() or {}
-    secret = SecretUpdater("DIGITALPLAT_LOCALS", config_reader=config)
+    secret = SecretUpdater("STACKRYZE_LOCALS", config_reader=config)
     dt_locals = secret.load()
     results = []
 
@@ -795,7 +908,7 @@ def main():
             results.append(f"    ❌ 执行异常: {e}\n")
             
     secret.update(dt_locals)
-    notify.send(title="digitalplat 自动登录保活汇总", content="\n".join(results))
+    notify.send(title="stackryze 自动登录保活汇总", content="\n".join(results))
 
 if __name__ == "__main__":
     main()
