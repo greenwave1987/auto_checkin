@@ -5,7 +5,9 @@ import os
 import json
 import time
 import base64
-import pyotp
+import hashlib
+import hmac
+import struct
 from pathlib import Path
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 from engine.main import ConfigReader, SecretUpdater
@@ -48,6 +50,34 @@ def update_secret():
     secret.update(json.dumps(sess_dict))
     print(f"✅ GH_SESSION 已更新: {list(sess_dict.keys())}", flush=True)
 
+def generate_totp(secret_text: str) -> str:
+    """
+    生成 GitHub 默认格式的 TOTP 验证码：
+    Base32 密钥、HMAC-SHA1、6 位数字、30 秒时间步长。
+    不调用 PyOTP 的 112 bit 长度校验，因此兼容 GitHub 提供的 16 位旧格式密钥。
+    """
+    normalized = "".join(str(secret_text).split()).replace("-", "").upper().rstrip("=")
+    if not normalized:
+        raise ValueError("未配置两步验证密钥")
+    padding = "=" * (-len(normalized) % 8)
+    try:
+        key = base64.b32decode(normalized + padding, casefold=True)
+    except Exception as e:
+        raise ValueError(f"两步验证密钥不是有效的 Base32 格式: {e}") from e
+    if not key:
+        raise ValueError("两步验证密钥解码后为空")
+    counter = int(time.time() // 30)
+    message = struct.pack(">Q", counter)
+    digest = hmac.new(key, message, hashlib.sha1).digest()
+    offset = digest[-1] & 0x0F
+    binary = (
+        ((digest[offset] & 0x7F) << 24)
+        | ((digest[offset + 1] & 0xFF) << 16)
+        | ((digest[offset + 2] & 0xFF) << 8)
+        | (digest[offset + 3] & 0xFF)
+    )
+    return str(binary % 1_000_000).zfill(6)
+
 # ================== 主流程 ==================
 def main():
     print("🔐 配置解密成功", flush=True)
@@ -60,6 +90,8 @@ def main():
             headless=True, 
             args=["--no-sandbox", "--disable-blink-features=AutomationControlled"]
         )
+
+        session_updated = False
 
         for idx, account in enumerate(gh_info):
             username = account["username"]
@@ -115,10 +147,13 @@ def main():
                         print("🔑 处理两步验证", flush=True)
                         otp_input = page.wait_for_selector(otp_selector, timeout=15000)
                         if totp_secret:
-                            code = pyotp.TOTP(totp_secret.replace(" ", "")).now()
+                            code = generate_totp(totp_secret)
+                            print("🔢 已生成两步验证码，正在提交", flush=True)
                             otp_input.fill(code)
                             page.keyboard.press("Enter")
                             time.sleep(5)
+                        else:
+                            raise ValueError("账号触发两步验证，但 GH_INFO 未配置 2fasecret")
                     
                     # 校验
                     page.goto(GITHUB_TEST_URL, timeout=30000)
@@ -144,8 +179,11 @@ def main():
             print(f"🧹 环境已清理，准备下一个账号...", flush=True)
             sep()
 
-        # 全部结束
-        update_secret()
+        # 仅在至少一个账号成功获取 Session 时回写，避免全部登录失败仍提示更新成功
+        if session_updated:
+            update_secret()
+        else:
+            print("⚠️ 本次没有成功获取任何 Session，跳过 GH_SESSION 回写", flush=True)
         browser.close()
 
 if __name__ == "__main__":
