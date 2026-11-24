@@ -265,7 +265,7 @@ class AutoLogin:
                     return True
                 try:
                     page.reload(timeout=10000)
-                    page.wait_for_load_state('domcontentloaded', timeout=10000) # 改为 domcontentloaded
+                    page.wait_for_load_state('domcontentloaded', timeout=10000)
                 except: pass
         return 'verified-device' not in page.url
 
@@ -303,7 +303,7 @@ class AutoLogin:
         except: return False
 
         time.sleep(3)
-        page.wait_for_load_state('domcontentloaded', timeout=30000) # 改掉极易超时的 networkidle
+        page.wait_for_load_state('domcontentloaded', timeout=30000)
         
         if 'verified-device' in page.url or 'device-verification' in page.url:
             if not self.wait_device(page): return False
@@ -318,17 +318,20 @@ class AutoLogin:
         return True
 
     def oauth(self, page):
-        """处理普通的 OAuth 授权页面（包括 authorize 和 authorize_app）"""
+        """处理 OAuth 授权页面（兼容 authorize_app 等）"""
         # 只要包含 oauth/authorize 即可
         if 'github.com/login/oauth/authorize' in page.url:
             self.log("处理 OAuth 授权页面...", "STEP")
             self.shot(page, "oauth_授权页")
+            
+            # 支持 button 和 input 类型的提交按钮
             success = self.jclick(page, [
                 'button[name="authorize"]', 
                 'button:has-text("Authorize")', 
                 'button:has-text("Continue")',
                 'input[type="submit"][value*="Continue"]',
-                'input[type="submit"][value*="Authorize"]'
+                'input[type="submit"][value*="Authorize"]',
+                'input[class*="btn-primary"][value*="Continue"]'  # 兼容你提供的类名
             ], "授权/继续")
             
             if success:
@@ -360,7 +363,6 @@ class AutoLogin:
             )
 
         try:
-            # 移除容易超时的 networkidle，改为直接等待 3 秒
             page.wait_for_timeout(3000)
             
             # 优先使用你提供的超长选择器（最精准），同时保留通用选择器作为备用
@@ -395,11 +397,10 @@ class AutoLogin:
     def check_and_process_domain(self, domain):
         self.log(f"检查网址状态: {domain}", "DEBUG")
         
-        # 拦截 GitHub 状态页（防止误点跳转）
+        # ★ 强制拦截 githubstatus，防止误点
         if "githubstatus.com" in domain:
             return "invalid"
             
-        # 兼容 select_account
         if "github.com/login/oauth/select_account" in domain:
             return "select_account"
             
@@ -412,7 +413,7 @@ class AutoLogin:
         if "github.com/login" in domain or "github.com/sessions/" in domain: 
             return "github_login"
         
-        # ★ 修复：同时兼容 authorize 和 authorize_app
+        # ★ 同时兼容 authorize 和 authorize_app
         if "github.com/login/oauth/authorize" in domain:
             return "oauth"
         
@@ -490,8 +491,9 @@ class AutoLogin:
                             self.log(f"检测结果: {resault}", "INFO")
 
                             if resault == "invalid":
-                                self.log(f"当前处于未知页面，等待 3 秒...", "WARN")
-                                time.sleep(3)
+                                self.log(f"当前处于未知页面或错误页，重新导航...", "WARN")
+                                time.sleep(2)
+                                # 强制打破 while，让 for 循环重新 goto
                                 break  
 
                             if resault == "logged":
