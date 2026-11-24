@@ -38,7 +38,7 @@ except ImportError:
 PROXY_DSN = os.environ.get("PROXY_DSN", "").strip()
 
 # 固定自己创建有APP的登录入口
-BOARD_ENTRY_URL = "https://domain.stackryze.com/login"
+BOARD_ENTRY_URL = "https://auth.stackryze.com/en/login"
 
 DEVICE_VERIFY_WAIT = 30  # Mobile验证 默认等 30 秒
 TWO_FACTOR_WAIT = int(os.environ.get("TWO_FACTOR_WAIT", "120"))  # 2FA验证 默认等 120 秒
