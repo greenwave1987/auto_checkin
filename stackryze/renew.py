@@ -30,7 +30,6 @@ except ImportError:
 
 # ==================== 配置 ====================
 PROXY_DSN = os.environ.get("PROXY_DSN", "").strip()
-# 新版登录入口
 BOARD_ENTRY_URL = "https://auth.stackryze.com/en/login"
 
 DEVICE_VERIFY_WAIT = 30 
@@ -46,19 +45,10 @@ def get_notifier():
     return _notifier
 
 # ==================== 工具函数 ====================
-def mask_email(email: str):
-    if "@" not in email: return "***"
-    name, domain = email.split("@", 1)
-    return f"{name[:2]}***{name[-2:]}@{domain}"
-
 def mask_name(name: str):
     return f"{name[:2]}***{name[-2:]}" if name else "***"
 
-def mask_password(pwd: str):
-    return "*" * 6 + f"({len(pwd)})"
-
 def slim_storage_state(state):
-    """精简 storage_state，防止超过 GitHub 64KB 限制"""
     if not isinstance(state, dict): return state
     if "cookies" in state:
         state["cookies"] = [c for c in state["cookies"] if "stackryze.com" in c.get("domain", "")]
@@ -73,7 +63,6 @@ def slim_storage_state(state):
         state["origins"] = new_origins
     return state
 
-
 class AutoLogin:
     def __init__(self, config):
         self.host = urlparse(BOARD_ENTRY_URL).netloc
@@ -81,13 +70,9 @@ class AutoLogin:
         self.password = config.get('gh_password') or config.get('password')
         
         gh_sess = config.get('gh_session', '')
-        if isinstance(gh_sess, str): self.gh_session = gh_sess.strip()
-        elif isinstance(gh_sess, list): self.gh_session = gh_sess[0] if gh_sess else ''
-        else: self.gh_session = ''
-
+        self.gh_session = gh_sess.strip() if isinstance(gh_sess, str) else (gh_sess[0] if isinstance(gh_sess, list) and gh_sess else '')
         dt_local_val = config.get('dt_local', '')
-        if isinstance(dt_local_val, str): self.dt_local = dt_local_val.strip()
-        else: self.dt_local = dt_local_val
+        self.dt_local = dt_local_val.strip() if isinstance(dt_local_val, str) else dt_local_val
 
         self.dt_proxy = config.get('dt_proxy', '').strip() if isinstance(config.get('dt_proxy', ''), str) else config.get('dt_proxy')
         self.proxy_url = test_proxy(self.dt_proxy)
@@ -97,14 +82,11 @@ class AutoLogin:
 
         self.notify = config.get('notify')
         self.shots = []
-        self.logs = []
         self.n = 0
 
     def log(self, msg, level="INFO"):
         icons = {"INFO": "ℹ️", "SUCCESS": "✅", "ERROR": "❌", "WARN": "⚠️", "STEP": "🔹", "DEBUG": "•"}
-        line = f"{icons.get(level, '•')} {msg}"
-        print(line, flush=True)
-        self.logs.append(line)
+        print(f"{icons.get(level, '•')} {msg}", flush=True)
 
     def shot(self, page, name):
         self.n += 1
@@ -140,7 +122,7 @@ class AutoLogin:
                     
                     self.log("已点击 Sign in with GitHub", "SUCCESS")
                     old_url = target_page.url
-                    for _ in range(30):
+                    for _ in range(15): # 这里稍微缩短等待，让主循环去接管
                         try: target_page.wait_for_timeout(1000)
                         except: time.sleep(1)
                         if target_page.url != old_url: return True
@@ -151,7 +133,8 @@ class AutoLogin:
                 except Exception: pass
             return False
 
-        if "help.github.com/request/landing" in page.url:
+        # 只要包含了 help.github.com 就去点 Help 按钮
+        if "help.github.com" in page.url:
             return click_help_github_button(page)
 
         try:
@@ -175,7 +158,6 @@ class AutoLogin:
                     el = frame.locator(sel).first
                     el.wait_for(state="visible", timeout=2000)
                     
-                    # 简单的防误触逻辑
                     if "github" in sel.lower() and "data-provider" not in sel:
                         try:
                             if "github" not in el.inner_text(timeout=1500).lower(): continue
@@ -188,8 +170,8 @@ class AutoLogin:
                     el.click(timeout=10000)
                     self.log(f"已点击 stackryze 登录入口: {desc}", "SUCCESS")
 
-                    # 点击后等待页面变化，最多等 10 秒
-                    for _ in range(10):
+                    # 点击后，给页面一点时间跳转，最多 5 秒，不卡死主循环
+                    for _ in range(5):
                         try: page.wait_for_timeout(1000)
                         except: time.sleep(1)
                         if page.url != BOARD_ENTRY_URL and "github.com" in page.url:
@@ -200,27 +182,7 @@ class AutoLogin:
                 except PlaywrightTimeoutError: pass
                 except Exception: pass
 
-        if "help.github.com/request/landing" in page.url:
-            return click_help_github_button(page)
-
         return False
-
-    def parse_cookies(self, cookie_string):
-        cookies = {}
-        for item in cookie_string.split(";"):
-            item = item.strip()
-            if "=" not in item: continue
-            key, value = item.split("=", 1)
-            cookies[key.strip()] = value.strip()
-        return cookies
-
-    def get_days_left(self, expiry_str):
-        if not expiry_str: return None
-        try:
-            expiry_date = datetime.datetime.strptime(str(expiry_str), "%Y%m%d")
-            today = datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-            return (expiry_date - today).days
-        except: return None
 
     def get_balance_with_token(self, page):
         self.log("开始执行保活与自动续费检查...", "STEP")
@@ -332,8 +294,7 @@ class AutoLogin:
         self.log("登录 GitHub...", "STEP")
         self.shot(page, "github_登录页")
 
-        if not getattr(self, 'password', None):
-            return False
+        if not getattr(self, 'password', None): return False
 
         try:
             page.locator('input[name="login"]').click()
@@ -359,11 +320,9 @@ class AutoLogin:
         return True
 
     def oauth(self, page):
-        """★ 修复：处理新版 GitHub 授权页面（点击 Continue 按钮）"""
         if 'github.com/login/oauth/authorize' in page.url:
             self.log("处理 OAuth 授权...", "STEP")
             self.shot(page, "oauth_授权页")
-            # 兼容旧版的 Authorize 和新版的 Continue
             success = self.jclick(page, [
                 'button[name="authorize"]', 
                 'button:has-text("Authorize")', 
@@ -388,29 +347,24 @@ class AutoLogin:
         return False
 
     def check_and_process_domain(self, domain):
-        """★ 修复：重新定义网址状态，彻底解决死循环"""
         self.log(f"检查网址状态: {domain}", "DEBUG")
         
-        if "help.github.com/request/landing" in domain: 
+        # ★ 修复：只要有 help.github.com 就视为需要进一步点击
+        if "help.github.com" in domain: 
             return "signin"
         
-        # 新版登录页判定
         if "stackryze.com" in domain and "login" in domain: 
             return "signin"
         
-        # GitHub 登录
         if "github.com/login" in domain or "github.com/sessions/" in domain: 
             return "github_login"
         
-        # OAuth 授权页
         if "github.com/login/oauth/authorize" in domain:
             return "oauth"
         
-        # 回调重定向
         if "stackryze.com" in domain and "callback" in domain: 
             return "redirect"
         
-        # 登录成功
         if "stackryze.com" in domain and "my-domains" in domain: 
             return "logged"
         
@@ -477,7 +431,6 @@ class AutoLogin:
                         shot = self.shot(page, "打开 stackryze 登录页")
                         if shot: self.notify.send(title="stackryze 自动登录保活", content="打开 stackryze 登录页", image_path=shot)
 
-                        # 核心跳转逻辑
                         while True:
                             resault = self.check_and_process_domain(page.url)
                             self.log(f"检测结果: {resault}", "INFO")
@@ -485,20 +438,19 @@ class AutoLogin:
                             if resault == "invalid":
                                 self.log(f"当前处于未知页面，等待 3 秒...", "WARN")
                                 time.sleep(3)
-                                break  # 打断内循环，重新从 goto 开始
+                                break  
 
                             if resault == "logged":
                                 self.log(f"已登录: {page.url}", "SUCCESS")
-                                break  # 彻底跳出
+                                break  
 
                             if resault == "signin":
                                 if not self.click(page, desc="GitHub 登录按钮"):
-                                    self.log("未找到登录按钮，可能页面未加载完", "WARN")
+                                    self.log("未找到登录按钮，稍后重试", "WARN")
                                     time.sleep(3)
                                 continue
 
                             if resault == "oauth":
-                                # ★ 遇到授权页直接点击
                                 self.oauth(page)
                                 continue
 
@@ -508,7 +460,7 @@ class AutoLogin:
                                     shot = self.shot(page, "GitHub登录失败")
                                     if shot: self.notify.send(title="stackryze 登录异常", content="GitHub 登录失败", image_path=shot)
                                     return False, None, "❌ GitHub 登录失败"
-                                self.oauth(page)  # 登录完成后立刻处理授权页
+                                self.oauth(page)  
                                 continue
 
                             if resault == "redirect":
@@ -519,10 +471,8 @@ class AutoLogin:
                                     pass
                                 continue
                                 
-                            # 防卡死
                             time.sleep(1)
                             
-                        # 如果已经 logged，退出外层的 for 循环
                         if self.check_and_process_domain(page.url) == "logged":
                             break
 
