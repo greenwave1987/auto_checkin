@@ -122,7 +122,7 @@ class AutoLogin:
                     
                     self.log("已点击 Sign in with GitHub", "SUCCESS")
                     old_url = target_page.url
-                    for _ in range(15): # 这里稍微缩短等待，让主循环去接管
+                    for _ in range(15): 
                         try: target_page.wait_for_timeout(1000)
                         except: time.sleep(1)
                         if target_page.url != old_url: return True
@@ -133,7 +133,6 @@ class AutoLogin:
                 except Exception: pass
             return False
 
-        # 只要包含了 help.github.com 就去点 Help 按钮
         if "help.github.com" in page.url:
             return click_help_github_button(page)
 
@@ -170,7 +169,6 @@ class AutoLogin:
                     el.click(timeout=10000)
                     self.log(f"已点击 stackryze 登录入口: {desc}", "SUCCESS")
 
-                    # 点击后，给页面一点时间跳转，最多 5 秒，不卡死主循环
                     for _ in range(5):
                         try: page.wait_for_timeout(1000)
                         except: time.sleep(1)
@@ -320,6 +318,7 @@ class AutoLogin:
         return True
 
     def oauth(self, page):
+        """处理普通的 OAuth 授权页面"""
         if 'github.com/login/oauth/authorize' in page.url:
             self.log("处理 OAuth 授权...", "STEP")
             self.shot(page, "oauth_授权页")
@@ -346,10 +345,49 @@ class AutoLogin:
             except: continue
         return False
 
+    def handle_select_account(self, page):
+        """★ 专门处理 GitHub OAuth 的 select_account 页面"""
+        self.log("检测到 GitHub 账号选择/继续页面...", "STEP")
+        
+        shot = self.shot(page, "账号选择页面")
+        if shot:
+            self.notify.send(
+                title="stackryze 自动登录保活", 
+                content="检测到 GitHub 账号选择页，正在尝试自动点击 Continue", 
+                image_path=shot
+            )
+
+        try:
+            page.wait_for_load_state("domcontentloaded", timeout=10000)
+            # 兼容你提供的 input 和普通 button
+            selectors = [
+                'input.btn.btn-sm.btn-primary[value="Continue"]',
+                'button:has-text("Continue")',
+                'input[type="submit"][value*="Continue"]',
+                'button:has-text("Authorize")'
+            ]
+            for sel in selectors:
+                try:
+                    el = page.locator(sel).first
+                    if el.is_visible(timeout=3000):
+                        el.click()
+                        self.log("已自动点击继续/授权按钮", "SUCCESS")
+                        time.sleep(3)
+                        try: page.wait_for_load_state('networkidle', timeout=15000)
+                        except: pass
+                        return True
+                except: pass
+        except Exception as e:
+            self.log(f"处理账号选择页异常: {e}", "WARN")
+        return False
+
     def check_and_process_domain(self, domain):
         self.log(f"检查网址状态: {domain}", "DEBUG")
         
-        # ★ 修复：只要有 help.github.com 就视为需要进一步点击
+        # 拦截 GitHub 的账号选择页 (带 select_account)
+        if "github.com/login/oauth/select_account" in domain:
+            return "select_account"
+            
         if "help.github.com" in domain: 
             return "signin"
         
@@ -443,6 +481,10 @@ class AutoLogin:
                             if resault == "logged":
                                 self.log(f"已登录: {page.url}", "SUCCESS")
                                 break  
+
+                            if resault == "select_account":
+                                self.handle_select_account(page)
+                                continue
 
                             if resault == "signin":
                                 if not self.click(page, desc="GitHub 登录按钮"):
