@@ -101,48 +101,11 @@ class AutoLogin:
     def click(self, page, desc=""):
         self.log(f"🔍 尝试查找并点击: {desc}", "INFO")
 
-        def click_help_github_button(target_page):
-            self.log(f"检测到 GitHub Help 登录页面: {target_page.url}", "INFO")
-            try:
-                target_page.wait_for_load_state("domcontentloaded", timeout=15000)
-                target_page.wait_for_timeout(1500)
-            except: pass
-
-            candidates = [
-                target_page.get_by_role("button", name=re.compile(r"^Sign in with GitHub$", re.I)),
-                target_page.locator('button:has(span[data-component="text"])').filter(has_text=re.compile(r"Sign in with GitHub", re.I)),
-            ]
-            for index, locator in enumerate(candidates):
-                try:
-                    locator.first.wait_for(state="visible", timeout=5000)
-                    button = locator.first
-                    try: button.scroll_into_view_if_needed(timeout=5000)
-                    except: pass
-                    try: button.click(timeout=15000)
-                    except: button.click(timeout=10000, force=True)
-                    
-                    self.log("已点击 Sign in with GitHub", "SUCCESS")
-                    old_url = target_page.url
-                    for _ in range(15): 
-                        try: target_page.wait_for_timeout(1000)
-                        except: time.sleep(1)
-                        if target_page.url != old_url: return True
-                        for opened_page in target_page.context.pages:
-                            if opened_page is not target_page and "github.com" in opened_page.url: return True
-                    return True
-                except PlaywrightTimeoutError: continue
-                except Exception: pass
-            return False
-
-        if "github.com" in page.url:
-            return False
-
         try:
-            page.wait_for_load_state("domcontentloaded", timeout=15000)
-            page.wait_for_timeout(1500)
+            page.wait_for_load_state("domcontentloaded", timeout=10000)
+            page.wait_for_timeout(1000)
         except: pass
 
-        frames = list(dict.fromkeys(page.frames))
         selectors = [
             'a[href="/auth/login/github"]', 
             'button:has-text("GitHub")', 
@@ -152,34 +115,32 @@ class AutoLogin:
             'button:has-text("GitHub Login")'
         ]
 
-        for frame in frames:
-            for sel in selectors:
-                try:
-                    el = frame.locator(sel).first
-                    el.wait_for(state="visible", timeout=2000)
-                    
-                    if "github" in sel.lower() and "data-provider" not in sel:
-                        try:
-                            if "github" not in el.inner_text(timeout=1500).lower(): continue
-                        except: continue
+        for sel in selectors:
+            try:
+                el = page.locator(sel).first
+                el.wait_for(state="visible", timeout=2000)
+                
+                if "github" in sel.lower() and "data-provider" not in sel:
+                    try:
+                        if "github" not in el.inner_text(timeout=1500).lower(): continue
+                    except: continue
 
-                    time.sleep(random.uniform(0.3, 0.7))
-                    try: el.scroll_into_view_if_needed(timeout=3000)
-                    except: pass
-                    
-                    el.click(timeout=10000)
-                    self.log(f"已点击 stackryze 登录入口: {desc}", "SUCCESS")
+                time.sleep(random.uniform(0.3, 0.7))
+                try: el.scroll_into_view_if_needed(timeout=3000)
+                except: pass
+                
+                el.click(timeout=10000)
+                self.log(f"已点击 stackryze 登录入口: {desc}", "SUCCESS")
 
-                    for _ in range(5):
-                        try: page.wait_for_timeout(1000)
-                        except: time.sleep(1)
-                        if page.url != BOARD_ENTRY_URL and "github.com" in page.url:
-                            return True
-                        if "stackryze.com" in page.url and "login" not in page.url:
-                            return True
-                    return True
-                except PlaywrightTimeoutError: pass
-                except Exception: pass
+                for _ in range(10):
+                    try: page.wait_for_timeout(1000)
+                    except: time.sleep(1)
+                    if page.url != BOARD_ENTRY_URL:
+                        self.log("检测到页面已跳转", "SUCCESS")
+                        return True
+                return True
+            except PlaywrightTimeoutError: pass
+            except Exception: pass
 
         return False
 
@@ -319,6 +280,7 @@ class AutoLogin:
         return True
 
     def oauth(self, page):
+        """处理 OAuth 授权页面（包含 authorize 和 authorize_app）"""
         if 'github.com/login/oauth/authorize' in page.url:
             self.log("处理 OAuth 授权页面...", "STEP")
             
@@ -330,6 +292,7 @@ class AutoLogin:
                     image_path=shot
                 )
 
+            # 首先尝试真实点击
             success = self.jclick(page, [
                 'button[name="authorize"]', 
                 'button:has-text("Authorize")', 
@@ -349,12 +312,12 @@ class AutoLogin:
                         self.log(f"页面已跳转: {page.url[:60]}...", "SUCCESS")
                         break
                 else:
-                    self.log("⚠️ 点击授权后页面未跳转，可能未成功点击或页面卡住", "WARN")
+                    self.log("⚠️ 点击授权后页面未跳转", "WARN")
                     shot = self.shot(page, "OAuth_点击后未跳转")
                     if shot:
                         self.notify.send(title="stackryze 异常", content="OAuth 点击后未跳转，请查看截图", image_path=shot)
             else:
-                self.log("❌ 未找到 OAuth 授权按钮", "ERROR")
+                self.log("❌ 页面上未找到 OAuth 授权按钮（可能触发了 GitHub 的 What 错误页）", "ERROR")
                 shot = self.shot(page, "OAuth_未找到按钮")
                 if shot:
                     self.notify.send(title="stackryze 异常", content="OAuth 页面未找到授权按钮，请查看截图", image_path=shot)
@@ -385,7 +348,6 @@ class AutoLogin:
         try:
             page.wait_for_timeout(3000)
             
-            # 使用你提供的准确选择器，并加上备用
             selectors = [
                 'input.btn.btn-sm.btn-primary.m-0[value="Continue"]',
                 'input[aria-label^="Continue as"]',
@@ -399,15 +361,12 @@ class AutoLogin:
                 try:
                     el = page.locator(sel).first
                     if el.is_visible(timeout=3000):
-                        # 先尝试普通点击
                         try:
                             el.click(timeout=5000)
                         except:
-                            # 如果普通点击失败，用 force
                             try:
                                 el.click(timeout=5000, force=True)
                             except:
-                                # 最后用 JS 直接触发
                                 page.evaluate(f"document.querySelector('{sel}').click()")
                         
                         self.log(f"已自动点击继续/授权按钮 (选择器: {sel})", "SUCCESS")
@@ -417,7 +376,6 @@ class AutoLogin:
                 
             if clicked:
                 self.log("等待跳转到 OAuth 授权页...", "INFO")
-                # 等待 URL 发生变化，最长等 15 秒
                 old_url = page.url
                 for _ in range(15):
                     try: page.wait_for_timeout(1000)
