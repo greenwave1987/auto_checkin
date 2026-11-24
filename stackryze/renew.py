@@ -1394,7 +1394,7 @@ class AutoLogin:
             return "signin"
 
         # stackryze 自己的 signin 页
-        if domain.endswith('domain.stackryze.com/login'):
+        if domain.endswith('stackryze.com/en/login'):
             return "signin"
 
         # ★ GitHub 登录页 / 授权 / 会话页：说明 gh_session 无效，需要真正登录 GitHub
