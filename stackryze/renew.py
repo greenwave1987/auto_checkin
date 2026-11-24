@@ -133,8 +133,9 @@ class AutoLogin:
                 except Exception: pass
             return False
 
-        if "help.github.com" in page.url:
-            return click_help_github_button(page)
+        # 如果当前已经是 GitHub 相关的页面，绝对不要进点击逻辑
+        if "github.com" in page.url:
+            return False
 
         try:
             page.wait_for_load_state("domcontentloaded", timeout=15000)
@@ -318,20 +319,19 @@ class AutoLogin:
         return True
 
     def oauth(self, page):
-        """处理 OAuth 授权页面（兼容 authorize_app 等）"""
-        # 只要包含 oauth/authorize 即可
+        """处理 OAuth 授权页面（包含 authorize 和 authorize_app）"""
         if 'github.com/login/oauth/authorize' in page.url:
             self.log("处理 OAuth 授权页面...", "STEP")
             self.shot(page, "oauth_授权页")
             
-            # 支持 button 和 input 类型的提交按钮
+            # 兼容 input 和 button 的各类组合
             success = self.jclick(page, [
                 'button[name="authorize"]', 
                 'button:has-text("Authorize")', 
                 'button:has-text("Continue")',
                 'input[type="submit"][value*="Continue"]',
                 'input[type="submit"][value*="Authorize"]',
-                'input[class*="btn-primary"][value*="Continue"]'  # 兼容你提供的类名
+                'input[class*="btn-primary"][value*="Continue"]'
             ], "授权/继续")
             
             if success:
@@ -365,7 +365,6 @@ class AutoLogin:
         try:
             page.wait_for_timeout(3000)
             
-            # 优先使用你提供的超长选择器（最精准），同时保留通用选择器作为备用
             selectors = [
                 'input.btn.btn-sm.btn-primary.m-0[value="Continue"]',
                 'input[aria-label^="Continue as"]',
@@ -397,29 +396,29 @@ class AutoLogin:
     def check_and_process_domain(self, domain):
         self.log(f"检查网址状态: {domain}", "DEBUG")
         
-        # ★ 强制拦截 githubstatus，防止误点
-        if "githubstatus.com" in domain:
+        # 第一道防线：拦截错误跳转的站点
+        if "githubstatus.com" in domain or "github.com/features" in domain:
             return "invalid"
             
+        # 只要是 GitHub 的 OAuth 过程，统一步骤
         if "github.com/login/oauth/select_account" in domain:
             return "select_account"
+        if "github.com/login/oauth/authorize" in domain:
+            return "oauth"
             
-        if "help.github.com" in domain: 
-            return "signin"
-        
+        # stackryze 登录
         if "stackryze.com" in domain and "login" in domain: 
             return "signin"
-        
+            
+        # github 登录
         if "github.com/login" in domain or "github.com/sessions/" in domain: 
             return "github_login"
         
-        # ★ 同时兼容 authorize 和 authorize_app
-        if "github.com/login/oauth/authorize" in domain:
-            return "oauth"
-        
+        # 回调
         if "stackryze.com" in domain and "callback" in domain: 
             return "redirect"
         
+        # 已登录
         if "stackryze.com" in domain and "my-domains" in domain: 
             return "logged"
         
@@ -493,8 +492,7 @@ class AutoLogin:
                             if resault == "invalid":
                                 self.log(f"当前处于未知页面或错误页，重新导航...", "WARN")
                                 time.sleep(2)
-                                # 强制打破 while，让 for 循环重新 goto
-                                break  
+                                break  # 跳出 while，重新 goto
 
                             if resault == "logged":
                                 self.log(f"已登录: {page.url}", "SUCCESS")
@@ -511,6 +509,8 @@ class AutoLogin:
                                 continue
 
                             if resault == "oauth":
+                                # 此时 url 已经是 github.com/login/oauth/...
+                                # 绝对不要再调用 self.click()
                                 self.oauth(page)
                                 continue
 
