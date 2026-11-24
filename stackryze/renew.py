@@ -322,8 +322,16 @@ class AutoLogin:
         """处理 OAuth 授权页面（包含 authorize 和 authorize_app）"""
         if 'github.com/login/oauth/authorize' in page.url:
             self.log("处理 OAuth 授权页面...", "STEP")
-            self.shot(page, "oauth_授权页")
             
+            # ★ 核心新增：立刻截图发 TG，看清到底长什么样
+            shot = self.shot(page, "OAuth_授权页")
+            if shot:
+                self.notify.send(
+                    title="stackryze 自动登录保活", 
+                    content=f"⚠️ 进入 OAuth 授权页，正在尝试点击\n当前 URL: {page.url[:80]}...", 
+                    image_path=shot
+                )
+
             # 兼容 input 和 button 的各类组合
             success = self.jclick(page, [
                 'button[name="authorize"]', 
@@ -335,9 +343,27 @@ class AutoLogin:
             ], "授权/继续")
             
             if success:
-                time.sleep(3)
-                try: page.wait_for_load_state('domcontentloaded', timeout=30000)
-                except: pass
+                # ★ 核心新增：点击后，检测 URL 是否变化（最长等 10 秒）
+                self.log("已点击授权，等待页面跳转...", "INFO")
+                old_url = page.url
+                for _ in range(10):
+                    try: page.wait_for_timeout(1000)
+                    except: time.sleep(1)
+                    if page.url != old_url:
+                        self.log(f"页面已跳转: {page.url[:60]}...", "SUCCESS")
+                        break
+                else:
+                    # 如果 10 秒后 URL 还是没变，说明卡住了，标记失败
+                    self.log("⚠️ 点击授权后页面未跳转，可能未成功点击或页面卡住", "WARN")
+                    shot = self.shot(page, "OAuth_点击后未跳转")
+                    if shot:
+                        self.notify.send(title="stackryze 异常", content="OAuth 点击后未跳转，请查看截图", image_path=shot)
+            else:
+                # 如果连按钮都没找到，也发个截图
+                self.log("❌ 未找到 OAuth 授权按钮", "ERROR")
+                shot = self.shot(page, "OAuth_未找到按钮")
+                if shot:
+                    self.notify.send(title="stackryze 异常", content="OAuth 页面未找到授权按钮，请查看截图", image_path=shot)
 
     def jclick(self, page, selectors, desc=""):
         for sel in selectors:
