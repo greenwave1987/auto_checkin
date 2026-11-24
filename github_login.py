@@ -21,7 +21,7 @@ WAIT_SECONDS = 30
 
 # ================== 初始化 ==================
 config = ConfigReader()
-gh_info = config.get_value("GH_INFO")  
+gh_info = config.get_value("GH_INFO")
 notifier = TelegramNotifier(config)
 secret = SecretUpdater(SESSION_SECRET_NAME, config_reader=config)
 
@@ -38,7 +38,8 @@ def sep():
     print("=" * 60, flush=True)
 
 def mask_user(username: str) -> str:
-    if len(username) <= 2: return username
+    if len(username) <= 2:
+        return username
     return username[:2] + "***" + username[-1]
 
 def save_screenshot(page, name):
@@ -87,7 +88,7 @@ def main():
     with sync_playwright() as p:
         # 启动浏览器时增加反爬参数
         browser = p.chromium.launch(
-            headless=True, 
+            headless=True,
             args=["--no-sandbox", "--disable-blink-features=AutomationControlled"]
         )
 
@@ -107,7 +108,7 @@ def main():
                 viewport={'width': 1280, 'height': 720}
             )
             page = context.new_page()
-            
+
             # 注入隔离脚本，防止检测 WebDriver
             page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
             # -------------------------------
@@ -127,8 +128,8 @@ def main():
                     if "login" not in page.url:
                         print("✅ Session 有效", flush=True)
                         cookies_ok = True
-                except:
-                    pass
+                except Exception as e:
+                    print(f"⚠️ Session 校验异常: {e}", flush=True)
 
             # ================== 登录流程 ==================
             if not cookies_ok:
@@ -138,9 +139,9 @@ def main():
                     page.fill('input[name="login"]', username)
                     page.fill('input[name="password"]', password)
                     page.keyboard.press("Enter")
-                    
-                    time.sleep(5) # 留出页面响应时间
-                    
+
+                    time.sleep(5)  # 留出页面响应时间
+
                     # --- 2FA 处理 ---
                     otp_selector = 'input#app_totp, input#otp, input[name="otp"]'
                     if "two-factor" in page.url or page.query_selector(otp_selector):
@@ -154,13 +155,13 @@ def main():
                             time.sleep(5)
                         else:
                             raise ValueError("账号触发两步验证，但 GH_INFO 未配置 2fasecret")
-                    
+
                     # 校验
                     page.goto(GITHUB_TEST_URL, timeout=30000)
                     if "login" in page.url:
                         print(f"❌ {username} 登录失败", flush=True)
                         save_screenshot(page, f"{username}_failed")
-                        context.close() # 失败也要关闭当前 Context
+                        context.close()  # 失败也要关闭当前 Context
                         continue
                 except Exception as e:
                     print(f"❌ 运行异常: {e}", flush=True)
@@ -170,12 +171,19 @@ def main():
             # ================== 提取并更新 Session ==================
             new_session = next((c["value"] for c in context.cookies() if c["name"] == "user_session"), None)
             if new_session:
+                old_session = sess_dict.get(username)
                 sess_dict[username] = new_session
-                print(f"🟢 {username} 处理成功", flush=True)
-            
+                session_updated = True
+                if old_session and old_session == new_session:
+                    print(f"🟢 {username} 处理成功（Session 未变化）", flush=True)
+                else:
+                    print(f"🟢 {username} 处理成功（Session 已刷新）", flush=True)
+            else:
+                print(f"⚠️ {username} 未获取到 user_session Cookie", flush=True)
+
             # --- ✨ 彻底清理：关闭上下文 ---
             # 这会销毁该账号所有的缓存、临时文件和内存中的 Cookie
-            context.close() 
+            context.close()
             print(f"🧹 环境已清理，准备下一个账号...", flush=True)
             sep()
 
