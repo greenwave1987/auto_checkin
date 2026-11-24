@@ -265,7 +265,7 @@ class AutoLogin:
                     return True
                 try:
                     page.reload(timeout=10000)
-                    page.wait_for_load_state('networkidle', timeout=10000)
+                    page.wait_for_load_state('domcontentloaded', timeout=10000) # 改为 domcontentloaded
                 except: pass
         return 'verified-device' not in page.url
 
@@ -303,35 +303,37 @@ class AutoLogin:
         except: return False
 
         time.sleep(3)
-        page.wait_for_load_state('networkidle', timeout=30000)
+        page.wait_for_load_state('domcontentloaded', timeout=30000) # 改掉极易超时的 networkidle
         
         if 'verified-device' in page.url or 'device-verification' in page.url:
             if not self.wait_device(page): return False
             time.sleep(2)
-            page.wait_for_load_state('networkidle', timeout=30000)
+            page.wait_for_load_state('domcontentloaded', timeout=30000)
 
         if 'two-factor' in page.url:
             if 'two-factor/mobile' in page.url:
                 if not self.wait_two_factor_mobile(page): return False
-            try: page.wait_for_load_state('networkidle', timeout=30000)
+            try: page.wait_for_load_state('domcontentloaded', timeout=30000)
             except: pass
         return True
 
     def oauth(self, page):
-        """处理普通的 OAuth 授权页面"""
+        """处理普通的 OAuth 授权页面（包括 authorize 和 authorize_app）"""
+        # 只要包含 oauth/authorize 即可
         if 'github.com/login/oauth/authorize' in page.url:
-            self.log("处理 OAuth 授权...", "STEP")
+            self.log("处理 OAuth 授权页面...", "STEP")
             self.shot(page, "oauth_授权页")
             success = self.jclick(page, [
                 'button[name="authorize"]', 
                 'button:has-text("Authorize")', 
                 'button:has-text("Continue")',
-                'input[type="submit"][value*="Continue"]'
+                'input[type="submit"][value*="Continue"]',
+                'input[type="submit"][value*="Authorize"]'
             ], "授权/继续")
             
             if success:
                 time.sleep(3)
-                try: page.wait_for_load_state('networkidle', timeout=30000)
+                try: page.wait_for_load_state('domcontentloaded', timeout=30000)
                 except: pass
 
     def jclick(self, page, selectors, desc=""):
@@ -358,25 +360,34 @@ class AutoLogin:
             )
 
         try:
-            page.wait_for_load_state("domcontentloaded", timeout=10000)
-            # 兼容你提供的 input 和普通 button
+            # 移除容易超时的 networkidle，改为直接等待 3 秒
+            page.wait_for_timeout(3000)
+            
+            # 优先使用你提供的超长选择器（最精准），同时保留通用选择器作为备用
             selectors = [
-                'input.btn.btn-sm.btn-primary[value="Continue"]',
+                'input.btn.btn-sm.btn-primary.m-0[value="Continue"]',
+                'input[aria-label^="Continue as"]',
                 'button:has-text("Continue")',
                 'input[type="submit"][value*="Continue"]',
                 'button:has-text("Authorize")'
             ]
+            
+            clicked = False
             for sel in selectors:
                 try:
                     el = page.locator(sel).first
                     if el.is_visible(timeout=3000):
                         el.click()
-                        self.log("已自动点击继续/授权按钮", "SUCCESS")
-                        time.sleep(3)
-                        try: page.wait_for_load_state('networkidle', timeout=15000)
-                        except: pass
-                        return True
+                        self.log(f"已自动点击继续/授权按钮 (选择器: {sel})", "SUCCESS")
+                        clicked = True
+                        break
                 except: pass
+                
+            if clicked:
+                time.sleep(3)
+                try: page.wait_for_load_state('domcontentloaded', timeout=15000)
+                except: pass
+                return True
         except Exception as e:
             self.log(f"处理账号选择页异常: {e}", "WARN")
         return False
@@ -384,7 +395,11 @@ class AutoLogin:
     def check_and_process_domain(self, domain):
         self.log(f"检查网址状态: {domain}", "DEBUG")
         
-        # 拦截 GitHub 的账号选择页 (带 select_account)
+        # 拦截 GitHub 状态页（防止误点跳转）
+        if "githubstatus.com" in domain:
+            return "invalid"
+            
+        # 兼容 select_account
         if "github.com/login/oauth/select_account" in domain:
             return "select_account"
             
@@ -397,6 +412,7 @@ class AutoLogin:
         if "github.com/login" in domain or "github.com/sessions/" in domain: 
             return "github_login"
         
+        # ★ 修复：同时兼容 authorize 和 authorize_app
         if "github.com/login/oauth/authorize" in domain:
             return "oauth"
         
