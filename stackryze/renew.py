@@ -83,6 +83,7 @@ class AutoLogin:
         self.notify = config.get('notify')
         self.shots = []
         self.n = 0
+        self.last_url = None
 
     def log(self, msg, level="INFO"):
         icons = {"INFO": "ℹ️", "SUCCESS": "✅", "ERROR": "❌", "WARN": "⚠️", "STEP": "🔹", "DEBUG": "•"}
@@ -133,7 +134,6 @@ class AutoLogin:
                 except Exception: pass
             return False
 
-        # 如果当前已经是 GitHub 相关的页面，绝对不要进点击逻辑
         if "github.com" in page.url:
             return False
 
@@ -319,11 +319,9 @@ class AutoLogin:
         return True
 
     def oauth(self, page):
-        """处理 OAuth 授权页面（包含 authorize 和 authorize_app）"""
         if 'github.com/login/oauth/authorize' in page.url:
             self.log("处理 OAuth 授权页面...", "STEP")
             
-            # ★ 核心新增：立刻截图发 TG，看清到底长什么样
             shot = self.shot(page, "OAuth_授权页")
             if shot:
                 self.notify.send(
@@ -332,7 +330,6 @@ class AutoLogin:
                     image_path=shot
                 )
 
-            # 兼容 input 和 button 的各类组合
             success = self.jclick(page, [
                 'button[name="authorize"]', 
                 'button:has-text("Authorize")', 
@@ -343,7 +340,6 @@ class AutoLogin:
             ], "授权/继续")
             
             if success:
-                # ★ 核心新增：点击后，检测 URL 是否变化（最长等 10 秒）
                 self.log("已点击授权，等待页面跳转...", "INFO")
                 old_url = page.url
                 for _ in range(10):
@@ -353,13 +349,11 @@ class AutoLogin:
                         self.log(f"页面已跳转: {page.url[:60]}...", "SUCCESS")
                         break
                 else:
-                    # 如果 10 秒后 URL 还是没变，说明卡住了，标记失败
                     self.log("⚠️ 点击授权后页面未跳转，可能未成功点击或页面卡住", "WARN")
                     shot = self.shot(page, "OAuth_点击后未跳转")
                     if shot:
                         self.notify.send(title="stackryze 异常", content="OAuth 点击后未跳转，请查看截图", image_path=shot)
             else:
-                # 如果连按钮都没找到，也发个截图
                 self.log("❌ 未找到 OAuth 授权按钮", "ERROR")
                 shot = self.shot(page, "OAuth_未找到按钮")
                 if shot:
@@ -391,6 +385,7 @@ class AutoLogin:
         try:
             page.wait_for_timeout(3000)
             
+            # 使用你提供的准确选择器，并加上备用
             selectors = [
                 'input.btn.btn-sm.btn-primary.m-0[value="Continue"]',
                 'input[aria-label^="Continue as"]',
@@ -404,17 +399,38 @@ class AutoLogin:
                 try:
                     el = page.locator(sel).first
                     if el.is_visible(timeout=3000):
-                        el.click()
+                        # 先尝试普通点击
+                        try:
+                            el.click(timeout=5000)
+                        except:
+                            # 如果普通点击失败，用 force
+                            try:
+                                el.click(timeout=5000, force=True)
+                            except:
+                                # 最后用 JS 直接触发
+                                page.evaluate(f"document.querySelector('{sel}').click()")
+                        
                         self.log(f"已自动点击继续/授权按钮 (选择器: {sel})", "SUCCESS")
                         clicked = True
                         break
                 except: pass
                 
             if clicked:
-                time.sleep(3)
-                try: page.wait_for_load_state('domcontentloaded', timeout=15000)
-                except: pass
-                return True
+                self.log("等待跳转到 OAuth 授权页...", "INFO")
+                # 等待 URL 发生变化，最长等 15 秒
+                old_url = page.url
+                for _ in range(15):
+                    try: page.wait_for_timeout(1000)
+                    except: time.sleep(1)
+                    if page.url != old_url:
+                        self.log(f"成功跳转: {page.url[:60]}...", "SUCCESS")
+                        return True
+                
+                self.log("⚠️ 点击后页面未跳转，可能需要重试", "WARN")
+                shot = self.shot(page, "select_account_点击后未跳转")
+                if shot:
+                    self.notify.send(title="stackryze 异常", content="账号选择页点击后未跳转，请查看截图", image_path=shot)
+                return False
         except Exception as e:
             self.log(f"处理账号选择页异常: {e}", "WARN")
         return False
@@ -422,29 +438,26 @@ class AutoLogin:
     def check_and_process_domain(self, domain):
         self.log(f"检查网址状态: {domain}", "DEBUG")
         
-        # 第一道防线：拦截错误跳转的站点
         if "githubstatus.com" in domain or "github.com/features" in domain:
             return "invalid"
             
-        # 只要是 GitHub 的 OAuth 过程，统一步骤
+        if "help.github.com" in domain: 
+            return "invalid"
+            
         if "github.com/login/oauth/select_account" in domain:
             return "select_account"
         if "github.com/login/oauth/authorize" in domain:
             return "oauth"
             
-        # stackryze 登录
         if "stackryze.com" in domain and "login" in domain: 
             return "signin"
             
-        # github 登录
         if "github.com/login" in domain or "github.com/sessions/" in domain: 
             return "github_login"
         
-        # 回调
         if "stackryze.com" in domain and "callback" in domain: 
             return "redirect"
         
-        # 已登录
         if "stackryze.com" in domain and "my-domains" in domain: 
             return "logged"
         
@@ -512,13 +525,25 @@ class AutoLogin:
                         if shot: self.notify.send(title="stackryze 自动登录保活", content="打开 stackryze 登录页", image_path=shot)
 
                         while True:
+                            current_url = page.url
+                            if self.last_url != current_url:
+                                self.log(f"🌐 URL 发生变化: {current_url}", "WARN")
+                                shot = self.shot(page, "URL变化")
+                                if shot:
+                                    self.notify.send(
+                                        title="stackryze 自动登录保活",
+                                        content=f"🌐 页面跳转啦！\n当前 URL: {current_url[:100]}...",
+                                        image_path=shot
+                                    )
+                                self.last_url = current_url
+
                             resault = self.check_and_process_domain(page.url)
                             self.log(f"检测结果: {resault}", "INFO")
 
                             if resault == "invalid":
                                 self.log(f"当前处于未知页面或错误页，重新导航...", "WARN")
                                 time.sleep(2)
-                                break  # 跳出 while，重新 goto
+                                break
 
                             if resault == "logged":
                                 self.log(f"已登录: {page.url}", "SUCCESS")
@@ -535,8 +560,6 @@ class AutoLogin:
                                 continue
 
                             if resault == "oauth":
-                                # 此时 url 已经是 github.com/login/oauth/...
-                                # 绝对不要再调用 self.click()
                                 self.oauth(page)
                                 continue
 
